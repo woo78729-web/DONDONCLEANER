@@ -19,6 +19,8 @@ Route::middleware(['auth:sanctum', 'role:admin'])->prefix('admin')->group(functi
     Route::get('/users', [AdminUserController::class, 'index']);
     Route::post('/users', [AdminUserController::class, 'store']);
     Route::patch('/users/{user}', [AdminUserController::class, 'update']);
+    Route::get('/schedules', [AdminScheduleController::class, 'index']);
+    Route::get('/schedules/{schedule}', [AdminScheduleController::class, 'show']);
     Route::post('/schedules', [AdminScheduleController::class, 'store']);
     Route::patch('/schedules/{schedule}', [AdminScheduleController::class, 'update']);
     Route::get('/reports/export', [AdminReportController::class, 'export']);

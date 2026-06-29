@@ -94,6 +94,14 @@ class AcCleaningApi {
     return this.request('POST', '/admin/schedules', payload);
   }
 
+  getSchedules(filters = {}) {
+    return this.request('GET', '/admin/schedules', null, filters);
+  }
+
+  getSchedule(scheduleId) {
+    return this.request('GET', `/admin/schedules/${scheduleId}`);
+  }
+
   getReports(filters = {}) {
     return this.request('GET', '/admin/reports', null, filters);
   }

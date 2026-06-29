@@ -158,6 +158,77 @@
           }
         },
         {
+          "name": "List Schedules",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/schedules?date_from=2026-06-29&date_to=2026-06-30&has_report=0&page=1&per_page=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "schedules"],
+              "query": [
+                { "key": "date_from", "value": "2026-06-29" },
+                { "key": "date_to", "value": "2026-06-30" },
+                { "key": "has_report", "value": "0" },
+                { "key": "page", "value": "1" },
+                { "key": "per_page", "value": "10" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Show Schedule",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/schedules/{{scheduleId}}"
+          }
+        },
+        {
+          "name": "Update Schedule",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customer_address\": \"更新後的地址\",\n  \"task_details\": \"14離14000\"\n}"
+            },
+            "url": "{{baseUrl}}/admin/schedules/{{scheduleId}}"
+          }
+        },
+        {
+          "name": "Export Reports CSV",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/reports/export?date_from=2026-06-29&date_to=2026-06-30"
+          }
+        },
+        {
           "name": "List Reports",
           "request": {
             "method": "GET",
