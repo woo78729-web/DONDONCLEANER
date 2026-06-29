@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>冷氣清洗派班系統 - API Demo</title>
+  <link rel="stylesheet" href="/demo/css/app.css">
+</head>
+<body>
+  <div class="container">
+    <h1>冷氣清洗派班與帳務管理</h1>
+    <p>此頁面示範前端 Web App 如何串接 Laravel API（同源部署於 <code>/demo</code>）。</p>
+
+    <div id="statusBar" class="status-bar">請先登入</div>
+
+    <section id="loginSection" class="card">
+      <h2>登入</h2>
+      <div class="grid grid-2">
+        <div>
+          <label for="account">帳號</label>
+          <input id="account" value="admin1">
+        </div>
+        <div>
+          <label for="password">密碼</label>
+          <input id="password" type="password" value="password123">
+        </div>
+      </div>
+      <div class="actions" style="margin-top: 12px;">
+        <button id="loginBtn">登入</button>
+        <button id="logoutBtn" class="secondary hidden">登出</button>
+      </div>
+    </section>
+
+    <section id="employeeSection" class="card hidden">
+      <h2>員工專區</h2>
+      <div class="actions">
+        <button id="loadSchedulesBtn">載入今日/明日班表</button>
+      </div>
+      <div id="schedulesTable"></div>
+    </section>
+
+    <section id="adminSection" class="card hidden">
+      <h2>管理員專區</h2>
+      <div class="grid grid-2">
+        <div>
+          <label for="dateFrom">開始日期</label>
+          <input id="dateFrom" type="date">
+        </div>
+        <div>
+          <label for="dateTo">結束日期</label>
+          <input id="dateTo" type="date">
+        </div>
+        <div>
+          <label for="userId">員工 ID（選填）</label>
+          <input id="userId" type="number" min="1" placeholder="例如 3">
+        </div>
+        <div>
+          <label for="perPage">每頁筆數</label>
+          <input id="perPage" type="number" min="1" max="100" value="15">
+        </div>
+      </div>
+      <div class="actions" style="margin-top: 12px;">
+        <button id="loadReportsBtn">查詢回報</button>
+      </div>
+      <div id="reportsSummary" style="margin-top: 12px;"></div>
+      <div id="reportsTable" style="margin-top: 12px;"></div>
+      <div class="actions" style="margin-top: 12px;">
+        <button id="prevPageBtn" class="secondary">上一頁</button>
+        <button id="nextPageBtn" class="secondary">下一頁</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>API 回應</h2>
+      <pre id="responseBox">{}</pre>
+    </section>
+  </div>
+
+  <script src="/demo/js/api-client.js"></script>
+  <script src="/demo/js/app.js"></script>
+</body>
+</html>
