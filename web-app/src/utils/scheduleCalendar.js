@@ -634,9 +634,8 @@ export function expandLeavesToEvents(leaves, dateFrom, dateTo) {
 }
 
 export function leaveToEvent(leave, dateStr) {
-  const start = new Date(`${dateStr}T00:00:00`);
-  const end = new Date(start);
-  end.setDate(end.getDate() + 1);
+  const start = new Date(`${dateStr}T07:00:00`);
+  const end = new Date(`${dateStr}T21:00:00`);
   const name = leave.user?.name || '師傅';
 
   return {
@@ -644,7 +643,7 @@ export function leaveToEvent(leave, dateStr) {
     title: `假 ${name}`,
     start,
     end,
-    allDay: true,
+    allDay: false,
     resource: {
       type: 'leave',
       ...leave,

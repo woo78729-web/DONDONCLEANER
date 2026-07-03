@@ -399,6 +399,14 @@ export default function AdminSchedulesPage() {
 
   const leaveRange = useMemo(() => getCalendarLoadRange(currentDate), [currentDate]);
 
+  const calendarLeaves = useMemo(() => {
+    if (!selectedEmployeeId) {
+      return leaves;
+    }
+
+    return leaves.filter((leave) => String(leave.user_id) === String(selectedEmployeeId));
+  }, [leaves, selectedEmployeeId]);
+
   return (
     <PageErrorBoundary title="派班行事曆載入失敗">
       <Layout title="派班行事曆">
@@ -515,7 +523,7 @@ export default function AdminSchedulesPage() {
               <div className="schedule-calendar-host">
                 <ScheduleCalendar
                 schedules={schedules}
-                leaves={leaves}
+                leaves={calendarLeaves}
                 leaveRange={leaveRange}
                 currentDate={currentDate}
                 displayDays={displayDays}

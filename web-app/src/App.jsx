@@ -9,6 +9,7 @@ import AdminAccountingPage from './pages/AdminAccountingPage';
 import AdminPerformancePage from './pages/AdminPerformancePage';
 import AdminStaffPage from './pages/AdminStaffPage';
 import AdminSchedulesPage from './pages/AdminSchedulesPage';
+import AdminLeaveCalendarPage from './pages/AdminLeaveCalendarPage';
 import AdminScheduleDayPage from './pages/AdminScheduleDayPage';
 import AdminProjectsPage from './pages/AdminProjectsPage';
 import EmergencyMaintenancePage from './pages/EmergencyMaintenancePage';
@@ -53,6 +54,7 @@ export default function App() {
           <Route element={<ProtectedRoute permission="schedules.manage" />}>
             <Route path="/admin/schedules" element={<AdminSchedulesPage />} />
             <Route path="/admin/schedules/day/:date" element={<AdminScheduleDayPage />} />
+            <Route path="/admin/leaves" element={<AdminLeaveCalendarPage />} />
             <Route path="/admin/projects" element={<AdminProjectsPage />} />
           </Route>
 

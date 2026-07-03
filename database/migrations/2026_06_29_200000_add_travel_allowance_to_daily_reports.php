@@ -12,7 +12,7 @@ return new class extends Migration
             $table->unsignedInteger('travel_allowance')->default(0)
         ;
         });
-    }
+    }ㄝ
 
     public function down(): void
     {

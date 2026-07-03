@@ -10,6 +10,7 @@ use App\Support\SchedulePlanningSupport;
 use App\Support\TaitungServiceArea;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 class SchedulePlanningController extends Controller
 {
@@ -85,6 +86,198 @@ class SchedulePlanningController extends Controller
         return $this->success([
             'leaves' => $leaves,
         ], '假期查詢成功');
+    }
+
+    public function toggleLeave(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'user_id' => ['required', 'integer', 'exists:users,id'],
+            'leave_date' => ['required', 'date'],
+            'force' => ['sometimes', 'boolean'],
+        ]);
+
+        $user = User::query()->findOrFail($validated['user_id']);
+
+        if (! $user->isEmployee()) {
+            return $this->error('僅能為員工排假', 422);
+        }
+
+        $leaveDate = $validated['leave_date'];
+        $force = (bool) ($validated['force'] ?? false);
+
+        $dateLeave = EmployeeLeave::query()
+            ->where('user_id', $user->id)
+            ->where('leave_type', EmployeeLeave::TYPE_DATE)
+            ->whereDate('leave_date', $leaveDate)
+            ->first();
+
+        if ($dateLeave) {
+            $result = $this->applyLeaveChange($user, $leaveDate, 'remove');
+
+            if (! $result['success']) {
+                return $this->error($result['message'] ?? '取消排假失敗', 422);
+            }
+
+            $remainingLeaves = EmployeeLeave::query()
+                ->where('user_id', $user->id)
+                ->get();
+
+            return $this->success([
+                'on_leave' => SchedulePlanningSupport::isOnLeave($remainingLeaves, (int) $user->id, $leaveDate),
+                'action' => 'removed',
+            ], '已取消當日排假');
+        }
+
+        $result = $this->applyLeaveChange($user, $leaveDate, 'add', $force);
+
+        if (! $result['success']) {
+            if ($result['needs_confirm'] ?? false) {
+                return $this->error($result['message'] ?? '當日已有單，仍要排假請確認', 409);
+            }
+
+            return $this->error($result['message'] ?? '排假失敗', 422);
+        }
+
+        $leave = EmployeeLeave::query()
+            ->with('user:id,name,account')
+            ->where('user_id', $user->id)
+            ->where('leave_type', EmployeeLeave::TYPE_DATE)
+            ->whereDate('leave_date', $leaveDate)
+            ->first();
+
+        return $this->success([
+            'on_leave' => true,
+            'action' => 'added',
+            'leave' => $leave ? SchedulePlanningSupport::leavePayload($leave) : null,
+        ], '排假已登記', 201);
+    }
+
+    public function batchLeave(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'user_id' => ['required', 'integer', 'exists:users,id'],
+            'changes' => ['required', 'array', 'min:1'],
+            'changes.*.leave_date' => ['required', 'date'],
+            'changes.*.action' => ['required', Rule::in(['add', 'remove'])],
+            'changes.*.force' => ['sometimes', 'boolean'],
+        ]);
+
+        $user = User::query()->findOrFail($validated['user_id']);
+
+        if (! $user->isEmployee()) {
+            return $this->error('僅能為員工排假', 422);
+        }
+
+        $results = [];
+
+        foreach ($validated['changes'] as $change) {
+            $results[] = $this->applyLeaveChange(
+                $user,
+                $change['leave_date'],
+                $change['action'],
+                (bool) ($change['force'] ?? false),
+            );
+        }
+
+        $successCount = count(array_filter($results, fn (array $result) => $result['success']));
+        $failureCount = count($results) - $successCount;
+
+        return $this->success([
+            'results' => $results,
+            'success_count' => $successCount,
+            'failure_count' => $failureCount,
+        ], $failureCount > 0 ? '部分排假未能儲存' : '排假已儲存');
+    }
+
+    public function destroyLeave(EmployeeLeave $employeeLeave): JsonResponse
+    {
+        $employeeLeave->delete();
+
+        return $this->success(null, '排假已刪除');
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function applyLeaveChange(User $user, string $leaveDate, string $action, bool $force = false): array
+    {
+        if ($action === 'remove') {
+            $dateLeave = EmployeeLeave::query()
+                ->where('user_id', $user->id)
+                ->where('leave_type', EmployeeLeave::TYPE_DATE)
+                ->whereDate('leave_date', $leaveDate)
+                ->first();
+
+            if (! $dateLeave) {
+                return [
+                    'leave_date' => $leaveDate,
+                    'action' => 'remove',
+                    'success' => true,
+                    'skipped' => true,
+                ];
+            }
+
+            $dateLeave->delete();
+
+            return [
+                'leave_date' => $leaveDate,
+                'action' => 'remove',
+                'success' => true,
+            ];
+        }
+
+        $existingLeave = EmployeeLeave::query()
+            ->where('user_id', $user->id)
+            ->where('leave_type', EmployeeLeave::TYPE_DATE)
+            ->whereDate('leave_date', $leaveDate)
+            ->first();
+
+        if ($existingLeave) {
+            return [
+                'leave_date' => $leaveDate,
+                'action' => 'add',
+                'success' => true,
+                'skipped' => true,
+            ];
+        }
+
+        $userLeaves = EmployeeLeave::query()
+            ->where('user_id', $user->id)
+            ->get();
+
+        if (SchedulePlanningSupport::isOnLeave($userLeaves, (int) $user->id, $leaveDate)) {
+            return [
+                'leave_date' => $leaveDate,
+                'action' => 'add',
+                'success' => false,
+                'message' => '此日為每週固定休，請先刪除固定休假設定',
+            ];
+        }
+
+        if (
+            SchedulePlanningSupport::hasScheduleOnDate((int) $user->id, $leaveDate)
+            && ! $force
+        ) {
+            return [
+                'leave_date' => $leaveDate,
+                'action' => 'add',
+                'success' => false,
+                'needs_confirm' => true,
+                'message' => '當日已有單',
+            ];
+        }
+
+        EmployeeLeave::query()->create([
+            'user_id' => $user->id,
+            'leave_type' => EmployeeLeave::TYPE_DATE,
+            'leave_date' => $leaveDate,
+        ]);
+
+        return [
+            'leave_date' => $leaveDate,
+            'action' => 'add',
+            'success' => true,
+        ];
     }
 
     /**

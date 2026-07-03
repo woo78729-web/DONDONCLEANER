@@ -330,6 +330,18 @@ class AcCleaningApi {
     return this.request('GET', '/admin/planning/leaves', { params: filters });
   }
 
+  toggleAdminLeave(payload) {
+    return this.request('POST', '/admin/planning/leaves/toggle', { body: payload });
+  }
+
+  batchAdminLeave(payload) {
+    return this.request('POST', '/admin/planning/leaves/batch', { body: payload });
+  }
+
+  deleteAdminLeave(leaveId) {
+    return this.request('DELETE', `/admin/planning/leaves/${leaveId}`);
+  }
+
   getEmployeeLeaves() {
     return this.request('GET', '/employee/leaves');
   }

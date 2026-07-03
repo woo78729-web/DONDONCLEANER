@@ -41,6 +41,15 @@ export function getNavItems(user) {
   });
 
   pushItem(items, user, {
+    permission: 'schedules.manage',
+    to: '/admin/leaves',
+    end: true,
+    label: '排假行事曆',
+    shortLabel: '排假',
+    tabOrder: prefersSchedulesHome ? 1.5 : 2.5,
+  });
+
+  pushItem(items, user, {
     permission: 'reports.view',
     to: user.role === 'finance' ? '/finance' : '/admin',
     end: true,
