@@ -9,7 +9,8 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('daily_reports', function (Blueprint $table) {
-            $table->unsignedInteger('travel_allowance')->default(0)->after('temporary_postage');
+            $table->unsignedInteger('travel_allowance')->default(0)
+        ;
         });
     }
 
