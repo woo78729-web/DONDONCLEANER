@@ -129,7 +129,7 @@ class SchedulePlanningApiTest extends TestCase
 
         Sanctum::actingAs($this->employee);
 
-        $leaveDate = $this->futureWorkDate(5);
+        $leaveDate = Carbon::create(2026, 7, 8)->toDateString();
 
         $this->postJson('/api/employee/leaves', [
             'leave_type' => 'date',
@@ -149,6 +149,79 @@ class SchedulePlanningApiTest extends TestCase
             ->where('user_id', $this->employee->id)
             ->whereDate('leave_date', $leaveDate)
             ->count());
+
+        Carbon::setTestNow();
+    }
+
+    public function test_employee_cannot_register_current_month_leave_outside_new_window(): void
+    {
+        Carbon::setTestNow(Carbon::create(2026, 6, 22, 10, 0, 0));
+
+        Sanctum::actingAs($this->employee);
+
+        $this->postJson('/api/employee/leaves', [
+            'leave_type' => 'date',
+            'leave_date' => Carbon::create(2026, 6, 28)->toDateString(),
+        ])
+            ->assertStatus(422)
+            ->assertJsonPath('status', 'error');
+
+        Carbon::setTestNow();
+    }
+
+    public function test_new_employee_can_register_current_month_leave_within_three_days(): void
+    {
+        Carbon::setTestNow(Carbon::create(2026, 6, 10, 10, 0, 0));
+
+        $newEmployee = User::query()->create([
+            'account' => 'emp-new',
+            'password' => Hash::make('password123'),
+            'name' => '新人',
+            'role' => 'employee',
+            'is_active' => true,
+            'created_at' => Carbon::create(2026, 6, 10, 9, 0, 0),
+        ]);
+
+        Sanctum::actingAs($newEmployee);
+
+        $leaveDate = Carbon::create(2026, 6, 18)->toDateString();
+
+        $this->postJson('/api/employee/leaves', [
+            'leave_type' => 'date',
+            'leave_date' => $leaveDate,
+        ])
+            ->assertCreated()
+            ->assertJsonPath('data.leave_date', $leaveDate);
+
+        Carbon::setTestNow();
+    }
+
+    public function test_new_employee_joined_after_25_can_register_next_month(): void
+    {
+        Carbon::setTestNow(Carbon::create(2026, 6, 27, 10, 0, 0));
+
+        $newEmployee = User::query()->create([
+            'account' => 'emp-late',
+            'password' => Hash::make('password123'),
+            'name' => '晚到新人',
+            'role' => 'employee',
+            'is_active' => true,
+            'created_at' => Carbon::create(2026, 6, 27, 9, 0, 0),
+        ]);
+
+        Sanctum::actingAs($newEmployee);
+
+        $this->getJson('/api/employee/leaves')
+            ->assertOk()
+            ->assertJsonPath('data.registration_open', true)
+            ->assertJsonPath('data.allowed_months.0', '2026-06')
+            ->assertJsonPath('data.allowed_months.1', '2026-07');
+
+        $this->postJson('/api/employee/leaves', [
+            'leave_type' => 'date',
+            'leave_date' => Carbon::create(2026, 7, 5)->toDateString(),
+        ])
+            ->assertCreated();
 
         Carbon::setTestNow();
     }

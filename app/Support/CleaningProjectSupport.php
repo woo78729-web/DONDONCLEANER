@@ -100,7 +100,7 @@ class CleaningProjectSupport
                 $lines,
                 $needsInvoice,
                 $payload['start_time'] ?? '09:00',
-                $payload['end_time'] ?? '17:00',
+                $payload['end_time'] ?? '21:00',
             );
 
             return $project->fresh(['employees', 'schedules.user', 'schedules.dailyReport']);
@@ -118,7 +118,7 @@ class CleaningProjectSupport
         array $lines,
         bool $needsInvoice,
         string $startTime = '09:00',
-        string $endTime = '17:00',
+        string $endTime = '21:00',
         string $scheduleKind = CleaningProject::SCHEDULE_KIND_REGULAR,
     ): void {
         $dates = collect(CarbonPeriod::create(

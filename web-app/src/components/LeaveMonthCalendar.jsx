@@ -33,8 +33,8 @@ function buildWeeklyDateSet(leaves, employeeId, gridStart, gridEnd) {
   return new Set(events.map((event) => formatDateOnly(event.resource.leave_date)));
 }
 
-function getDayVisualState(dateKey, draftDateLeaves, baselineDateLeaves, weeklyDateKeys) {
-  if (weeklyDateKeys.has(dateKey)) {
+function getDayVisualState(dateKey, draftDateLeaves, baselineDateLeaves, weeklyDateKeys, showWeeklyLeaveDays) {
+  if (showWeeklyLeaveDays && weeklyDateKeys.has(dateKey)) {
     return { kind: 'weekly', pending: null };
   }
 
@@ -65,6 +65,8 @@ export function LeaveMonthCalendar({
   draftDateLeaves = new Set(),
   onDayClick,
   busy = false,
+  allowedMonths = [],
+  showWeeklyLeaveDays = false,
   weekStartsOn = 1,
 }) {
   const today = useMemo(() => startOfDay(new Date()), []);
@@ -73,6 +75,11 @@ export function LeaveMonthCalendar({
   const gridStart = startOfWeek(monthStart, { weekStartsOn });
   const gridEnd = endOfWeek(monthEnd, { weekStartsOn });
   const days = eachDayOfInterval({ start: gridStart, end: gridEnd });
+  const visibleMonthKey = format(visibleMonth, 'yyyy-MM');
+  const allowedMonthIndex = allowedMonths.indexOf(visibleMonthKey);
+  const canGoPrev = allowedMonths.length === 0 || allowedMonthIndex > 0;
+  const canGoNext = allowedMonths.length === 0
+    || (allowedMonthIndex >= 0 && allowedMonthIndex < allowedMonths.length - 1);
 
   const weeklyDateKeys = useMemo(
     () => buildWeeklyDateSet(leaves, employeeId, gridStart, gridEnd),
@@ -85,9 +92,15 @@ export function LeaveMonthCalendar({
         <button
           type="button"
           className="leave-month-calendar__nav"
-          onClick={() => onMonthChange?.(addMonths(visibleMonth, -1))}
+          onClick={() => {
+            if (!canGoPrev) {
+              return;
+            }
+
+            onMonthChange?.(addMonths(visibleMonth, -1));
+          }}
           aria-label="上一個月"
-          disabled={busy}
+          disabled={busy || !canGoPrev}
         >
           ‹
         </button>
@@ -97,9 +110,15 @@ export function LeaveMonthCalendar({
         <button
           type="button"
           className="leave-month-calendar__nav"
-          onClick={() => onMonthChange?.(addMonths(visibleMonth, 1))}
+          onClick={() => {
+            if (!canGoNext) {
+              return;
+            }
+
+            onMonthChange?.(addMonths(visibleMonth, 1));
+          }}
           aria-label="下一個月"
-          disabled={busy}
+          disabled={busy || !canGoNext}
         >
           ›
         </button>
@@ -108,16 +127,18 @@ export function LeaveMonthCalendar({
       <div className="leave-month-calendar__legend">
         <span className="leave-month-calendar__legend-item">
           <span className="leave-month-calendar__legend-dot is-leave" aria-hidden="true" />
-          休假
+          指定日期休假
         </span>
         <span className="leave-month-calendar__legend-item">
           <span className="leave-month-calendar__legend-dot is-pending" aria-hidden="true" />
-          待儲存
+          待確認
         </span>
-        <span className="leave-month-calendar__legend-item">
-          <span className="leave-month-calendar__legend-dot is-weekly" aria-hidden="true" />
-          每週固定休
-        </span>
+        {showWeeklyLeaveDays && (
+          <span className="leave-month-calendar__legend-item">
+            <span className="leave-month-calendar__legend-dot is-weekly" aria-hidden="true" />
+            每週固定休
+          </span>
+        )}
       </div>
 
       <div className="leave-month-calendar__weekdays">
@@ -129,7 +150,13 @@ export function LeaveMonthCalendar({
       <div className="leave-month-calendar__grid">
         {days.map((day) => {
           const key = formatDateOnly(day);
-          const visual = getDayVisualState(key, draftDateLeaves, baselineDateLeaves, weeklyDateKeys);
+          const visual = getDayVisualState(
+            key,
+            draftDateLeaves,
+            baselineDateLeaves,
+            weeklyDateKeys,
+            showWeeklyLeaveDays,
+          );
           const isOutside = !isSameMonth(day, visibleMonth);
           const isToday = isSameDay(day, today);
           const onLeave = visual.kind === 'date' || visual.kind === 'weekly';

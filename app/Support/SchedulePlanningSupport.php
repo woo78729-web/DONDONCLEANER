@@ -14,6 +14,8 @@ class SchedulePlanningSupport
 
     public const LEAVE_WINDOW_END_DAY = 25;
 
+    public const NEW_EMPLOYEE_LEAVE_DAYS = 3;
+
     public const WORKDAY_START = '07:00';
 
     public const WORKDAY_END = '21:00';
@@ -34,7 +36,83 @@ class SchedulePlanningSupport
             return '目前開放排假，可勾選日期或設定每週固定休息日。';
         }
 
-        return '排假開放時間為每月 '.self::LEAVE_WINDOW_START_DAY.'–'.self::LEAVE_WINDOW_END_DAY.' 日。';
+        return '排假開放時間為每月 '.self::LEAVE_WINDOW_START_DAY.'–'.self::LEAVE_WINDOW_END_DAY.' 日；新人加入後另有 '.self::NEW_EMPLOYEE_LEAVE_DAYS.' 天可登記當月假。';
+    }
+
+    /**
+     * @return array{
+     *     registration_open: bool,
+     *     registration_message: string,
+     *     allowed_months: array<int, string>,
+     *     default_month: string,
+     *     is_new_employee_window: bool
+     * }
+     */
+    public static function employeeLeaveRegistration(User $user, ?Carbon $now = null): array
+    {
+        $now ??= now();
+        $createdAt = Carbon::parse($user->created_at ?? $now)->startOfDay();
+        $today = $now->copy()->startOfDay();
+        $daysSinceJoin = (int) $createdAt->diffInDays($today);
+        $inNewEmployeeWindow = $daysSinceJoin < self::NEW_EMPLOYEE_LEAVE_DAYS;
+        $joinedAfter25 = (int) $createdAt->day > self::LEAVE_WINDOW_END_DAY;
+        $regularOpen = self::isLeaveRegistrationOpen($now);
+
+        $allowedMonths = [];
+        $registrationOpen = false;
+        $message = '';
+
+        if ($inNewEmployeeWindow) {
+            $registrationOpen = true;
+            $allowedMonths[] = $now->format('Y-m');
+
+            if ($joinedAfter25) {
+                $allowedMonths[] = $now->copy()->addMonth()->format('Y-m');
+            }
+
+            $remainingDays = self::NEW_EMPLOYEE_LEAVE_DAYS - $daysSinceJoin;
+            $message = '新人排假開放中：可登記當月休假';
+
+            if ($joinedAfter25) {
+                $message .= '及下個月';
+            }
+
+            $message .= "（剩餘 {$remainingDays} 天可登記）";
+        } elseif ($regularOpen) {
+            $registrationOpen = true;
+            $allowedMonths[] = $now->copy()->addMonth()->format('Y-m');
+            $message = '目前開放登記下個月排假，請在月曆複選日期後按確認。';
+        } else {
+            $message = self::leaveRegistrationMessage($now);
+        }
+
+        $defaultMonth = $allowedMonths[0] ?? $now->copy()->addMonth()->format('Y-m');
+
+        return [
+            'registration_open' => $registrationOpen,
+            'registration_message' => $message,
+            'allowed_months' => array_values(array_unique($allowedMonths)),
+            'default_month' => $defaultMonth,
+            'is_new_employee_window' => $inNewEmployeeWindow,
+        ];
+    }
+
+    public static function canEmployeeRegisterLeave(User $user, ?Carbon $now = null): bool
+    {
+        return self::employeeLeaveRegistration($user, $now)['registration_open'];
+    }
+
+    public static function isLeaveDateAllowedForEmployee(User $user, string $leaveDate, ?Carbon $now = null): bool
+    {
+        $context = self::employeeLeaveRegistration($user, $now);
+
+        if (! $context['registration_open']) {
+            return false;
+        }
+
+        $month = Carbon::parse($leaveDate)->format('Y-m');
+
+        return in_array($month, $context['allowed_months'], true);
     }
 
     /**

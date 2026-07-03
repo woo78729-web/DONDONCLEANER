@@ -96,6 +96,7 @@ Route::middleware(['auth:sanctum', 'role:employee', 'employee.onboarded'])->pref
     Route::get('/schedules', [EmployeeScheduleController::class, 'index']);
     Route::get('/leaves', [EmployeeLeaveController::class, 'index']);
     Route::post('/leaves', [EmployeeLeaveController::class, 'store']);
+    Route::post('/leaves/batch', [EmployeeLeaveController::class, 'batchStore']);
     Route::delete('/leaves/{employeeLeave}', [EmployeeLeaveController::class, 'destroy']);
     Route::get('/reports/pending', [EmployeeReportController::class, 'pending']);
     Route::get('/reports/history', [EmployeeReportController::class, 'index']);

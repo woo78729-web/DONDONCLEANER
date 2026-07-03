@@ -175,14 +175,8 @@ export default function AdminLeaveCalendarPage() {
     setVisibleMonth(nextMonth);
   }
 
-  function handleDayClick(dateKey, visual) {
+  function handleDayClick(dateKey) {
     if (!selectedEmployeeId || busy) {
-      return;
-    }
-
-    if (visual?.kind === 'weekly') {
-      setMessage('');
-      setError('此日為每週固定休，請在下方刪除固定休假設定');
       return;
     }
 
@@ -306,7 +300,7 @@ export default function AdminLeaveCalendarPage() {
         <div className="card-header">
           <div>
             <h2 className="card-title">師傅排假</h2>
-            <p className="hint">選擇師傅後，可連續點選多個日期，再按「儲存本次修改」。黃色休假會同步顯示在派班行事曆。</p>
+            <p className="hint">選擇師傅後，在月曆複選指定日期休假，再按「儲存本次修改」。月曆只顯示指定日期假；每週固定休見下方列表，派班行事曆會合併顯示。</p>
           </div>
         </div>
 

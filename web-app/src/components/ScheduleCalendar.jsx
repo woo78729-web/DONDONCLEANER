@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { flushSync } from 'react-dom';
-
 import { Calendar, dateFnsLocalizer } from 'react-big-calendar';
 
 import { format, getDay, parse, startOfWeek } from 'date-fns';
@@ -22,13 +21,13 @@ import { createMultiDayView } from '../utils/customCalendarViews';
 
 import {
 
-  expandLeavesToEvents,
+  buildScheduleCalendarEvents,
+
+  getCalendarDisplayRange,
 
   getScheduleEventClassName,
 
   getScheduleEventStyle,
-
-  scheduleToEvent,
 
 } from '../utils/scheduleCalendar';
 
@@ -308,73 +307,62 @@ export function ScheduleCalendar({
 
   useEffect(() => {
 
-    setView(activeView);
+    setView((previous) => {
+      if (previous === 'month' || previous === 'agenda' || previous === 'day') {
+        return previous;
+      }
 
-  }, [activeView, currentDate, safeDisplayDays]);
+      return activeView;
+    });
 
-
-
-  const calendarKey = `${safeDisplayDays}-${currentDate instanceof Date ? currentDate.getTime() : currentDate}`;
-
-
-
-  const baseEvents = useMemo(() => {
-
-    const scheduleEvents = schedules.map((schedule) => scheduleToEvent(schedule));
+  }, [activeView, safeDisplayDays]);
 
 
 
-    if (!leaves.length || !leaveRange?.date_from || !leaveRange?.date_to) {
-
-      return scheduleEvents;
-
-    }
+  const calendarKey = `${safeDisplayDays}-${view}-${currentDate instanceof Date ? currentDate.getTime() : currentDate}`;
 
 
 
-    const leaveEvents = expandLeavesToEvents(leaves, leaveRange.date_from, leaveRange.date_to);
+  const displayRange = useMemo(
+    () => getCalendarDisplayRange(view, currentDate, safeDisplayDays),
+    [currentDate, safeDisplayDays, view],
+  );
 
-
-
-    return [...leaveEvents, ...scheduleEvents];
-
-  }, [schedules, leaves, leaveRange]);
-
-
+  const baseCalendarEvents = useMemo(
+    () => buildScheduleCalendarEvents(
+      schedules,
+      leaves,
+      displayRange.date_from,
+      displayRange.date_to,
+    ),
+    [displayRange, leaves, schedules],
+  );
 
   const [eventOverrides, setEventOverrides] = useState(() => new Map());
-
-
 
   const events = useMemo(() => {
 
     if (!eventOverrides.size) {
 
-      return baseEvents;
+      return baseCalendarEvents;
 
     }
 
-
-
-    return baseEvents.map((event) => {
+    return baseCalendarEvents.map((event) => {
 
       const override = eventOverrides.get(event.id);
 
-
-
-      if (!override) {
+      if (!override || String(event.id).startsWith('leave-')) {
 
         return event;
 
       }
 
-
-
       return { ...event, start: override.start, end: override.end };
 
     });
 
-  }, [baseEvents, eventOverrides]);
+  }, [baseCalendarEvents, eventOverrides]);
 
 
 
@@ -486,17 +474,9 @@ export function ScheduleCalendar({
 
 
 
-  const components = useMemo(
-
-    () => ({
-
-      event: (props) => <CalendarScheduleEvent {...props} view={view} />,
-
-    }),
-
-    [view],
-
-  );
+  const components = useMemo(() => ({
+    event: (props) => <CalendarScheduleEvent {...props} view={view} />,
+  }), [view]);
 
 
 
@@ -588,6 +568,10 @@ export function ScheduleCalendar({
 
         events={events}
 
+        showMultiDayTimes
+
+        allDayAccessor={(event) => (event.resource?.type === 'leave' ? false : Boolean(event.allDay))}
+
         date={currentDate}
 
         view={view}
@@ -627,27 +611,17 @@ export function ScheduleCalendar({
         dayLayoutAlgorithm="no-overlap"
 
         dayPropGetter={(date) => {
-
+          const classNames = [];
           const today = new Date();
-
           today.setHours(0, 0, 0, 0);
-
           const target = new Date(date);
-
           target.setHours(0, 0, 0, 0);
 
-
-
           if (target < today) {
-
-            return { className: 'rbc-past-day' };
-
+            classNames.push('rbc-past-day');
           }
 
-
-
-          return {};
-
+          return classNames.length ? { className: classNames.join(' ') } : {};
         }}
 
         {...dragAccessors}

@@ -1,10 +1,12 @@
 import { useLayoutEffect, useState } from 'react';
 import { GoogleMapsLink } from './GoogleMapsLink';
 import {
-  buildScheduleCardLine,
   canModifyScheduleByMonth,
-  formatChineseTimeRange,
+  formatScheduleAcUnits,
   formatScheduleDateLabel,
+  formatScheduleDisplayTimeRange,
+  formatScheduleMailInvoiceSummary,
+  formatScheduleTotalPrice,
   getScheduleBlockColor,
 } from '../utils/scheduleCalendar';
 import { computeSchedulePopoverStyle } from '../utils/schedulePopover';
@@ -50,7 +52,7 @@ export function ScheduleSnapshotModal({
   const isAnchored = Boolean(anchor && popoverStyle);
   const dateTimeLabel = [
     formatScheduleDateLabel(schedule.work_date),
-    formatChineseTimeRange(schedule),
+    formatScheduleDisplayTimeRange(schedule),
   ].filter(Boolean).join(' · ');
 
   return (
@@ -85,8 +87,6 @@ export function ScheduleSnapshotModal({
         <div className="schedule-popover__accent" style={{ backgroundColor: blockColor.backgroundColor }} />
 
         <div className="schedule-popover__body">
-          <h2 className="schedule-popover__title">{buildScheduleCardLine(schedule)}</h2>
-
           <ul className="schedule-popover__list schedule-popover__list--compact">
             <li>
               <span className="schedule-popover__label">清洗時間</span>
@@ -108,6 +108,22 @@ export function ScheduleSnapshotModal({
             <li>
               <span className="schedule-popover__label">清洗師傅</span>
               <span className="schedule-popover__value">{schedule.user?.name || '未指定'}</span>
+            </li>
+            <li>
+              <span className="schedule-popover__label">清洗台數</span>
+              <span className="schedule-popover__value">{formatScheduleAcUnits(schedule)}</span>
+            </li>
+            <li>
+              <span className="schedule-popover__label">總金額</span>
+              <span className="schedule-popover__value">{formatScheduleTotalPrice(schedule)}</span>
+            </li>
+            <li>
+              <span className="schedule-popover__label">備註</span>
+              <span className="schedule-popover__value">{schedule.notes?.trim() || '-'}</span>
+            </li>
+            <li>
+              <span className="schedule-popover__label">郵寄／統編</span>
+              <span className="schedule-popover__value">{formatScheduleMailInvoiceSummary(schedule)}</span>
             </li>
           </ul>
         </div>

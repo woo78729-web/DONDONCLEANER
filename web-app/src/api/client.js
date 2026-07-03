@@ -350,6 +350,10 @@ class AcCleaningApi {
     return this.request('POST', '/employee/leaves', { body: payload });
   }
 
+  batchEmployeeLeave(payload) {
+    return this.request('POST', '/employee/leaves/batch', { body: payload });
+  }
+
   deleteEmployeeLeave(leaveId) {
     return this.request('DELETE', `/employee/leaves/${leaveId}`);
   }

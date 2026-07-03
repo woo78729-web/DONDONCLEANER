@@ -310,6 +310,25 @@ export function getVisibleScheduleRange(rangeStart, displayDays = 7) {
   };
 }
 
+export function getCalendarDisplayRange(view, rangeStart, displayDays = 7) {
+  if (view === 'month') {
+    return getMonthRange(rangeStart);
+  }
+
+  if (view === 'agenda') {
+    return getCalendarLoadRange(rangeStart);
+  }
+
+  return getVisibleScheduleRange(rangeStart, displayDays);
+}
+
+export function buildScheduleCalendarEvents(schedules, leaves, dateFrom, dateTo) {
+  const scheduleEvents = schedules.map((schedule) => scheduleToEvent(schedule));
+  const leaveEvents = expandLeavesToEvents(leaves, dateFrom, dateTo);
+
+  return [...leaveEvents, ...scheduleEvents];
+}
+
 export function getAdminCalendarFetchRange(rangeStart, displayDays = 7) {
   const visible = getVisibleScheduleRange(rangeStart, displayDays);
   const month = getCalendarLoadRange(rangeStart);
@@ -412,6 +431,52 @@ export function formatScheduleUnitsAndTotal(schedule) {
   return `${units || '-'} 台｜${total || '-'} 元`;
 }
 
+export function formatScheduleAcUnits(schedule) {
+  const units = schedule?.ac_units ?? parseTaskDetails(schedule?.task_details).ac_units;
+  return units ? `${units} 台` : '-';
+}
+
+export function formatScheduleTotalPrice(schedule) {
+  const total = schedule?.cleaning_price ?? parseTaskDetails(schedule?.task_details).cleaning_price;
+  return total ? `${total} 元` : '-';
+}
+
+export function formatScheduleMailInvoiceSummary(schedule) {
+  if (!schedule) {
+    return '-';
+  }
+
+  const parts = [];
+
+  if (schedule.needs_mail) {
+    const mailParts = ['需郵寄'];
+    if (schedule.mail_recipient) {
+      mailParts.push(`收件：${schedule.mail_recipient}`);
+    }
+    if (schedule.mail_address) {
+      mailParts.push(`地址：${schedule.mail_address}`);
+    }
+    parts.push(mailParts.join(' · '));
+  } else {
+    parts.push('不需郵寄');
+  }
+
+  if (schedule.needs_invoice) {
+    const invoiceParts = ['需統編/發票'];
+    if (schedule.invoice_title) {
+      invoiceParts.push(`抬頭：${schedule.invoice_title}`);
+    }
+    if (schedule.invoice_tax_id) {
+      invoiceParts.push(`統編：${schedule.invoice_tax_id}`);
+    }
+    parts.push(invoiceParts.join(' · '));
+  } else {
+    parts.push('不需統編/發票');
+  }
+
+  return parts.join('；');
+}
+
 export function formatChineseTimeValue(value) {
   const [hourText, minuteText] = formatTimeValue(value).split(':');
   const hour = Number(hourText);
@@ -474,6 +539,12 @@ export const LEAVE_EVENT_COLOR = {
   textColor: '#ffffff',
 };
 
+export const LEAVE_DAY_FILL = '#FBC02D';
+
+export const LEAVE_DAY_BORDER = '#F9A825';
+
+export const LEAVE_SCHEDULE_BACKGROUND = '#FBC02D';
+
 export const PROJECT_STATUS_LABELS = {
   in_progress: '施作中',
   pending_invoice: '完工待發票',
@@ -503,9 +574,9 @@ export function getProjectDurationDays(project) {
 export function getScheduleBlockColor(schedule) {
   if (!schedule || schedule.type === 'leave') {
     return {
-      backgroundColor: '#FBC02D',
-      borderColor: '#F9A825',
-      textColor: '#ffffff',
+      backgroundColor: LEAVE_EVENT_COLOR.backgroundColor,
+      borderColor: LEAVE_EVENT_COLOR.borderColor,
+      textColor: LEAVE_EVENT_COLOR.textColor,
     };
   }
 
@@ -586,14 +657,119 @@ export function getScheduleEventStyle(schedule) {
   }
 
   const colors = getScheduleBlockColor(schedule);
-
-  return {
+  const style = {
     backgroundColor: colors.backgroundColor,
     border: 'none',
     color: colors.textColor,
     fontWeight: 600,
     boxShadow: 'none',
   };
+
+  if (schedule?.cleaning_project_id) {
+    style.boxShadow = '0 0 0 2px #7b1fa2';
+  }
+
+  return style;
+}
+
+export const LEAVE_BAND_START_HOUR = 9;
+
+export const LEAVE_BAND_END_HOUR = 21;
+
+export const PROJECT_BAND_START_HOUR = 9;
+
+export const PROJECT_BAND_END_HOUR = 21;
+
+export function getScheduleDisplayTimes(schedule) {
+  if (schedule?.type === 'leave') {
+    return {
+      start_time: `${String(LEAVE_BAND_START_HOUR).padStart(2, '0')}:00`,
+      end_time: `${String(LEAVE_BAND_END_HOUR).padStart(2, '0')}:00`,
+    };
+  }
+
+  if (schedule?.cleaning_project_id) {
+    return {
+      start_time: `${String(PROJECT_BAND_START_HOUR).padStart(2, '0')}:00`,
+      end_time: `${String(PROJECT_BAND_END_HOUR).padStart(2, '0')}:00`,
+    };
+  }
+
+  return {
+    start_time: schedule?.start_time,
+    end_time: schedule?.end_time,
+  };
+}
+
+export function formatScheduleDisplayTimeRange(schedule) {
+  return formatChineseTimeRange(getScheduleDisplayTimes(schedule));
+}
+
+export function getLeaveBandStyle(startHour, endHour, bandStart = LEAVE_BAND_START_HOUR, bandEnd = LEAVE_BAND_END_HOUR) {
+  const visibleStart = Number(startHour) || LEAVE_BAND_START_HOUR;
+  const visibleEnd = Number(endHour) >= 24 ? 24 : Number(endHour) || LEAVE_BAND_END_HOUR;
+  const totalMinutes = Math.max(1, (visibleEnd - visibleStart) * 60);
+  const bandStartMinutes = Math.max(0, (bandStart - visibleStart) * 60);
+  const bandEndMinutes = Math.min(totalMinutes, (bandEnd - visibleStart) * 60);
+
+  return {
+    top: `${(bandStartMinutes / totalMinutes) * 100}%`,
+    height: `${Math.max(0, (bandEndMinutes - bandStartMinutes) / totalMinutes) * 100}%`,
+  };
+}
+
+export function buildLeaveDateLabelMap(leaves, dateFrom, dateTo) {
+  const map = new Map();
+
+  expandLeavesToEvents(leaves, dateFrom, dateTo).forEach((event) => {
+    const dateKey = formatDateOnly(event.start);
+
+    if (!dateKey || map.has(dateKey)) {
+      return;
+    }
+
+    map.set(dateKey, event.title);
+  });
+
+  return map;
+}
+
+export function buildLeaveBackgroundEvents(leaves, dateFrom, dateTo) {
+  const byDate = new Map();
+
+  expandLeavesToEvents(leaves, dateFrom, dateTo).forEach((event) => {
+    const dateKey = formatDateOnly(event.start);
+
+    if (!dateKey || byDate.has(dateKey)) {
+      return;
+    }
+
+    byDate.set(dateKey, event);
+  });
+
+  return [...byDate.values()];
+}
+
+export function buildLeavesByDate(leaves, dateFrom, dateTo) {
+  const byDate = new Map();
+
+  expandLeavesToEvents(leaves, dateFrom, dateTo).forEach((event) => {
+    const dateKey = formatDateOnly(event.start);
+
+    if (!dateKey) {
+      return;
+    }
+
+    const list = byDate.get(dateKey) || [];
+    list.push(event.resource);
+    byDate.set(dateKey, list);
+  });
+
+  return byDate;
+}
+
+export function buildLeaveEvents(leaves, dateFrom, dateTo) {
+  return buildLeaveBackgroundEvents(leaves, dateFrom, dateTo);
 }
 
 export function expandLeavesToEvents(leaves, dateFrom, dateTo) {
@@ -633,14 +809,38 @@ export function expandLeavesToEvents(leaves, dateFrom, dateTo) {
   return events;
 }
 
+export function extractDateLeaveKeys(leaves, dateFrom, dateTo, userId = null) {
+  const startKey = formatDateOnly(dateFrom);
+  const endKey = formatDateOnly(dateTo);
+
+  return new Set(
+    leaves
+      .filter((leave) => {
+        if (leave.leave_type !== 'date' || !leave.leave_date) {
+          return false;
+        }
+
+        if (userId !== null && String(leave.user_id) !== String(userId)) {
+          return false;
+        }
+
+        const dateKey = formatDateOnly(leave.leave_date);
+
+        return dateKey >= startKey && dateKey <= endKey;
+      })
+      .map((leave) => formatDateOnly(leave.leave_date)),
+  );
+}
+
 export function leaveToEvent(leave, dateStr) {
-  const start = new Date(`${dateStr}T07:00:00`);
-  const end = new Date(`${dateStr}T21:00:00`);
-  const name = leave.user?.name || '師傅';
+  const [year, month, day] = dateStr.split('-').map(Number);
+  const start = new Date(year, month - 1, day, LEAVE_BAND_START_HOUR, 0, 0, 0);
+  const end = new Date(year, month - 1, day, LEAVE_BAND_END_HOUR, 0, 0, 0);
+  const name = leave.user?.name || leave.user?.account || '師傅';
 
   return {
     id: `leave-${leave.id}-${dateStr}`,
-    title: `假 ${name}`,
+    title: `${name} 休假`,
     start,
     end,
     allDay: false,
@@ -677,8 +877,9 @@ export function parseTaskDetails(taskDetails) {
 }
 
 export function scheduleToEvent(schedule) {
-  const start = combineDateTime(schedule.work_date, schedule.start_time);
-  let end = combineDateTime(schedule.work_date, schedule.end_time);
+  const displayTimes = getScheduleDisplayTimes(schedule);
+  const start = combineDateTime(schedule.work_date, displayTimes.start_time);
+  let end = combineDateTime(schedule.work_date, displayTimes.end_time);
 
   if (end.getTime() <= start.getTime()) {
     end = new Date(start.getTime() + 3 * 60 * 60 * 1000);

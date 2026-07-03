@@ -132,8 +132,8 @@ export function getNavItems(user) {
   pushItem(items, user, {
     permission: 'employee.schedules',
     to: '/employee/calendar',
-    label: '班表查詢',
-    shortLabel: '班表',
+    label: '班表月曆',
+    shortLabel: '月曆',
     tabOrder: user.role === 'employee' ? 2 : 12,
     group: 'employee_work',
   });
