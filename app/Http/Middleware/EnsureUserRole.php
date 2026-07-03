@@ -11,11 +11,13 @@ class EnsureUserRole
     /**
      * @param  \Closure(\Illuminate\Http\Request): (\Symfony\Component\HttpFoundation\Response)  $next
      */
-    public function handle(Request $request, Closure $next, string $role): Response
+    public function handle(Request $request, Closure $next, string $roles): Response
     {
         $user = $request->user();
+        $delimiter = str_contains($roles, '|') ? '|' : ',';
+        $allowedRoles = array_values(array_filter(array_map('trim', explode($delimiter, $roles))));
 
-        if (! $user || $user->role !== $role) {
+        if (! $user || ! in_array($user->role, $allowedRoles, true)) {
             return response()->json([
                 'status' => 'error',
                 'message' => '無權限存取此資源',

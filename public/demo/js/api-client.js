@@ -5,15 +5,15 @@
 class AcCleaningApi {
   constructor(baseUrl = '/api') {
     this.baseUrl = baseUrl.replace(/\/$/, '');
-    this.token = localStorage.getItem('ac_token') || '';
+    this.token = sessionStorage.getItem('ac_token') || '';
   }
 
   setToken(token) {
     this.token = token || '';
     if (token) {
-      localStorage.setItem('ac_token', token);
+      sessionStorage.setItem('ac_token', token);
     } else {
-      localStorage.removeItem('ac_token');
+      sessionStorage.removeItem('ac_token');
     }
   }
 

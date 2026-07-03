@@ -16,10 +16,12 @@ return [
 
     'allowed_methods' => ['*'],
 
-    'allowed_origins' => array_filter(array_map(
-        'trim',
-        explode(',', env('CORS_ALLOWED_ORIGINS', '*'))
-    )),
+    'allowed_origins' => env('APP_ENV') === 'production'
+        ? array_filter(array_map('trim', explode(',', env('CORS_ALLOWED_ORIGINS', ''))))
+        : array_filter(array_map(
+            'trim',
+            explode(',', env('CORS_ALLOWED_ORIGINS', 'http://127.0.0.1:5173,http://localhost:5173'))
+        )),
 
     'allowed_origins_patterns' => [],
 

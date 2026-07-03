@@ -13,12 +13,39 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        $middleware->append(\App\Http\Middleware\SecurityHeaders::class);
+
         $middleware->alias([
             'role' => \App\Http\Middleware\EnsureUserRole::class,
+            'employee.onboarded' => \App\Http\Middleware\EnsureEmployeeOnboardingComplete::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(
             fn (Request $request) => $request->is('api/*'),
         );
+
+        $exceptions->render(function (\Illuminate\Http\Exceptions\ThrottleRequestsException $exception, Request $request) {
+            if (! $request->is('api/*')) {
+                return null;
+            }
+
+            return response()->json([
+                'status' => 'error',
+                'message' => '登入嘗試次數過多，請稍後再試',
+                'data' => null,
+            ], 429);
+        });
+
+        $exceptions->render(function (\Illuminate\Auth\AuthenticationException $exception, Request $request) {
+            if (! $request->is('api/*')) {
+                return null;
+            }
+
+            return response()->json([
+                'status' => 'error',
+                'message' => '登入已過期，請重新登入',
+                'data' => null,
+            ], 401);
+        });
     })->create();

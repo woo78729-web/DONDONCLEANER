@@ -15,7 +15,15 @@
     },
     {
       "key": "scheduleId",
-      "value": "1"
+      "value": ""
+    },
+    {
+      "key": "loginAccount",
+      "value": ""
+    },
+    {
+      "key": "loginPassword",
+      "value": ""
     }
   ],
   "item": [
@@ -48,7 +56,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"account\": \"admin1\",\n  \"password\": \"password123\"\n}"
+              "raw": "{\n  \"account\": \"{{loginAccount}}\",\n  \"password\": \"{{loginPassword}}\"\n}"
             },
             "url": "{{baseUrl}}/login"
           }
@@ -79,7 +87,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"account\": \"emp1\",\n  \"password\": \"password123\"\n}"
+              "raw": "{\n  \"account\": \"{{loginAccount}}\",\n  \"password\": \"{{loginPassword}}\"\n}"
             },
             "url": "{{baseUrl}}/login"
           }
@@ -131,7 +139,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"account\": \"emp3\",\n  \"password\": \"password123\",\n  \"name\": \"員工三\"\n}"
+              "raw": "{\n  \"account\": \"emp-new\",\n  \"password\": \"{{loginPassword}}\",\n  \"name\": \"員工三\"\n}"
             },
             "url": "{{baseUrl}}/admin/users"
           }

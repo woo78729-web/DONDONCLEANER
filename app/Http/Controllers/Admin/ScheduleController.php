@@ -5,6 +5,10 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\DailySchedule;
 use App\Models\User;
+use App\Support\CustomerSource;
+use App\Support\ScheduleMutationPolicy;
+use App\Support\SchedulePricing;
+use App\Support\TaitungServiceArea;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -14,6 +18,7 @@ class ScheduleController extends Controller
     public function index(Request $request): JsonResponse
     {
         $validated = $request->validate([
+            'view' => ['nullable', 'in:calendar,list'],
             'date_from' => ['nullable', 'date'],
             'date_to' => [
                 'nullable',
@@ -22,14 +27,208 @@ class ScheduleController extends Controller
             ],
             'user_id' => ['nullable', 'integer', 'exists:users,id'],
             'has_report' => ['nullable', 'boolean'],
+            'customer_phone' => ['nullable', 'string', 'max:50'],
+            'service_areas' => ['nullable', 'string', 'max:500'],
             'page' => ['nullable', 'integer', 'min:1'],
             'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
         ]);
 
-        $query = DailySchedule::query()
+        $query = $this->scheduleQuery($validated);
+
+        if (($validated['view'] ?? 'list') === 'calendar') {
+            $schedules = $query
+                ->orderBy('work_date')
+                ->orderBy('start_time')
+                ->orderBy('id')
+                ->get();
+
+            return $this->success([
+                'filters' => $this->filterPayload($validated),
+                'schedules' => $schedules,
+            ], '班表行事曆查詢成功');
+        }
+
+        $perPage = $validated['per_page'] ?? 15;
+        $schedules = $query
+            ->orderByDesc('work_date')
+            ->orderByDesc('start_time')
+            ->orderByDesc('id')
+            ->paginate(
+                $perPage,
+                ['*'],
+                'page',
+                $validated['page'] ?? 1
+            );
+
+        return $this->success([
+            'filters' => $this->filterPayload($validated),
+            'schedules' => $schedules->items(),
+            'pagination' => [
+                'current_page' => $schedules->currentPage(),
+                'per_page' => $schedules->perPage(),
+                'total' => $schedules->total(),
+                'last_page' => $schedules->lastPage(),
+            ],
+        ], '班表列表查詢成功');
+    }
+
+    public function show(DailySchedule $schedule): JsonResponse
+    {
+        return $this->success(
+            $schedule->load([
+                'user:id,name,account,role,is_active,avatar_path',
+                'dailyReport:id,schedule_id,completed_units,collected_amount,paid_to_company',
+            ]),
+            '班表查詢成功'
+        );
+    }
+
+    public function store(Request $request): JsonResponse
+    {
+        $validated = $request->validate($this->scheduleRules());
+
+        if ($error = $this->validateEmployee($validated['user_id'])) {
+            return $error;
+        }
+
+        if ($error = $this->validateTimeRange($validated['start_time'], $validated['end_time'])) {
+            return $error;
+        }
+
+        if ($error = $this->validateScheduleTime($validated['start_time'])) {
+            return $error;
+        }
+
+        if ($error = $this->validateScheduleTime($validated['end_time'])) {
+            return $error;
+        }
+
+        if ($error = $this->validateScheduleMutationAccess($request, $validated['work_date'])) {
+            return $error;
+        }
+
+        if ($error = $this->validateScheduleTimingRules($validated['work_date'], $validated['start_time'])) {
+            return $error;
+        }
+
+        $validated = $this->normalizeSchedulePayload($validated);
+
+        $schedule = DailySchedule::query()->create($validated);
+
+        return $this->success(
+            $schedule->load([
+                'user:id,name,account,role,is_active,avatar_path',
+                'dailyReport:id,schedule_id,completed_units,collected_amount,paid_to_company',
+            ]),
+            '班表建立成功',
+            201
+        );
+    }
+
+    public function update(Request $request, DailySchedule $schedule): JsonResponse
+    {
+        if ($schedule->dailyReport()->exists()) {
+            return $this->error('此班表已有回報紀錄，無法編輯', 400);
+        }
+
+        $validated = $request->validate($this->scheduleRules(sometimes: true));
+
+        if (isset($validated['user_id']) && ($error = $this->validateEmployee($validated['user_id'], $schedule->user_id))) {
+            return $error;
+        }
+
+        $startTime = $validated['start_time'] ?? $this->formatTime($schedule->start_time);
+        $endTime = $validated['end_time'] ?? $this->formatTime($schedule->end_time);
+
+        if ($error = $this->validateTimeRange($startTime, $endTime)) {
+            return $error;
+        }
+
+        if ($error = $this->validateScheduleTime($startTime)) {
+            return $error;
+        }
+
+        if ($error = $this->validateScheduleTime($endTime)) {
+            return $error;
+        }
+
+        $payload = array_merge([
+            'user_id' => $schedule->user_id,
+            'work_date' => $schedule->work_date?->format('Y-m-d') ?? (string) $schedule->work_date,
+            'start_time' => $this->formatTime($schedule->start_time),
+            'end_time' => $this->formatTime($schedule->end_time),
+            'customer_name' => $schedule->customer_name,
+            'customer_phone' => $schedule->customer_phone,
+            'customer_address' => $schedule->customer_address,
+            'mail_recipient' => $schedule->mail_recipient,
+            'mail_phone' => $schedule->mail_phone,
+            'mail_address' => $schedule->mail_address,
+            'needs_mail' => $schedule->needs_mail,
+            'service_area' => $schedule->service_area,
+            'customer_source' => $schedule->customer_source,
+            'fb_display_name' => $schedule->fb_display_name,
+            'line_display_name' => $schedule->line_display_name,
+            'pricing_lines' => $schedule->pricing_lines,
+            'ac_units' => $schedule->ac_units,
+            'cleaning_price' => $schedule->cleaning_price,
+            'unit_price' => $schedule->unit_price,
+            'needs_invoice' => $schedule->needs_invoice,
+            'notes' => $schedule->notes,
+        ], $validated);
+
+        $validated = $this->normalizeSchedulePayload($payload);
+
+        if ($error = $this->validateScheduleMutationAccess($request, $validated['work_date'], $schedule)) {
+            return $error;
+        }
+
+        if ($error = $this->validateScheduleTimingRules(
+            $validated['work_date'],
+            $validated['start_time'],
+            $schedule
+        )) {
+            return $error;
+        }
+
+        $schedule->fill($validated);
+        $schedule->save();
+
+        return $this->success(
+            $schedule->fresh()->load([
+                'user:id,name,account,role,is_active,avatar_path',
+                'dailyReport:id,schedule_id,completed_units,collected_amount,paid_to_company',
+            ]),
+            '班表更新成功'
+        );
+    }
+
+    public function destroy(Request $request, DailySchedule $schedule): JsonResponse
+    {
+        if ($schedule->dailyReport()->exists()) {
+            return $this->error('此班表已有回報紀錄，無法刪除', 400);
+        }
+
+        $workDate = $schedule->work_date?->format('Y-m-d') ?? (string) $schedule->work_date;
+
+        if ($error = $this->validateScheduleMutationAccess($request, $workDate, $schedule)) {
+            return $error;
+        }
+
+        $schedule->delete();
+
+        return $this->success(null, '班表刪除成功');
+    }
+
+    /**
+     * @param  array<string, mixed>  $validated
+     */
+    private function scheduleQuery(array $validated)
+    {
+        return DailySchedule::query()
             ->with([
-                'user:id,name,account',
-                'dailyReport:id,schedule_id,completed_units,collected_amount',
+                'user:id,name,account,role,is_active,avatar_path',
+                'dailyReport:id,schedule_id,completed_units,collected_amount,paid_to_company',
+                'cleaningProject:id,project_code,title,status,planned_start_date,planned_end_date,total_ac_units',
             ])
             ->when(! empty($validated['date_from']), function ($builder) use ($validated) {
                 $builder->whereDate('work_date', '>=', $validated['date_from']);
@@ -47,95 +246,133 @@ class ScheduleController extends Controller
                     $builder->whereDoesntHave('dailyReport');
                 }
             })
-            ->orderByDesc('work_date')
-            ->orderByDesc('id');
+            ->when(! empty($validated['customer_phone']), function ($builder) use ($validated) {
+                $phone = preg_replace('/\s+/', '', $validated['customer_phone']);
+                $builder->where('customer_phone', 'like', '%'.$phone.'%');
+            })
+            ->when(! empty($validated['service_areas']), function ($builder) use ($validated) {
+                $areas = array_values(array_filter(array_map('trim', explode(',', $validated['service_areas']))));
+                $allowed = array_values(array_intersect($areas, TaitungServiceArea::values()));
 
-        $perPage = $validated['per_page'] ?? 15;
-        $schedules = $query->paginate(
-            $perPage,
-            ['*'],
-            'page',
-            $validated['page'] ?? 1
-        );
-
-        return $this->success([
-            'filters' => array_filter([
-                'date_from' => $validated['date_from'] ?? null,
-                'date_to' => $validated['date_to'] ?? null,
-                'user_id' => $validated['user_id'] ?? null,
-                'has_report' => array_key_exists('has_report', $validated) ? $validated['has_report'] : null,
-            ], fn ($value) => $value !== null),
-            'schedules' => $schedules->items(),
-            'pagination' => [
-                'current_page' => $schedules->currentPage(),
-                'per_page' => $schedules->perPage(),
-                'total' => $schedules->total(),
-                'last_page' => $schedules->lastPage(),
-            ],
-        ], '班表列表查詢成功');
+                if ($allowed !== []) {
+                    $builder->whereIn('service_area', $allowed);
+                }
+            });
     }
 
-    public function show(DailySchedule $schedule): JsonResponse
+    /**
+     * @param  array<string, mixed>  $validated
+     * @return array<string, mixed>
+     */
+    private function filterPayload(array $validated): array
     {
-        return $this->success(
-            $schedule->load([
-                'user:id,name,account',
-                'dailyReport:id,schedule_id,completed_units,collected_amount',
-            ]),
-            '班表查詢成功'
-        );
+        return array_filter([
+            'view' => $validated['view'] ?? null,
+            'date_from' => $validated['date_from'] ?? null,
+            'date_to' => $validated['date_to'] ?? null,
+            'user_id' => $validated['user_id'] ?? null,
+            'has_report' => array_key_exists('has_report', $validated) ? $validated['has_report'] : null,
+            'customer_phone' => $validated['customer_phone'] ?? null,
+            'service_areas' => $validated['service_areas'] ?? null,
+        ], fn ($value) => $value !== null);
     }
 
-    public function store(Request $request): JsonResponse
+    /**
+     * @return array<string, mixed>
+     */
+    private function scheduleRules(bool $sometimes = false): array
     {
-        $validated = $request->validate([
-            'user_id' => ['required', 'integer', 'exists:users,id'],
-            'work_date' => ['required', 'date'],
-            'customer_address' => ['required', 'string'],
-            'customer_phone' => ['required', 'string'],
-            'task_details' => ['required', 'string'],
-            'notes' => ['nullable', 'string'],
-        ]);
+        $required = $sometimes ? 'sometimes' : 'required';
 
-        if ($error = $this->validateEmployee($validated['user_id'])) {
-            return $error;
+        return [
+            'user_id' => [$required, 'integer', 'exists:users,id'],
+            'work_date' => [$required, 'date'],
+            'start_time' => [$required, 'date_format:H:i'],
+            'end_time' => [$required, 'date_format:H:i'],
+            'customer_name' => [$required, 'string', 'max:255'],
+            'customer_phone' => [$required, 'string', 'max:50'],
+            'customer_address' => [$required, 'string', 'max:255'],
+            'mail_recipient' => ['nullable', 'string', 'max:255'],
+            'mail_phone' => ['nullable', 'string', 'max:50'],
+            'mail_address' => ['nullable', 'string', 'max:255'],
+            'needs_mail' => ['nullable', 'boolean'],
+            'service_area' => ['nullable', 'string', Rule::in(TaitungServiceArea::values())],
+            'customer_source' => [$required, 'string', Rule::in(CustomerSource::values())],
+            'fb_display_name' => ['nullable', 'string', 'max:255'],
+            'line_display_name' => ['nullable', 'string', 'max:255'],
+            'pricing_lines' => [$required, 'array', 'min:1', 'max:10'],
+            'pricing_lines.*.ac_units' => ['required', 'integer', 'min:1', 'max:99'],
+            'pricing_lines.*.unit_price' => ['required', 'integer', Rule::in(SchedulePricing::unitPrices())],
+            'needs_invoice' => ['nullable', 'boolean'],
+            'notes' => ['nullable', 'string', 'max:500'],
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
+    private function normalizeSchedulePayload(array $payload): array
+    {
+        $needsInvoice = (bool) ($payload['needs_invoice'] ?? false);
+        $lines = SchedulePricing::normalizeLines(
+            $payload['pricing_lines'] ?? null,
+            isset($payload['ac_units']) ? (int) $payload['ac_units'] : null,
+            isset($payload['unit_price']) ? (int) $payload['unit_price'] : null,
+        );
+        $summary = SchedulePricing::summarizeLines($lines, $needsInvoice);
+
+        $payload['pricing_lines'] = $lines;
+        $payload['ac_units'] = $summary['ac_units'];
+        $payload['unit_price'] = $summary['unit_price'];
+        $payload['needs_invoice'] = $needsInvoice;
+        $payload['cleaning_price'] = $summary['cleaning_price'];
+        $payload['task_details'] = $summary['task_details'];
+        $needsMail = (bool) ($payload['needs_mail'] ?? false);
+        $payload['needs_mail'] = $needsMail;
+
+        if ($needsMail) {
+            $payload['mail_recipient'] = isset($payload['mail_recipient']) && $payload['mail_recipient'] !== ''
+                ? trim((string) $payload['mail_recipient'])
+                : null;
+            $payload['mail_phone'] = isset($payload['mail_phone']) && $payload['mail_phone'] !== ''
+                ? trim((string) $payload['mail_phone'])
+                : null;
+            $payload['mail_address'] = isset($payload['mail_address']) && $payload['mail_address'] !== ''
+                ? trim((string) $payload['mail_address'])
+                : null;
+        } else {
+            $payload['mail_recipient'] = null;
+            $payload['mail_phone'] = null;
+            $payload['mail_address'] = null;
         }
 
-        $schedule = DailySchedule::query()->create($validated);
+        $payload['service_area'] = $payload['service_area'] ?? null;
+        $payload['fb_display_name'] = isset($payload['fb_display_name']) && $payload['fb_display_name'] !== ''
+            ? trim((string) $payload['fb_display_name'])
+            : null;
+        $payload['line_display_name'] = isset($payload['line_display_name']) && $payload['line_display_name'] !== ''
+            ? trim((string) $payload['line_display_name'])
+            : null;
 
-        return $this->success($schedule->load('user:id,name,account'), '班表建立成功', 201);
+        return $payload;
     }
 
-    public function update(Request $request, DailySchedule $schedule): JsonResponse
+    private function validateScheduleTime(string $time): ?JsonResponse
     {
-        if ($schedule->dailyReport()->exists()) {
-            return $this->error('此班表已有回報紀錄，無法編輯', 400);
+        if (! preg_match('/^\d{2}:(00|30)$/', $time)) {
+            return $this->error('預約時間僅能選擇整點或 30 分', 422);
         }
 
-        $validated = $request->validate([
-            'user_id' => ['sometimes', 'integer', 'exists:users,id'],
-            'work_date' => ['sometimes', 'date'],
-            'customer_address' => ['sometimes', 'string'],
-            'customer_phone' => ['sometimes', 'string'],
-            'task_details' => ['sometimes', 'string'],
-            'notes' => ['nullable', 'string'],
-        ]);
-
-        if (isset($validated['user_id']) && ($error = $this->validateEmployee($validated['user_id']))) {
-            return $error;
-        }
-
-        $schedule->fill($validated);
-        $schedule->save();
-
-        return $this->success(
-            $schedule->fresh()->load('user:id,name,account'),
-            '班表更新成功'
-        );
+        return null;
     }
 
-    private function validateEmployee(int $userId): ?JsonResponse
+    private function validateEmployee(int $userId, ?int $currentUserId = null): ?JsonResponse
     {
+        if ($currentUserId !== null && $userId === $currentUserId) {
+            return null;
+        }
+
         $employee = User::query()
             ->where('id', $userId)
             ->where('role', 'employee')
@@ -147,5 +384,51 @@ class ScheduleController extends Controller
         }
 
         return null;
+    }
+
+    private function validateTimeRange(string $startTime, string $endTime): ?JsonResponse
+    {
+        if (strtotime($endTime) <= strtotime($startTime)) {
+            return $this->error('結束時間必須晚於開始時間', 422);
+        }
+
+        return null;
+    }
+
+    private function validateScheduleMutationAccess(
+        Request $request,
+        string $workDate,
+        ?DailySchedule $existing = null
+    ): ?JsonResponse {
+        $message = ScheduleMutationPolicy::canMutateSchedule($request->user(), $workDate, $existing);
+
+        if ($message) {
+            return $this->error($message, 403);
+        }
+
+        return null;
+    }
+
+    private function validateScheduleTimingRules(
+        string $workDate,
+        string $startTime,
+        ?DailySchedule $existing = null
+    ): ?JsonResponse {
+        $message = ScheduleMutationPolicy::validateScheduleTiming($workDate, $startTime, $existing);
+
+        if ($message) {
+            return $this->error($message, 422);
+        }
+
+        return null;
+    }
+
+    private function formatTime(mixed $time): string
+    {
+        if ($time instanceof \DateTimeInterface) {
+            return $time->format('H:i');
+        }
+
+        return substr((string) $time, 0, 5);
     }
 }

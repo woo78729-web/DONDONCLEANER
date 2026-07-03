@@ -1,0 +1,124 @@
+.employee-onboarding-screen {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: 20px 16px calc(20px + var(--safe-bottom, 0px));
+  position: relative;
+}
+
+.employee-onboarding-screen__backdrop {
+  position: fixed;
+  inset: 0;
+  background:
+    radial-gradient(circle at top left, rgba(255, 140, 0, 0.12), transparent 42%),
+    radial-gradient(circle at bottom right, rgba(255, 140, 0, 0.08), transparent 38%),
+    rgba(8, 8, 12, 0.92);
+  z-index: 0;
+}
+
+.employee-onboarding-panel {
+  position: relative;
+  z-index: 1;
+  width: min(720px, 100%);
+  max-height: min(92dvh, 920px);
+  overflow: auto;
+  padding: 22px 20px calc(20px + var(--safe-bottom, 0px));
+  border-radius: 18px;
+}
+
+.employee-onboarding-panel__header {
+  margin-bottom: 16px;
+}
+
+.employee-onboarding-panel__eyebrow {
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--brand-500);
+}
+
+.employee-onboarding-panel__title {
+  margin: 0 0 8px;
+  font-size: 22px;
+  font-weight: 800;
+  color: #fff7ed;
+}
+
+.employee-onboarding-panel__intro {
+  margin: 0;
+}
+
+.employee-onboarding-panel__rules {
+  max-height: min(52vh, 520px);
+  overflow: auto;
+  margin-bottom: 14px;
+  padding: 16px;
+}
+
+.employee-onboarding-check {
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.employee-onboarding-panel__action {
+  width: 100%;
+  min-height: 46px;
+}
+
+.employee-onboarding-password-form {
+  gap: 14px;
+}
+
+.employee-rules-content__title {
+  margin: 0 0 16px;
+  font-size: 20px;
+  font-weight: 800;
+  color: #fff7ed;
+}
+
+.employee-rules-content__section + .employee-rules-content__section {
+  margin-top: 18px;
+}
+
+.employee-rules-content__heading {
+  margin: 0 0 10px;
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--brand-300);
+}
+
+.employee-rules-content__list {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 10px;
+}
+
+.employee-rules-content__list li {
+  line-height: 1.65;
+  color: var(--text);
+}
+
+.employee-rules-page {
+  padding: 18px;
+}
+
+@media (max-width: 768px) {
+  .employee-onboarding-panel {
+    width: 100%;
+    max-height: none;
+    min-height: calc(100dvh - 32px);
+    border-radius: 16px;
+  }
+
+  .employee-onboarding-panel__rules {
+    max-height: none;
+  }
+}

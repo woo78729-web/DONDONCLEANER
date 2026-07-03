@@ -1,0 +1,140 @@
+<?php
+
+namespace App\Support;
+
+use App\Models\DailySchedule;
+
+class EmployeeReportSupport
+{
+    public const POSTAGE_AMOUNT = 28;
+
+    public const INVOICE_SURCHARGE_RATE = 0.05;
+
+    public const INVOICE_TAX_RATE = 0.08;
+
+    /**
+     * @param  array<string, mixed>  $input
+     * @return array<string, mixed>
+     */
+    public static function buildFromSchedule(DailySchedule $schedule, array $input): array
+    {
+        $plannedUnits = (int) $schedule->ac_units;
+        $completedUnits = max(0, (int) ($input['completed_units'] ?? 0));
+        $skippedUnits = max(0, $plannedUnits - $completedUnits);
+
+        $hasTax = (bool) ($input['has_tax'] ?? false);
+        $needsInvoiceAndMail = (bool) ($input['needs_invoice_and_mail'] ?? false);
+        $needsReceiptAndMail = (bool) ($input['needs_receipt_and_mail'] ?? false);
+        $paidToCompany = (bool) ($input['paid_to_company'] ?? false);
+
+        if ($needsInvoiceAndMail && $needsReceiptAndMail) {
+            throw new \InvalidArgumentException('發票寄信與收據寄信不可同時勾選');
+        }
+
+        $skipReason = trim((string) ($input['skip_reason'] ?? ''));
+        if ($skippedUnits > 0 && $skipReason === '') {
+            throw new \InvalidArgumentException('未完成台數需填寫原因');
+        }
+
+        if ($skippedUnits === 0) {
+            $skipReason = null;
+        }
+
+        $lines = SchedulePricing::normalizeLines(
+            $schedule->pricing_lines,
+            $schedule->ac_units,
+            $schedule->unit_price
+        );
+
+        $scaledLines = EmployeeRemittance::scaleLines($lines, $completedUnits, $plannedUnits);
+        $baseAmount = 0;
+
+        foreach ($scaledLines as $line) {
+            $baseAmount += (int) $line['ac_units'] * (int) $line['unit_price'];
+        }
+
+        $needsInvoice = $hasTax || $needsInvoiceAndMail || (bool) $schedule->needs_invoice;
+        $needsMail = $needsInvoiceAndMail || $needsReceiptAndMail || (bool) $schedule->needs_mail;
+
+        $collectedAmount = array_key_exists('collected_amount', $input)
+            ? max(0, (int) $input['collected_amount'])
+            : ($needsInvoice ? (int) round($baseAmount * (1 + self::INVOICE_SURCHARGE_RATE)) : $baseAmount);
+
+        if ($paidToCompany && $collectedAmount > 0) {
+            throw new \InvalidArgumentException('客戶匯款給公司時，實際收取金額請填 0');
+        }
+
+        $temporaryPostage = $needsMail ? self::POSTAGE_AMOUNT : 0;
+        $reportInvoiceTaxCost = ($hasTax || $needsInvoiceAndMail)
+            ? (int) round($baseAmount * self::INVOICE_TAX_RATE)
+            : 0;
+
+        return [
+            'planned_units' => $plannedUnits,
+            'completed_units' => $completedUnits,
+            'skipped_units' => $skippedUnits,
+            'skip_reason' => $skipReason,
+            'unit_mismatch' => $skippedUnits > 0,
+            'has_tax' => $hasTax,
+            'needs_invoice_and_mail' => $needsInvoiceAndMail,
+            'needs_receipt_and_mail' => $needsReceiptAndMail,
+            'temporary_request' => trim((string) ($input['temporary_request'] ?? '')) ?: null,
+            'temporary_postage' => $temporaryPostage,
+            'travel_allowance' => max(0, (int) ($input['travel_allowance'] ?? 0)),
+            'report_invoice_tax_cost' => $reportInvoiceTaxCost,
+            'collected_amount' => $collectedAmount,
+            'paid_to_company' => $paidToCompany,
+            'needs_invoice' => $needsInvoice,
+            'needs_mail' => $needsMail,
+            'base_amount' => $baseAmount,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public static function reportPayload(\App\Models\DailyReport $report): array
+    {
+        $report->loadMissing(['dailySchedule.user:id,name,account', 'companyRemittance']);
+        $financial = self::financialBreakdown($report);
+
+        return [
+            'id' => $report->id,
+            'schedule_id' => $report->schedule_id,
+            'planned_units' => $report->planned_units,
+            'completed_units' => $report->completed_units,
+            'skipped_units' => $report->skipped_units,
+            'skip_reason' => $report->skip_reason,
+            'unit_mismatch' => (bool) $report->unit_mismatch,
+            'has_tax' => (bool) $report->has_tax,
+            'needs_invoice_and_mail' => (bool) $report->needs_invoice_and_mail,
+            'needs_receipt_and_mail' => (bool) $report->needs_receipt_and_mail,
+            'temporary_request' => $report->temporary_request,
+            'temporary_postage' => (int) $report->temporary_postage,
+            'travel_allowance' => (int) $report->travel_allowance,
+            'report_invoice_tax_cost' => (int) $report->report_invoice_tax_cost,
+            'collected_amount' => (int) $report->collected_amount,
+            'paid_to_company' => (bool) $report->paid_to_company,
+            'total_amount' => $financial['total_amount'],
+            'employee_received' => $financial['employee_received'],
+            'company_inbound_amount' => $financial['company_inbound_amount'],
+            'company_remittance' => CompanyRemittanceSupport::reportRemittancePayload($report),
+            'created_at' => $report->created_at?->toDateTimeString(),
+            'daily_schedule' => $report->dailySchedule,
+        ];
+    }
+
+    /**
+     * @return array{
+     *     total_amount:int,
+     *     employee_received:int,
+     *     company_inbound_amount:int|null,
+     *     collect_from_employee:int,
+     *     advance_to_employee:int
+     * }
+     */
+    public static function financialBreakdown(\App\Models\DailyReport $report): array
+    {
+        return CompanyRemittanceSupport::financialBreakdown($report);
+    }
+}

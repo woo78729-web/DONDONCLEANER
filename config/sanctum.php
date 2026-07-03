@@ -50,7 +50,9 @@ return [
     |
     */
 
-    'expiration' => null,
+    'expiration' => (($expiration = env('SANCTUM_EXPIRATION')) === null || $expiration === '')
+        ? null
+        : (int) $expiration,
 
     /*
     |--------------------------------------------------------------------------

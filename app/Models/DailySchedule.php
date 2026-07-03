@@ -9,9 +9,31 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 
 #[Fillable([
     'user_id',
+    'cleaning_project_id',
+    'schedule_kind',
     'work_date',
+    'start_time',
+    'end_time',
+    'customer_name',
     'customer_address',
+    'mail_recipient',
+    'mail_phone',
+    'mail_address',
+    'needs_mail',
+    'service_area',
     'customer_phone',
+    'customer_source',
+    'fb_display_name',
+    'line_display_name',
+    'ac_units',
+    'units_allocated',
+    'cleaning_price',
+    'unit_price',
+    'needs_invoice',
+    'invoice_tax_id',
+    'invoice_title',
+    'mail_tracking_number',
+    'pricing_lines',
     'task_details',
     'notes',
 ])]
@@ -19,7 +41,12 @@ class DailySchedule extends Model
 {
     public function user(): BelongsTo
     {
-        return $this->belongsTo(User::class);
+        return $this->belongsTo(User::class)->withTrashed();
+    }
+
+    public function cleaningProject(): BelongsTo
+    {
+        return $this->belongsTo(CleaningProject::class, 'cleaning_project_id');
     }
 
     public function dailyReport(): HasOne
@@ -35,7 +62,12 @@ class DailySchedule extends Model
     protected function casts(): array
     {
         return [
-            'work_date' => 'date',
+            'work_date' => 'date:Y-m-d',
+            'needs_invoice' => 'boolean',
+            'needs_mail' => 'boolean',
+            'invoice_sent' => 'boolean',
+            'invoice_sent_at' => 'datetime',
+            'pricing_lines' => 'array',
         ];
     }
 }

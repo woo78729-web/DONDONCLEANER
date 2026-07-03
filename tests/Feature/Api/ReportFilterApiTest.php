@@ -8,10 +8,12 @@ use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 use Laravel\Sanctum\Sanctum;
+use Tests\Support\CreatesScheduleTestData;
 use Tests\TestCase;
 
 class ReportFilterApiTest extends TestCase
 {
+    use CreatesScheduleTestData;
     use RefreshDatabase;
 
     public function test_admin_can_filter_reports_by_work_date_and_user(): void
@@ -63,14 +65,10 @@ class ReportFilterApiTest extends TestCase
 
     private function createReport(User $employee, string $workDate, int $units, int $amount): void
     {
-        $schedule = DailySchedule::query()->create([
+        $schedule = DailySchedule::query()->create($this->scheduleAttributes([
             'user_id' => $employee->id,
             'work_date' => $workDate,
-            'customer_address' => '測試地址',
-            'customer_phone' => '0912345678',
-            'task_details' => '11離11000',
-            'notes' => null,
-        ]);
+        ]));
 
         DailyReport::query()->create([
             'schedule_id' => $schedule->id,

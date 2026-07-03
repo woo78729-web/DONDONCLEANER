@@ -40,7 +40,8 @@ class ReportFilter
     {
         return DailyReport::query()
             ->with([
-                'dailySchedule.user:id,name,account',
+                'dailySchedule' => fn ($query) => $query->with('user:id,name,account'),
+                'companyRemittance',
             ])
             ->whereHas('dailySchedule', function ($scheduleQuery) use ($filters) {
                 if (! empty($filters['date_from'])) {

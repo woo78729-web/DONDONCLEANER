@@ -1,0 +1,288 @@
+<?php
+
+namespace Tests\Feature\Api;
+
+use App\Models\DailyReport;
+use App\Models\DailySchedule;
+use App\Models\User;
+use App\Support\CompanyRemittanceSupport;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Hash;
+use Laravel\Sanctum\Sanctum;
+use Tests\Support\CreatesScheduleTestData;
+use Tests\TestCase;
+
+class RemittanceTrackingApiTest extends TestCase
+{
+    use CreatesScheduleTestData;
+    use RefreshDatabase;
+
+    private User $admin;
+
+    private User $employee;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        $this->admin = User::query()->create([
+            'account' => 'admin1',
+            'password' => Hash::make('password123'),
+            'name' => '管理員',
+            'role' => 'admin',
+            'is_active' => true,
+        ]);
+
+        $this->employee = User::query()->create([
+            'account' => 'emp1',
+            'password' => Hash::make('password123'),
+            'name' => '員工',
+            'role' => 'employee',
+            'is_active' => true,
+        ]);
+    }
+
+    public function test_paid_to_company_report_creates_pending_remittance_and_financial_fields(): void
+    {
+        Sanctum::actingAs($this->employee);
+
+        $schedule = DailySchedule::query()->create($this->scheduleAttributes([
+            'user_id' => $this->employee->id,
+            'work_date' => now()->toDateString(),
+            'pricing_lines' => [
+                ['ac_units' => 2, 'unit_price' => 1000],
+            ],
+            'ac_units' => 2,
+            'cleaning_price' => 2000,
+            'unit_price' => 1000,
+        ]));
+
+        $this->postJson('/api/employee/reports', [
+            'schedule_id' => $schedule->id,
+            'completed_units' => 2,
+            'collected_amount' => 0,
+            'paid_to_company' => true,
+        ])->assertCreated()
+            ->assertJsonPath('data.total_amount', 2000)
+            ->assertJsonPath('data.employee_received', 0)
+            ->assertJsonPath('data.company_inbound_amount', 2000)
+            ->assertJsonPath('data.company_remittance.status', 'pending');
+
+        Sanctum::actingAs($this->admin);
+
+        $this->getJson('/api/admin/remittance-tracking?year_month='.now()->format('Y-m'))
+            ->assertOk()
+            ->assertJsonPath('data.pending.0.amount', 2000)
+            ->assertJsonPath('data.totals.pending_amount', 2000);
+    }
+
+    public function test_confirmed_remittance_counts_toward_accounting_hongyi_transfer(): void
+    {
+        Sanctum::actingAs($this->admin);
+
+        $schedule = DailySchedule::query()->create($this->scheduleAttributes([
+            'user_id' => $this->employee->id,
+            'work_date' => now()->toDateString(),
+            'pricing_lines' => [
+                ['ac_units' => 2, 'unit_price' => 1000],
+            ],
+            'ac_units' => 2,
+            'cleaning_price' => 2000,
+            'unit_price' => 1000,
+        ]));
+
+        $report = DailyReport::query()->create([
+            'schedule_id' => $schedule->id,
+            'planned_units' => 2,
+            'completed_units' => 2,
+            'collected_amount' => 0,
+            'paid_to_company' => true,
+        ]);
+        CompanyRemittanceSupport::syncForReport($report);
+        $remittanceId = $report->fresh()->companyRemittance->id;
+
+        $this->getJson('/api/admin/accounting?year_month='.now()->format('Y-m'))
+            ->assertOk()
+            ->assertJsonPath('data.totals.company_transfer', 0);
+
+        $this->patchJson("/api/admin/remittance-tracking/{$remittanceId}/confirm")
+            ->assertOk()
+            ->assertJsonPath('data.status', 'confirmed');
+
+        $this->getJson('/api/admin/accounting?year_month='.now()->format('Y-m'))
+            ->assertOk()
+            ->assertJsonPath('data.totals.company_transfer', 2000);
+    }
+
+    public function test_remind_marks_remittance_and_alerts_respect_snooze(): void
+    {
+        Sanctum::actingAs($this->admin);
+
+        $schedule = DailySchedule::query()->create($this->scheduleAttributes([
+            'user_id' => $this->employee->id,
+            'work_date' => now()->subDays(20)->toDateString(),
+            'pricing_lines' => [
+                ['ac_units' => 1, 'unit_price' => 1000],
+            ],
+            'ac_units' => 1,
+            'cleaning_price' => 1000,
+            'unit_price' => 1000,
+        ]));
+
+        $report = DailyReport::query()->create([
+            'schedule_id' => $schedule->id,
+            'planned_units' => 1,
+            'completed_units' => 1,
+            'collected_amount' => 0,
+            'paid_to_company' => true,
+            'created_at' => now()->subDays(20),
+            'updated_at' => now()->subDays(20),
+        ]);
+        CompanyRemittanceSupport::syncForReport($report);
+        $remittanceId = $report->fresh()->companyRemittance->id;
+        $remittance = $report->fresh()->companyRemittance;
+        $remittance->created_at = now()->subDays(20);
+        $remittance->saveQuietly();
+
+        $this->getJson('/api/admin/remittance-tracking/alerts')
+            ->assertOk()
+            ->assertJsonPath('data.count', 1);
+
+        $this->patchJson("/api/admin/remittance-tracking/{$remittanceId}/remind")
+            ->assertOk()
+            ->assertJsonPath('data.status', 'reminded');
+
+        $this->getJson('/api/admin/remittance-tracking/alerts')
+            ->assertOk()
+            ->assertJsonPath('data.count', 0);
+    }
+
+    public function test_remittance_job_shows_total_amount_advance_and_payout(): void
+    {
+        Sanctum::actingAs($this->admin);
+
+        $schedule = DailySchedule::query()->create($this->scheduleAttributes([
+            'user_id' => $this->employee->id,
+            'work_date' => now()->toDateString(),
+            'needs_invoice' => true,
+            'pricing_lines' => [
+                ['ac_units' => 70, 'unit_price' => 1000],
+            ],
+            'ac_units' => 70,
+            'cleaning_price' => 73500,
+            'unit_price' => 1000,
+        ]));
+
+        $report = DailyReport::query()->create([
+            'schedule_id' => $schedule->id,
+            'planned_units' => 70,
+            'completed_units' => 70,
+            'has_tax' => true,
+            'collected_amount' => 0,
+            'paid_to_company' => true,
+            'report_invoice_tax_cost' => 5600,
+        ]);
+        CompanyRemittanceSupport::syncForReport($report);
+
+        $this->getJson('/api/admin/accounting?year_month='.now()->format('Y-m'))
+            ->assertOk()
+            ->assertJsonPath('data.employees.0.total_job_amount', 73500)
+            ->assertJsonPath('data.employees.0.employee_cash_received', 0)
+            ->assertJsonPath('data.employees.0.advance_to_employee', 42000)
+            ->assertJsonPath('data.employees.0.company_inbound_expected', 73500)
+            ->assertJsonPath('data.employees.0.payout_from_finance', 42000);
+
+        Sanctum::actingAs($this->employee);
+
+        $this->getJson('/api/employee/reports/summary?year_month='.now()->format('Y-m'))
+            ->assertOk()
+            ->assertJsonPath('data.total_job_amount', 73500)
+            ->assertJsonPath('data.employee_cash_received', 0)
+            ->assertJsonPath('data.advance_from_company_jobs', 42000)
+            ->assertJsonPath('data.payment_to_finance', 0)
+            ->assertJsonPath('data.payout_from_finance', 42000);
+    }
+
+    public function test_mixed_cash_and_remittance_calculates_payment_to_finance(): void
+    {
+        Sanctum::actingAs($this->employee);
+
+        $cashSchedule = DailySchedule::query()->create($this->scheduleAttributes([
+            'user_id' => $this->employee->id,
+            'work_date' => now()->toDateString(),
+            'pricing_lines' => [
+                ['ac_units' => 150, 'unit_price' => 1000],
+            ],
+            'ac_units' => 150,
+            'cleaning_price' => 150000,
+            'unit_price' => 1000,
+        ]));
+
+        DailyReport::query()->create([
+            'schedule_id' => $cashSchedule->id,
+            'planned_units' => 150,
+            'completed_units' => 150,
+            'collected_amount' => 150000,
+            'paid_to_company' => false,
+        ]);
+
+        $remitSchedule = DailySchedule::query()->create($this->scheduleAttributes([
+            'user_id' => $this->employee->id,
+            'work_date' => now()->toDateString(),
+            'pricing_lines' => [
+                ['ac_units' => 50, 'unit_price' => 1000],
+            ],
+            'ac_units' => 50,
+            'cleaning_price' => 50000,
+            'unit_price' => 1000,
+        ]));
+
+        $remitReport = DailyReport::query()->create([
+            'schedule_id' => $remitSchedule->id,
+            'planned_units' => 50,
+            'completed_units' => 50,
+            'collected_amount' => 0,
+            'paid_to_company' => true,
+        ]);
+        CompanyRemittanceSupport::syncForReport($remitReport);
+
+        $this->getJson('/api/employee/reports/summary?year_month='.now()->format('Y-m'))
+            ->assertOk()
+            ->assertJsonPath('data.remittance_due', 60000)
+            ->assertJsonPath('data.advance_from_company_jobs', 30000)
+            ->assertJsonPath('data.payment_to_finance', 30000)
+            ->assertJsonPath('data.own_amount', 120000);
+    }
+
+    public function test_remittance_tracking_backfills_missing_records_for_paid_to_company_reports(): void
+    {
+        Sanctum::actingAs($this->admin);
+
+        $yearMonth = now()->format('Y-m');
+
+        $schedule = DailySchedule::query()->create($this->scheduleAttributes([
+            'user_id' => $this->employee->id,
+            'work_date' => now()->toDateString(),
+            'customer_name' => '匯款客戶',
+            'pricing_lines' => [
+                ['ac_units' => 2, 'unit_price' => 1000],
+            ],
+            'ac_units' => 2,
+            'cleaning_price' => 2000,
+            'unit_price' => 1000,
+        ]));
+
+        DailyReport::query()->create([
+            'schedule_id' => $schedule->id,
+            'planned_units' => 2,
+            'completed_units' => 2,
+            'collected_amount' => 0,
+            'paid_to_company' => true,
+        ]);
+
+        $this->getJson('/api/admin/remittance-tracking?year_month='.$yearMonth)
+            ->assertOk()
+            ->assertJsonPath('data.pending.0.amount', 2000)
+            ->assertJsonPath('data.totals.pending_amount', 2000);
+    }
+}
