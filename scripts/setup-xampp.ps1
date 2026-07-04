@@ -1,5 +1,5 @@
 # 執行方式（請用「以系統管理員身分執行」開 PowerShell）：
-#   cd C:\Users\ATai\Documents\冷氣
+#   cd C:\Users\ATai\Documents\東東
 #   .\scripts\setup-xampp.ps1
 #
 # 完成後在 XAMPP 控制台 Stop → Start Apache

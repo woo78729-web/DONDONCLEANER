@@ -19,5 +19,5 @@ if errorlevel 1 (
     exit /b 1
 )
 
-powershell -ExecutionPolicy Bypass -File "%~dp0scripts\start-office.ps1"
+powershell -ExecutionPolicy Bypass -NoProfile -File "%~dp0scripts\start-office.ps1"
 pause
