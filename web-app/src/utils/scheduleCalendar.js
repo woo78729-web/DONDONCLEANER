@@ -172,6 +172,11 @@ export function getDefaultStartTime(workDate, userId, schedules = []) {
 
 export function buildScheduleSuccessSummary(form, employees = [], { mode = 'create' } = {}) {
   const employee = employees.find((item) => String(item.id) === String(form.user_id));
+  const pricing = summarizePricingLines(form.pricing_lines, Boolean(form.needs_invoice));
+  const serviceAddresses = normalizeServiceAddresses(form);
+  const acUnits = serviceAddresses.length > 1
+    ? serviceAddresses.reduce((total, row) => total + (Number(row.ac_units) || 0), 0)
+    : Number(pricing.ac_units) || 0;
 
   return {
     mode,
@@ -182,7 +187,17 @@ export function buildScheduleSuccessSummary(form, employees = [], { mode = 'crea
     customer_address: form.customer_address,
     customer_phone: form.customer_phone,
     employee_name: employee?.name || '未指定',
+    ac_units: acUnits,
+    cleaning_price: Number(pricing.cleaning_price) || 0,
   };
+}
+
+export function buildScheduleSuccessScreenshotName(summary) {
+  const prefix = summary?.mode === 'update' ? '班表更新' : '預約完成';
+  const customerName = String(summary?.customer_name || '客戶').replace(/[\\/:*?"<>|]/g, '').trim() || '客戶';
+  const dateText = formatDateOnly(summary?.work_date) || 'date';
+
+  return `${prefix}-${customerName}-${dateText}.png`;
 }
 
 export function roundToScheduleTime(value) {

@@ -3153,6 +3153,20 @@
   word-break: break-word;
 }
 
+.schedule-success-modal__hint {
+  margin: 0 0 14px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #81c784;
+  text-align: center;
+}
+
+.schedule-success-modal__actions {
+  display: grid;
+  gap: 10px;
+}
+
+.schedule-success-modal__download,
 .schedule-success-modal__action {
   width: 100%;
   min-width: 0;
