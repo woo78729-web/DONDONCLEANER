@@ -59,7 +59,7 @@ class ScheduleCustomerServicePolicy
         }
 
         $payload['pricing_lines'] = [
-            ['ac_units' => $totalUnits, 'unit_price' => 1500],
+            ['ac_units' => $totalUnits, 'unit_price' => 1500, 'is_taxable' => false],
         ];
         $needsInvoice = (bool) ($payload['needs_invoice'] ?? false);
         $payload['needs_invoice'] = $needsInvoice;
@@ -126,6 +126,7 @@ class ScheduleCustomerServicePolicy
                 [
                     'ac_units' => $totalUnits,
                     'unit_price' => (int) ($first['unit_price'] ?? $unitPrice),
+                    'is_taxable' => (bool) ($first['is_taxable'] ?? false),
                 ],
             ];
 
@@ -133,6 +134,7 @@ class ScheduleCustomerServicePolicy
                 $merged[] = [
                     'ac_units' => (int) ($existingLines[$index]['ac_units'] ?? 0),
                     'unit_price' => (int) ($existingLines[$index]['unit_price'] ?? $unitPrice),
+                    'is_taxable' => (bool) ($existingLines[$index]['is_taxable'] ?? false),
                 ];
             }
 
@@ -140,7 +142,7 @@ class ScheduleCustomerServicePolicy
         }
 
         return [
-            ['ac_units' => $totalUnits, 'unit_price' => $unitPrice],
+            ['ac_units' => $totalUnits, 'unit_price' => $unitPrice, 'is_taxable' => false],
         ];
     }
 }

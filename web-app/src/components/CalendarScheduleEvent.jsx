@@ -12,7 +12,7 @@ export function CalendarScheduleEvent({ event, view, hidePrice = false }) {
     if (compact) {
       return (
         <div className="calendar-event-content calendar-event-content--compact">
-          <ScheduleTechnicianBadge user={schedule.user} size="xs" centered showName={false} />
+          <ScheduleTechnicianBadge user={schedule.user} size="xs" showName={false} />
           <span className="calendar-event-content__title">休假</span>
         </div>
       );
@@ -23,7 +23,6 @@ export function CalendarScheduleEvent({ event, view, hidePrice = false }) {
         <ScheduleTechnicianBadge
           user={schedule.user}
           size="xs"
-          centered
           showName
           className="calendar-event-detail__technician"
         />
@@ -37,7 +36,7 @@ export function CalendarScheduleEvent({ event, view, hidePrice = false }) {
     return (
       <div className="calendar-event-content calendar-event-content--compact">
         {schedule && (
-          <ScheduleTechnicianBadge user={schedule.user} size="xs" centered showName={false} />
+          <ScheduleTechnicianBadge user={schedule.user} size="xs" showName={false} />
         )}
         <span className="calendar-event-content__title">{event.title}</span>
       </div>
@@ -45,11 +44,11 @@ export function CalendarScheduleEvent({ event, view, hidePrice = false }) {
   }
 
   return (
-    <div className="calendar-event-detail" data-schedule-id={schedule.id}>
+    <div className="calendar-event-detail" data-schedule-id={schedule.id} title={buildScheduleCardLine(schedule, { hidePrice })}>
       <ScheduleTechnicianBadge
         user={schedule.user}
         size="xs"
-        centered
+        showName
         className="calendar-event-detail__technician"
       />
       <p className="calendar-event-detail__line">{buildScheduleCardLine(schedule, { hidePrice })}</p>

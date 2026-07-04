@@ -15,6 +15,7 @@ import { loadAvailabilityDays } from '../utils/taitungAreas';
 import {
   applyPriceCalculation,
   buildSchedulePayload,
+  buildSchedulePayloads,
   buildScheduleSuccessSummary,
   canModifyScheduleByMonth,
   emptyScheduleForm,
@@ -138,15 +139,18 @@ export default function AdminRegionalSchedulingPage() {
     setError('');
     setMessage('');
 
-    let payload;
+    let payloads;
 
     try {
-      payload = buildSchedulePayload(form, {
-        original: editId ? editingSchedule : null,
-        userRole,
-      });
+      payloads = editId
+        ? [buildSchedulePayload(form, {
+          original: editingSchedule,
+          userRole,
+        })]
+        : buildSchedulePayloads(form, { userRole });
     } catch (err) {
       setError(err.message);
+      window.alert(err.message);
       return;
     }
 
@@ -156,10 +160,12 @@ export default function AdminRegionalSchedulingPage() {
       });
 
       if (editId) {
-        await api.updateSchedule(editId, payload);
+        await api.updateSchedule(editId, payloads[0]);
         closeModal();
       } else {
-        await api.createSchedule(payload);
+        for (const item of payloads) {
+          await api.createSchedule(item);
+        }
         closeModal();
       }
 
@@ -167,6 +173,7 @@ export default function AdminRegionalSchedulingPage() {
       loadSchedules().catch((err) => setError(err.message));
     } catch (err) {
       setError(err.message);
+      window.alert(err.message);
     }
   }
 
@@ -265,6 +272,7 @@ export default function AdminRegionalSchedulingPage() {
           editId={editId}
           canDelete={Boolean(editId) && canModifyScheduleByMonth(editingSchedule, userRole)}
           userRole={userRole}
+          originalSchedule={editId ? editingSchedule : null}
           allSchedules={allSchedules}
           leaves={leaves}
           error={error}

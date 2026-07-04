@@ -197,7 +197,6 @@ export function AddressAutocompleteInput({
         className="address-autocomplete-hidden-input"
         value={value || ''}
         readOnly
-        required={required}
         onChange={() => {}}
       />
       {widgetError && (

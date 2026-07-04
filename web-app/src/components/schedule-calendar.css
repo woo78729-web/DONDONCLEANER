@@ -113,7 +113,7 @@
 }
 
 .schedule-workspace.schedule-calendar .rbc-timeslot-group {
-  min-height: 26px;
+  min-height: 32px;
   border-color: #f1f3f4;
 }
 
@@ -1479,16 +1479,16 @@
 
 .schedule-workspace.schedule-calendar .rbc-event {
   border-radius: 8px;
-  padding: 5px 8px;
-  font-size: 12px;
-  line-height: 1.4;
+  padding: 4px 6px;
+  font-size: 11px;
+  line-height: 1.25;
   box-shadow: 0 1px 2px rgba(60, 64, 67, 0.12);
   border: none !important;
   cursor: pointer;
-  align-items: center !important;
-  justify-content: center !important;
-  text-align: center;
-  overflow: visible;
+  align-items: flex-start !important;
+  justify-content: flex-start !important;
+  text-align: left;
+  overflow: hidden;
 }
 
 .schedule-workspace.schedule-calendar .rbc-month-view .rbc-event {
@@ -1498,22 +1498,32 @@
 }
 
 .schedule-workspace.schedule-calendar .rbc-day-slot .rbc-event {
-  align-items: center !important;
-  justify-content: center !important;
+  align-items: flex-start !important;
+  justify-content: flex-start !important;
   margin-left: 2px;
   margin-right: 2px;
   max-width: calc(100% - 4px);
 }
 
+.schedule-workspace.schedule-calendar .rbc-day-slot .rbc-event .rbc-event-content {
+  height: auto;
+  max-height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  flex: 0 0 auto;
+  align-self: flex-start;
+}
+
 .schedule-workspace.schedule-calendar .rbc-event .rbc-event-content {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
+  align-items: flex-start;
+  justify-content: flex-start;
   width: 100%;
-  height: 100%;
-  min-height: 1em;
-  text-align: center;
+  height: auto;
+  max-height: 100%;
+  min-height: 0;
+  text-align: left;
 }
 
 .schedule-workspace.schedule-calendar .rbc-event.rbc-event-source-line {
@@ -1641,19 +1651,22 @@
 
 .calendar-event-detail__technician {
   margin: 0;
+  align-self: flex-start;
+  max-width: 100%;
+  flex-shrink: 0;
 }
 
 .calendar-event-detail__technician .employee-avatar {
-  width: 24px;
-  height: 24px;
-  border: 2px solid rgba(255, 255, 255, 0.92);
+  width: 18px;
+  height: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.92);
   background: rgba(255, 255, 255, 0.2);
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.16);
   flex-shrink: 0;
 }
 
 .calendar-event-detail__technician .employee-avatar__initials {
-  font-size: 12px;
+  font-size: 10px;
   font-weight: 800;
   color: #fff;
   line-height: 1;
@@ -1669,21 +1682,22 @@
 }
 
 .calendar-event-detail__technician .schedule-technician-badge__name {
-  font-size: 10px;
+  font-size: 9px;
   color: inherit;
   opacity: 0.96;
+  max-width: 5.5em;
 }
 
 .calendar-event-content--compact {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
-  justify-content: center;
-  gap: 3px;
+  justify-content: flex-start;
+  gap: 6px;
   min-width: 0;
   width: 100%;
   height: 100%;
-  text-align: center;
+  text-align: left;
 }
 
 .calendar-event-content--compact .employee-avatar {
@@ -1707,35 +1721,50 @@
 .calendar-event-detail {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 2px;
   width: 100%;
-  height: 100%;
-  line-height: 1.4;
-  overflow: visible;
-  text-align: center;
-  padding: 3px 8px;
+  height: auto;
+  max-height: 100%;
+  min-height: 0;
+  line-height: 1.25;
+  overflow: hidden;
+  text-align: left;
+  padding: 0;
   box-sizing: border-box;
+  flex: 0 0 auto;
 }
 
 .calendar-event-detail__line {
   margin: 0;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 600;
   white-space: normal;
   word-break: break-word;
-  text-align: center;
+  text-align: left;
   width: 100%;
+  min-height: 0;
+  flex: 0 0 auto;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  max-height: calc(1.25em * 2);
 }
 
 .calendar-event-detail__time {
   margin: 0;
-  font-size: 11px;
+  font-size: 9px;
   font-weight: 500;
   opacity: 0.92;
-  text-align: center;
+  text-align: left;
   width: 100%;
+  flex-shrink: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .employee-strip {
@@ -1887,6 +1916,10 @@
   flex-wrap: wrap;
   grid-column: 1 / -1;
   margin-top: 4px;
+}
+
+.modal-actions .alert {
+  flex: 1 1 100%;
 }
 
 .schedule-detail {
@@ -3243,6 +3276,62 @@
   white-space: nowrap;
 }
 
+.pricing-line__tax {
+  align-self: center;
+  white-space: nowrap;
+  margin: 0;
+}
+
+.service-addresses__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.service-addresses__list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.service-address-row {
+  padding: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.service-address-row__heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.service-address-row__sequence {
+  font-size: 14px;
+  font-weight: 600;
+  color: #f4f4f5;
+}
+
+.service-address-row__grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.service-address-row__grid--multi {
+  grid-template-columns: 120px minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.service-address-row__same-contact {
+  align-self: end;
+  margin: 0;
+}
+
 .schedule-calendar--avatars .rbc-event {
   overflow: visible;
 }
@@ -3250,11 +3339,11 @@
 .calendar-event-content {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 6px;
   min-width: 0;
   width: 100%;
-  text-align: center;
+  text-align: left;
 }
 
 .calendar-event-content__title {

@@ -15,41 +15,46 @@ class SchedulePricing
     public static function calculateTotal(int $acUnits, int $unitPrice, bool $needsInvoice): int
     {
         return self::summarizeLines([
-            ['ac_units' => $acUnits, 'unit_price' => $unitPrice],
+            ['ac_units' => $acUnits, 'unit_price' => $unitPrice, 'is_taxable' => $needsInvoice],
         ], $needsInvoice)['cleaning_price'];
     }
 
     /**
-     * @param  list<array{ac_units:int, unit_price:int}>  $lines
-     * @return array{ac_units:int, cleaning_price:int, unit_price:int, task_details:string}
+     * @param  list<array{ac_units:int, unit_price:int, is_taxable?:bool}>  $lines
+     * @return array{ac_units:int, cleaning_price:int, unit_price:int, task_details:string, needs_invoice:bool}
      */
-    public static function summarizeLines(array $lines, bool $needsInvoice): array
+    public static function summarizeLines(array $lines, bool $needsInvoice = false): array
     {
         $totalUnits = 0;
-        $base = 0;
+        $cleaningPrice = 0;
         $parts = [];
+        $hasTaxableLine = false;
 
         foreach ($lines as $line) {
             $units = (int) ($line['ac_units'] ?? 0);
             $unitPrice = (int) ($line['unit_price'] ?? 0);
-            $totalUnits += $units;
-            $base += $units * $unitPrice;
-            $parts[] = $units.'台'.$unitPrice;
-        }
+            $lineBase = $units * $unitPrice;
+            $isTaxable = (bool) ($line['is_taxable'] ?? false);
+            $lineTotal = $isTaxable ? (int) round($lineBase * 1.05) : $lineBase;
 
-        $cleaningPrice = $needsInvoice ? (int) round($base * 1.05) : $base;
+            $totalUnits += $units;
+            $cleaningPrice += $lineTotal;
+            $hasTaxableLine = $hasTaxableLine || $isTaxable;
+            $parts[] = $units.'台'.$unitPrice.($isTaxable ? '(含稅)' : '');
+        }
 
         return [
             'ac_units' => $totalUnits,
             'unit_price' => (int) ($lines[0]['unit_price'] ?? 1500),
             'cleaning_price' => $cleaningPrice,
+            'needs_invoice' => $needsInvoice || $hasTaxableLine,
             'task_details' => implode('+', $parts).'='.$cleaningPrice,
         ];
     }
 
     /**
      * @param  mixed  $lines
-     * @return list<array{ac_units:int, unit_price:int}>
+     * @return list<array{ac_units:int, unit_price:int, is_taxable:bool}>
      */
     public static function normalizeLines(mixed $lines, ?int $fallbackUnits = null, ?int $fallbackUnitPrice = null): array
     {
@@ -71,6 +76,7 @@ class SchedulePricing
                 $normalized[] = [
                     'ac_units' => $units,
                     'unit_price' => $unitPrice,
+                    'is_taxable' => (bool) ($line['is_taxable'] ?? false),
                 ];
             }
 
@@ -84,6 +90,7 @@ class SchedulePricing
             'unit_price' => in_array((int) ($fallbackUnitPrice ?? 1500), self::unitPrices(), true)
                 ? (int) ($fallbackUnitPrice ?? 1500)
                 : 1500,
+            'is_taxable' => false,
         ]];
     }
 }

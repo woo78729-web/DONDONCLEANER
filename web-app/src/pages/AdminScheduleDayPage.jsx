@@ -14,6 +14,7 @@ import { useAuth } from '../context/AuthContext';
 import { canManageSchedulePricing } from '../utils/permissions';
 import {
   buildSchedulePayload,
+  buildSchedulePayloads,
   buildScheduleCardLine,
   buildScheduleSuccessSummary,
   canModifyScheduleByMonth,
@@ -234,15 +235,18 @@ export default function AdminScheduleDayPage() {
     setError('');
     setMessage('');
 
-    let payload;
+    let payloads;
 
     try {
-      payload = buildSchedulePayload(form, {
-        original: editId ? editingSchedule : null,
-        userRole,
-      });
+      payloads = editId
+        ? [buildSchedulePayload(form, {
+          original: editingSchedule,
+          userRole,
+        })]
+        : buildSchedulePayloads(form, { userRole });
     } catch (err) {
       setError(err.message);
+      window.alert(err.message);
       return;
     }
 
@@ -252,10 +256,12 @@ export default function AdminScheduleDayPage() {
       });
 
       if (editId) {
-        await api.updateSchedule(editId, payload);
+        await api.updateSchedule(editId, payloads[0]);
         closeModal();
       } else {
-        await api.createSchedule(payload);
+        for (const item of payloads) {
+          await api.createSchedule(item);
+        }
         closeModal();
       }
 
@@ -263,6 +269,7 @@ export default function AdminScheduleDayPage() {
       loadSchedules().catch((err) => setError(err.message));
     } catch (err) {
       setError(err.message);
+      window.alert(err.message);
     }
   }
 
@@ -311,7 +318,7 @@ export default function AdminScheduleDayPage() {
             <p className="hint">
               共 {sortedSchedules.length} 筆派工
               {dayLeaveEvents.length ? `、${dayLeaveEvents.length} 筆排休` : ''}
-              。格式：地址＋電話＋[台數離金額]，點選派工可展開詳細視窗。
+              。格式：客戶名稱)地址 電話 [台數離金額]，點選派工可展開詳細視窗。
             </p>
           </div>
           <div className="button-row">
@@ -453,6 +460,7 @@ export default function AdminScheduleDayPage() {
         editId={editId}
         canDelete={Boolean(editId) && canModifyScheduleByMonth(editingSchedule, userRole)}
         userRole={userRole}
+        originalSchedule={editId ? editingSchedule : null}
         allSchedules={schedules}
         leaves={leaves}
         error={error}

@@ -1,10 +1,14 @@
 import {
   applyPriceCalculation,
   createPricingLine,
+  createServiceAddress,
   DEFAULT_FIRST_SHIFT_START,
   DEFAULT_SECOND_SHIFT_START,
+  formatScheduleValidationAlert,
   getMinScheduleWorkDate,
+  hasTaxablePricingLine,
   patchScheduleForm,
+  validateScheduleForm,
   CUSTOMER_SOURCE_OPTIONS,
   SCHEDULE_TIME_OPTIONS,
   UNIT_PRICE_OPTIONS,
@@ -12,6 +16,7 @@ import {
 import { TAITUNG_SERVICE_AREAS } from '../utils/taitungAreas';
 import { canManageSchedulePricing } from '../utils/permissions';
 import { Link } from 'react-router-dom';
+import { useEffect, useState } from 'react';
 import { GoogleMapsLink } from './GoogleMapsLink';
 import { AddressAutocompleteInput } from './AddressAutocompleteInput';
 import { CustomerWashHistory } from './CustomerWashHistory';
@@ -39,6 +44,7 @@ export function ScheduleFormModal({
   editId,
   canDelete = false,
   error = '',
+  originalSchedule = null,
   userRole = 'admin',
   allSchedules = [],
   leaves = [],
@@ -47,8 +53,35 @@ export function ScheduleFormModal({
   onSubmit,
   onDelete,
 }) {
+  const [validationError, setValidationError] = useState('');
+
+  useEffect(() => {
+    if (open) {
+      setValidationError('');
+    }
+  }, [open]);
+
   if (!open) {
     return null;
+  }
+
+  function handleFormSubmit(event) {
+    event.preventDefault();
+    setValidationError('');
+
+    const validation = validateScheduleForm(form, {
+      userRole,
+      original: originalSchedule,
+    });
+
+    if (!validation.ok) {
+      const alertMessage = formatScheduleValidationAlert(validation.messages);
+      setValidationError(validation.messages.join('、'));
+      window.alert(alertMessage);
+      return;
+    }
+
+    onSubmit(event);
   }
 
   function handleChange(partial) {
@@ -60,6 +93,12 @@ export function ScheduleFormModal({
       customer_name: schedule.customer_name || form.customer_name,
       customer_phone: schedule.customer_phone || form.customer_phone,
       customer_address: schedule.customer_address || form.customer_address,
+      service_addresses: [{
+        ...(form.service_addresses?.[0] || createServiceAddress()),
+        address: schedule.customer_address || form.customer_address,
+        phone: schedule.customer_phone || form.customer_phone,
+        same_as_customer: true,
+      }],
       service_area: schedule.service_area || form.service_area,
       customer_source: schedule.customer_source || form.customer_source,
     });
@@ -107,7 +146,15 @@ export function ScheduleFormModal({
   function toggleNeedsInvoice(checked) {
     const patch = checked
       ? { needs_invoice: true }
-      : { needs_invoice: false, invoice_tax_id: '', invoice_title: '' };
+      : {
+        needs_invoice: false,
+        invoice_tax_id: '',
+        invoice_title: '',
+        pricing_lines: (form.pricing_lines || [createPricingLine()]).map((line) => ({
+          ...line,
+          is_taxable: false,
+        })),
+      };
 
     if (canManagePricing) {
       onChange(applyPriceCalculation(patchScheduleForm(form, patch)));
@@ -115,6 +162,50 @@ export function ScheduleFormModal({
     }
 
     onChange(patchScheduleForm(form, patch));
+  }
+
+  const serviceAddresses = form.service_addresses?.length
+    ? form.service_addresses
+    : [createServiceAddress({
+      address: form.customer_address,
+      phone: form.customer_phone,
+      ac_units: form.ac_units || '1',
+    })];
+  const hasMultipleAddresses = serviceAddresses.length > 1;
+  const invoiceAutoEnabled = hasTaxablePricingLine(form.pricing_lines);
+
+  function updateServiceAddress(rowId, partial) {
+    const nextRows = serviceAddresses.map((row) => (
+      row.id === rowId ? { ...row, ...partial } : row
+    ));
+
+    handleChange({
+      service_addresses: nextRows,
+      customer_address: nextRows[0]?.address || '',
+    });
+  }
+
+  function addServiceAddress() {
+    handleChange({
+      service_addresses: [...serviceAddresses, createServiceAddress()],
+    });
+  }
+
+  function removeServiceAddress(rowId) {
+    if (serviceAddresses.length <= 1) {
+      return;
+    }
+
+    handleChange({
+      service_addresses: serviceAddresses.filter((row) => row.id !== rowId),
+    });
+  }
+
+  function toggleServiceAddressSameAsCustomer(rowId, checked) {
+    updateServiceAddress(rowId, {
+      same_as_customer: checked,
+      phone: checked ? form.customer_phone : serviceAddresses.find((row) => row.id === rowId)?.phone || '',
+    });
   }
 
   const dayScheduleSidebarProps = {
@@ -155,7 +246,7 @@ export function ScheduleFormModal({
           )}
 
           <div className="schedule-form-modal__main">
-        <form className="form-grid cols-2" onSubmit={onSubmit}>
+        <form className="form-grid cols-2" noValidate onSubmit={handleFormSubmit}>
           {!editId && (
             <div className="field" style={{ gridColumn: '1 / -1' }}>
               <span className="field-label">派單類型</span>
@@ -309,6 +400,14 @@ export function ScheduleFormModal({
                       ))}
                     </div>
                   </div>
+                  <label className="field field-checkbox pricing-line__tax">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(line.is_taxable)}
+                      onChange={(e) => updatePricingLine(onChange, form, line.id, { is_taxable: e.target.checked })}
+                    />
+                    <span>含稅 +5%</span>
+                  </label>
                   {form.pricing_lines.length > 1 && (
                     <button
                       type="button"
@@ -350,7 +449,7 @@ export function ScheduleFormModal({
             <span className="field-label">合計</span>
             <div className="price-summary">
               <strong>共 {form.ac_units} 台，{form.cleaning_price || 0} 元</strong>
-              {form.needs_invoice && <span className="hint">已含 5% 發票加價</span>}
+              {invoiceAutoEnabled && <span className="hint">部分品項已含 5% 稅</span>}
             </div>
           </div>
           )}
@@ -375,19 +474,96 @@ export function ScheduleFormModal({
             />
           </label>
 
-          <label className="field" style={{ gridColumn: '1 / -1' }}>
-            <span className="field-label">清洗地址</span>
-            <div className="field-action-row">
-              <AddressAutocompleteInput
-                value={form.customer_address}
-                onChange={(address) => handleChange({ customer_address: address })}
-                placeholder="請輸入完整地址"
-                required
-                showFallbackHint={false}
-              />
-              <GoogleMapsLink address={form.customer_address} />
+          <div className="field service-addresses" style={{ gridColumn: '1 / -1' }}>
+            <div className="service-addresses__header">
+              <span className="field-label">清洗地址</span>
+              {!editId && (
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm btn-pill"
+                  onClick={addServiceAddress}
+                >
+                  ＋ 多一個地址
+                </button>
+              )}
             </div>
-          </label>
+
+            {hasMultipleAddresses && (
+              <p className="hint">多地址會依序排在時間軸上，每站各顯示一個工作框。</p>
+            )}
+
+            <div className="service-addresses__list">
+              {serviceAddresses.map((row, index) => (
+                <div key={row.id} className="service-address-row">
+                  <div className="service-address-row__heading">
+                    <span className="service-address-row__sequence">
+                      {hasMultipleAddresses ? `第 ${index + 1} 站 · ${row.ac_units} 台` : '清洗地址'}
+                    </span>
+                    {hasMultipleAddresses && !editId && serviceAddresses.length > 1 && (
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm btn-pill"
+                        onClick={() => removeServiceAddress(row.id)}
+                      >
+                        移除
+                      </button>
+                    )}
+                  </div>
+
+                  <div className={`service-address-row__grid${hasMultipleAddresses ? ' service-address-row__grid--multi' : ''}`}>
+                    {hasMultipleAddresses && (
+                      <label className="field">
+                        <span className="field-label">本站台數</span>
+                        <input
+                          className="field-control"
+                          type="number"
+                          min="1"
+                          max="99"
+                          value={row.ac_units}
+                          onChange={(e) => updateServiceAddress(row.id, { ac_units: e.target.value })}
+                          required
+                        />
+                      </label>
+                    )}
+
+                    <label className="field" style={{ gridColumn: hasMultipleAddresses ? 'span 2' : '1 / -1' }}>
+                      <span className="field-label">{hasMultipleAddresses ? `${row.ac_units} 台 · 地址` : '地址'}</span>
+                      <div className="field-action-row">
+                        <AddressAutocompleteInput
+                          value={row.address}
+                          onChange={(address) => updateServiceAddress(row.id, { address })}
+                          placeholder="請輸入完整地址"
+                          required
+                          showFallbackHint={false}
+                        />
+                        <GoogleMapsLink address={row.address} />
+                      </div>
+                    </label>
+
+                    <label className="field">
+                      <span className="field-label">聯絡電話</span>
+                      <input
+                        className="field-control"
+                        value={row.same_as_customer ? form.customer_phone : row.phone}
+                        onChange={(e) => updateServiceAddress(row.id, { phone: e.target.value, same_as_customer: false })}
+                        disabled={row.same_as_customer}
+                        required={!row.same_as_customer}
+                      />
+                    </label>
+
+                    <label className="field field-checkbox service-address-row__same-contact">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(row.same_as_customer)}
+                        onChange={(e) => toggleServiceAddressSameAsCustomer(row.id, e.target.checked)}
+                      />
+                      <span>同總聯絡人</span>
+                    </label>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
 
           <div style={{ gridColumn: '1 / -1' }}>
             <CustomerWashHistory phone={form.customer_phone} onApply={applyHistory} />
@@ -426,9 +602,14 @@ export function ScheduleFormModal({
               <input
                 type="checkbox"
                 checked={Boolean(form.needs_invoice)}
+                disabled={invoiceAutoEnabled}
                 onChange={(e) => toggleNeedsInvoice(e.target.checked)}
               />
-              <span>{canManagePricing ? '是否開發票（統編，加 5%）' : '是否開發票（需填抬頭、統編）'}</span>
+              <span>
+                {canManagePricing
+                  ? (invoiceAutoEnabled ? '是否開發票（已由品項含稅自動開啟）' : '是否開發票（統編）')
+                  : '是否開發票（需填抬頭、統編）'}
+              </span>
             </label>
             )}
           </div>
@@ -500,7 +681,12 @@ export function ScheduleFormModal({
             <textarea className="field-control" rows={3} value={form.notes} onChange={(e) => handleChange({ notes: e.target.value })} />
           </label>
 
-          <div className="modal-actions">
+          <div className="modal-actions" style={{ gridColumn: '1 / -1' }}>
+            {(validationError || error) && (
+              <div className="alert alert-error modal-alert" style={{ gridColumn: '1 / -1', width: '100%' }}>
+                {validationError || error}
+              </div>
+            )}
             <button type="submit" className="btn btn-primary btn-pill">{editId ? '儲存變更' : '建立行程'}</button>
             <button type="button" className="btn btn-secondary btn-pill" onClick={onClose}>取消</button>
             {canDelete && editId && (

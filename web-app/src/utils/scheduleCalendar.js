@@ -11,8 +11,48 @@ export function createPricingLine(overrides = {}) {
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     ac_units: '1',
     unit_price: '1500',
+    is_taxable: false,
     ...overrides,
   };
+}
+
+export function createServiceAddress(overrides = {}) {
+  return {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    ac_units: '1',
+    address: '',
+    phone: '',
+    same_as_customer: true,
+    ...overrides,
+  };
+}
+
+export function hasTaxablePricingLine(lines) {
+  return (lines || []).some((line) => Boolean(line.is_taxable));
+}
+
+export function deriveNeedsInvoice(form) {
+  return hasTaxablePricingLine(form.pricing_lines) || Boolean(form.needs_invoice);
+}
+
+export function normalizeServiceAddresses(form) {
+  if (Array.isArray(form.service_addresses) && form.service_addresses.length > 0) {
+    return form.service_addresses.map((row, index) => ({
+      id: row.id || `addr-${index}`,
+      ac_units: String(row.ac_units ?? 1),
+      address: String(row.address ?? '').trim(),
+      phone: String(row.phone ?? '').trim(),
+      same_as_customer: row.same_as_customer !== false,
+    }));
+  }
+
+  return [createServiceAddress({
+    id: 'primary',
+    ac_units: String(form.ac_units || 1),
+    address: String(form.customer_address || '').trim(),
+    phone: String(form.customer_phone || '').trim(),
+    same_as_customer: true,
+  })];
 }
 
 export function normalizePricingLines(lines, fallbackUnits = 1, fallbackUnitPrice = 1500) {
@@ -21,6 +61,7 @@ export function normalizePricingLines(lines, fallbackUnits = 1, fallbackUnitPric
       id: line.id || `line-${index}`,
       ac_units: String(line.ac_units ?? 1),
       unit_price: String(line.unit_price ?? fallbackUnitPrice),
+      is_taxable: Boolean(line.is_taxable),
     }));
   }
 
@@ -33,22 +74,33 @@ export function normalizePricingLines(lines, fallbackUnits = 1, fallbackUnitPric
 export function summarizePricingLines(lines, needsInvoice = false) {
   const normalized = normalizePricingLines(lines);
   let totalUnits = 0;
-  let base = 0;
+  let nonTaxableTotal = 0;
+  let taxableBase = 0;
 
   normalized.forEach((line) => {
     const units = Number(line.ac_units) || 0;
     const unitPrice = Number(line.unit_price) || 0;
+    const lineBase = units * unitPrice;
     totalUnits += units;
-    base += units * unitPrice;
+
+    if (line.is_taxable) {
+      taxableBase += lineBase;
+    } else {
+      nonTaxableTotal += lineBase;
+    }
   });
 
-  const cleaningPrice = needsInvoice ? Math.round(base * (1 + INVOICE_SURCHARGE_RATE)) : base;
+  const cleaningPrice = nonTaxableTotal + Math.round(taxableBase * (1 + INVOICE_SURCHARGE_RATE));
+  const derivedNeedsInvoice = needsInvoice || hasTaxablePricingLine(normalized);
 
   return {
     pricing_lines: normalized,
     ac_units: String(totalUnits || 1),
     unit_price: normalized[0]?.unit_price || '1500',
     cleaning_price: String(cleaningPrice),
+    needs_invoice: derivedNeedsInvoice,
+    taxable_base: String(taxableBase),
+    non_taxable_total: String(nonTaxableTotal),
   };
 }
 
@@ -176,14 +228,21 @@ export function inferUnitPrice(schedule) {
 
 export function applyPriceCalculation(form) {
   const summary = summarizePricingLines(form.pricing_lines, Boolean(form.needs_invoice));
+  const serviceAddresses = normalizeServiceAddresses(form);
+  const timelineUnits = serviceAddresses.length > 1
+    ? serviceAddresses.reduce((total, row) => total + (Number(row.ac_units) || 0), 0)
+    : Number(summary.ac_units);
   const end_time = calculateEndTimeFromUnits(
     form.start_time || DEFAULT_FIRST_SHIFT_START,
-    summary.ac_units,
+    timelineUnits,
   );
+  const primaryAddress = serviceAddresses[0];
 
   return applyMailSync({
     ...form,
     ...summary,
+    customer_address: primaryAddress?.address || form.customer_address,
+    service_addresses: serviceAddresses,
     end_time,
   });
 }
@@ -393,14 +452,22 @@ export function buildScheduleEventTitle(schedule, options = {}) {
 }
 
 export function buildScheduleCardLine(schedule, { hidePrice = false } = {}) {
-  const surname = getCustomerSurname(schedule.customer_name);
+  const customerName = String(schedule.customer_name || '').trim() || '客';
   const address = String(schedule.customer_address || '').trim();
   const phone = String(schedule.customer_phone || '').trim().replace(/\s+/g, '');
   const unitsPrice = buildScheduleUnitsPriceTag(schedule, { hidePrice });
-  const prefix = surname ? `${surname})` : '';
   const projectTag = schedule?.cleaning_project_id ? '[專]' : '';
+  const parts = [`${projectTag}${customerName})${address}`];
 
-  return `${projectTag}${prefix}${address}${phone}${unitsPrice}`;
+  if (phone) {
+    parts.push(phone);
+  }
+
+  if (unitsPrice) {
+    parts.push(unitsPrice);
+  }
+
+  return parts.join(' ');
 }
 
 export function getScheduleReport(schedule) {
@@ -939,6 +1006,7 @@ export const emptyScheduleForm = {
   customer_name: '',
   customer_phone: '',
   customer_address: '',
+  service_addresses: [createServiceAddress()],
   needs_mail: false,
   mail_same_as_customer: false,
   mail_recipient: '',
@@ -974,6 +1042,13 @@ export function scheduleToForm(schedule) {
     customer_name: schedule.customer_name || '',
     customer_address: schedule.customer_address ?? '',
     customer_phone: schedule.customer_phone ?? '',
+    service_addresses: [createServiceAddress({
+      id: 'primary',
+      ac_units: String(schedule.ac_units ?? pricingLines[0]?.ac_units ?? 1),
+      address: schedule.customer_address ?? '',
+      phone: schedule.customer_phone ?? '',
+      same_as_customer: true,
+    })],
     needs_mail: Boolean(schedule.needs_mail || schedule.mail_recipient || schedule.mail_phone || schedule.mail_address),
     mail_recipient: schedule.mail_recipient ?? '',
     mail_phone: schedule.mail_phone ?? '',
@@ -1202,6 +1277,134 @@ export function slotToForm(slot, { schedules = [], userId = '', userRole = 'admi
   });
 }
 
+export function appendMultiAddressNote(notes, index, total) {
+  const marker = `[多址 ${index + 1}/${total}]`;
+  const base = String(notes || '').trim();
+
+  if (index === 0) {
+    return base ? `${base} ${marker}` : marker;
+  }
+
+  return base || marker;
+}
+
+function isEndTimeAfterStart(startTime, endTime) {
+  const start = formatTimeValue(startTime);
+  const end = formatTimeValue(endTime);
+  const [startHour, startMinute] = start.split(':').map(Number);
+  const [endHour, endMinute] = end.split(':').map(Number);
+
+  return (endHour * 60 + endMinute) > (startHour * 60 + startMinute);
+}
+
+export function validateScheduleForm(form, { userRole = 'admin', original = null } = {}) {
+  const messages = [];
+  const hidePricing = userRole === 'customer_service';
+  const canManagePricing = !hidePricing;
+  const serviceAddresses = normalizeServiceAddresses(form);
+  const needsInvoice = hidePricing ? Boolean(form.needs_invoice) : deriveNeedsInvoice(form);
+
+  if (!form.user_id) {
+    messages.push('請選擇清洗師傅');
+  }
+
+  if (!String(form.work_date || '').trim()) {
+    messages.push('請選擇施工日期');
+  }
+
+  if (!String(form.customer_name || '').trim()) {
+    messages.push('請填寫清洗聯絡人');
+  }
+
+  if (!String(form.customer_phone || '').trim()) {
+    messages.push('請填寫清洗電話');
+  }
+
+  serviceAddresses.forEach((row, index) => {
+    const label = serviceAddresses.length > 1 ? `第 ${index + 1} 站` : '清洗';
+
+    if (!row.address) {
+      messages.push(`請填寫${label}地址`);
+    }
+
+    if (!row.same_as_customer && !row.phone) {
+      messages.push(`請填寫${label}聯絡電話，或勾選同總聯絡人`);
+    }
+  });
+
+  if (!SCHEDULE_TIME_OPTIONS.includes(form.start_time)) {
+    messages.push('請選擇有效的預約開始時間');
+  }
+
+  if (!SCHEDULE_TIME_OPTIONS.includes(form.end_time)) {
+    messages.push('請選擇有效的預約結束時間');
+  }
+
+  if (
+    SCHEDULE_TIME_OPTIONS.includes(form.start_time)
+    && SCHEDULE_TIME_OPTIONS.includes(form.end_time)
+    && !isEndTimeAfterStart(form.start_time, form.end_time)
+  ) {
+    messages.push('預約結束時間需晚於開始時間');
+  }
+
+  const timingError = validateScheduleTiming(form, { original, userRole });
+  if (timingError) {
+    messages.push(timingError);
+  }
+
+  const pricingLines = normalizePricingLines(form.pricing_lines);
+  if (pricingLines.some((line) => !Number(line.ac_units) || Number(line.ac_units) < 1)) {
+    messages.push('請填寫有效的冷氣台數');
+  }
+
+  if (canManagePricing && pricingLines.some((line) => !UNIT_PRICE_OPTIONS.includes(Number(line.unit_price)))) {
+    messages.push('請為每個清洗品項選擇有效單價');
+  }
+
+  if (form.needs_mail) {
+    if (!String(form.mail_recipient || '').trim()) {
+      messages.push('請填寫寄信聯絡人');
+    }
+    if (!String(form.mail_phone || '').trim()) {
+      messages.push('請填寫寄信電話');
+    }
+    if (!String(form.mail_address || '').trim()) {
+      messages.push('請填寫寄信地址');
+    }
+  }
+
+  if (needsInvoice) {
+    if (!String(form.invoice_title || '').trim()) {
+      messages.push('請填寫發票抬頭');
+    }
+
+    const taxId = String(form.invoice_tax_id || '').trim();
+    if (!taxId) {
+      messages.push('請填寫統一編號');
+    } else if (!/^\d{8}$/.test(taxId)) {
+      messages.push('統一編號須為 8 碼數字');
+    }
+  }
+
+  return {
+    ok: messages.length === 0,
+    messages,
+  };
+}
+
+export function formatScheduleValidationAlert(messages) {
+  if (!messages.length) {
+    return '';
+  }
+
+  return [
+    '無法送出，請先補齊以下項目：',
+    '',
+    ...messages.map((message, index) => `${index + 1}. ${message}`),
+  ].join('\n');
+}
+
 export function buildSchedulePayload(form, { original = null, userRole = 'admin' } = {}) {
   const timingError = validateScheduleTiming(form, { original, userRole });
 
@@ -1213,10 +1416,14 @@ export function buildSchedulePayload(form, { original = null, userRole = 'admin'
   const summary = hidePricing
     ? summarizePricingLines(form.pricing_lines, false)
     : summarizePricingLines(form.pricing_lines, Boolean(form.needs_invoice));
-  const pricingLines = summary.pricing_lines.map(({ ac_units, unit_price }) => ({
+  const needsInvoice = hidePricing ? Boolean(form.needs_invoice) : summary.needs_invoice;
+  const pricingLines = summary.pricing_lines.map(({ ac_units, unit_price, is_taxable }) => ({
     ac_units: Number(ac_units),
     unit_price: Number(unit_price),
+    is_taxable: Boolean(is_taxable),
   }));
+  const serviceAddresses = normalizeServiceAddresses(form);
+  const primaryAddress = serviceAddresses[0];
 
   if (pricingLines.some((line) => !Number.isFinite(line.ac_units) || line.ac_units < 1)) {
     throw new Error('請填寫有效的冷氣台數');
@@ -1226,18 +1433,26 @@ export function buildSchedulePayload(form, { original = null, userRole = 'admin'
     throw new Error('請選擇有效的單價');
   }
 
+  if (serviceAddresses.some((row) => !row.address)) {
+    throw new Error('請填寫所有清洗地址');
+  }
+
+  if (serviceAddresses.some((row) => !row.same_as_customer && !row.phone)) {
+    throw new Error('請填寫各地址聯絡電話，或勾選同總聯絡人');
+  }
+
   if (!SCHEDULE_TIME_OPTIONS.includes(form.start_time) || !SCHEDULE_TIME_OPTIONS.includes(form.end_time)) {
     throw new Error('預約時間僅能選擇整點或 30 分');
   }
 
-  return {
+  const payload = {
     user_id: Number(form.user_id),
     work_date: form.work_date,
     start_time: form.start_time,
     end_time: form.end_time,
     customer_name: form.customer_name.trim(),
     customer_phone: form.customer_phone.trim(),
-    customer_address: form.customer_address.trim(),
+    customer_address: (primaryAddress?.address || form.customer_address).trim(),
     needs_mail: Boolean(form.needs_mail),
     mail_recipient: form.needs_mail ? form.mail_recipient?.trim() || null : null,
     mail_phone: form.needs_mail ? form.mail_phone?.trim() || null : null,
@@ -1247,9 +1462,58 @@ export function buildSchedulePayload(form, { original = null, userRole = 'admin'
     fb_display_name: form.fb_display_name?.trim() || null,
     line_display_name: form.line_display_name?.trim() || null,
     pricing_lines: pricingLines,
-    needs_invoice: Boolean(form.needs_invoice),
-    invoice_tax_id: form.needs_invoice ? form.invoice_tax_id?.trim() || null : null,
-    invoice_title: form.needs_invoice ? form.invoice_title?.trim() || null : null,
+    needs_invoice: needsInvoice,
+    invoice_tax_id: needsInvoice ? form.invoice_tax_id?.trim() || null : null,
+    invoice_title: needsInvoice ? form.invoice_title?.trim() || null : null,
     notes: form.notes?.trim() || null,
   };
+
+  if (form.multi_address_part) {
+    payload.multi_address_part = form.multi_address_part;
+  }
+
+  return payload;
+}
+
+export function buildSchedulePayloads(form, options = {}) {
+  const addresses = normalizeServiceAddresses(form);
+
+  if (addresses.length <= 1) {
+    const row = addresses[0];
+    return [buildSchedulePayload({
+      ...form,
+      customer_address: row.address,
+      customer_phone: row.same_as_customer ? form.customer_phone : (row.phone || form.customer_phone),
+    }, options)];
+  }
+
+  let currentStart = form.start_time;
+  const payloads = [];
+
+  addresses.forEach((row, index) => {
+    const units = Math.max(1, Number(row.ac_units) || 1);
+    const endTime = calculateEndTimeFromUnits(currentStart, units);
+    const isFirst = index === 0;
+
+    payloads.push(buildSchedulePayload({
+      ...form,
+      start_time: currentStart,
+      end_time: endTime,
+      customer_address: row.address,
+      customer_phone: row.same_as_customer ? form.customer_phone : (row.phone || form.customer_phone),
+      pricing_lines: isFirst
+        ? form.pricing_lines
+        : [{
+          ...(form.pricing_lines?.[0] || createPricingLine()),
+          ac_units: String(units),
+          is_taxable: false,
+        }],
+      multi_address_part: isFirst ? undefined : { index: index + 1, total: addresses.length },
+      notes: appendMultiAddressNote(form.notes, index, addresses.length),
+    }, options));
+
+    currentStart = endTime;
+  });
+
+  return payloads;
 }

@@ -310,6 +310,10 @@ class ScheduleController extends Controller
             'pricing_lines' => [$required, 'array', 'min:1', 'max:10'],
             'pricing_lines.*.ac_units' => ['required', 'integer', 'min:1', 'max:99'],
             'pricing_lines.*.unit_price' => ['required', 'integer', Rule::in(SchedulePricing::unitPrices())],
+            'pricing_lines.*.is_taxable' => ['nullable', 'boolean'],
+            'multi_address_part' => ['nullable', 'array'],
+            'multi_address_part.index' => ['nullable', 'integer', 'min:2'],
+            'multi_address_part.total' => ['nullable', 'integer', 'min:2'],
             'needs_invoice' => ['nullable', 'boolean'],
             'invoice_tax_id' => ['nullable', 'string', 'max:20'],
             'invoice_title' => ['nullable', 'string', 'max:255'],
@@ -329,14 +333,35 @@ class ScheduleController extends Controller
             isset($payload['ac_units']) ? (int) $payload['ac_units'] : null,
             isset($payload['unit_price']) ? (int) $payload['unit_price'] : null,
         );
+        $multiAddressPart = is_array($payload['multi_address_part'] ?? null)
+            ? $payload['multi_address_part']
+            : null;
         $summary = SchedulePricing::summarizeLines($lines, $needsInvoice);
+
+        if ($multiAddressPart && (int) ($multiAddressPart['index'] ?? 0) > 1) {
+            $units = max(1, (int) ($lines[0]['ac_units'] ?? 1));
+            $unitPrice = (int) ($lines[0]['unit_price'] ?? 1500);
+            $lines = [[
+                'ac_units' => $units,
+                'unit_price' => $unitPrice,
+                'is_taxable' => false,
+            ]];
+            $summary = [
+                'ac_units' => $units,
+                'unit_price' => $unitPrice,
+                'cleaning_price' => 0,
+                'needs_invoice' => false,
+                'task_details' => $units.'台'.$unitPrice,
+            ];
+        }
 
         $payload['pricing_lines'] = $lines;
         $payload['ac_units'] = $summary['ac_units'];
         $payload['unit_price'] = $summary['unit_price'];
-        $payload['needs_invoice'] = $needsInvoice;
+        $payload['needs_invoice'] = $summary['needs_invoice'];
         $payload['cleaning_price'] = $summary['cleaning_price'];
         $payload['task_details'] = $summary['task_details'];
+        unset($payload['multi_address_part']);
         $needsMail = (bool) ($payload['needs_mail'] ?? false);
         $payload['needs_mail'] = $needsMail;
 
@@ -356,7 +381,10 @@ class ScheduleController extends Controller
             $payload['mail_address'] = null;
         }
 
-        if ($needsInvoice) {
+        if ($multiAddressPart && (int) ($multiAddressPart['index'] ?? 0) > 1) {
+            $payload['invoice_tax_id'] = null;
+            $payload['invoice_title'] = null;
+        } elseif ($payload['needs_invoice']) {
             $payload['invoice_tax_id'] = isset($payload['invoice_tax_id']) && $payload['invoice_tax_id'] !== ''
                 ? trim((string) $payload['invoice_tax_id'])
                 : null;
