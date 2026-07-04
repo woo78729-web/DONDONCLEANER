@@ -34,6 +34,14 @@ function getEmployeeAvailabilitySummary(employee) {
     return { label: '全天', variant: 'open', slot: null };
   }
 
+  if (slots.length === 1) {
+    return {
+      label: slots[0].label || '可排',
+      variant: 'open',
+      slot: slots[0],
+    };
+  }
+
   const periods = new Set(slots.map((slot) => slot.period));
 
   if (periods.has('full') || (periods.has('morning') && periods.has('afternoon'))) {
@@ -219,7 +227,7 @@ function AvailabilityDayBoard({
                 )}
 
                 {!employee.on_leave && employee.open_slots.length === 0 && employee.jobs.length === 0 && (
-                  <span className="availability-day-board__tag">無資料</span>
+                  <span className="availability-day-board__tag is-open">全天可排</span>
                 )}
               </div>
 
@@ -257,6 +265,7 @@ function AvailabilityDayBoard({
 }
 
 export function ScheduleEmployeeAvailabilityPanel({
+  panelTitle = '區域師傅空檔',
   selectedAreas,
   onSelectedAreasChange,
   lookaheadDays,
@@ -364,9 +373,9 @@ export function ScheduleEmployeeAvailabilityPanel({
     <section className="area-availability-bar employee-availability-panel">
       <div className="area-availability-bar__header">
         <div>
-          <h3 className="area-availability-bar__title">區域師傅空檔</h3>
+          <h3 className="area-availability-bar__title">{panelTitle}</h3>
           <p className="hint">
-            勾選區域（由台東市向外排序），依日期顯示各師傅該區行程與可排時段，方便電聯排單。
+            勾選區域（由台東市向外排序），依日期顯示各師傅該區行程與可排時段。同區域前班結束後預設 1 小時後可排；空班顯示全天可排。
           </p>
         </div>
         <div className="area-availability-bar__range">

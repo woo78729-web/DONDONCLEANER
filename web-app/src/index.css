@@ -38,7 +38,7 @@
   --bp-md: 768px;
   --bp-lg: 980px;
   --content-max: 1180px;
-  --mobile-nav-height: 64px;
+  --mobile-nav-height: 52px;
   --safe-bottom: env(safe-area-inset-bottom, 0px);
 
   --shadow-glass:
@@ -78,6 +78,10 @@ body {
 }
 
 body.mobile-nav-open {
+  overflow: hidden;
+}
+
+body.schedule-mobile-sheet-open {
   overflow: hidden;
 }
 
@@ -1285,31 +1289,32 @@ select option {
 .mobile-bottom-nav {
   display: none;
   position: fixed;
-  left: 8px;
-  right: 8px;
-  bottom: calc(8px + var(--safe-bottom));
+  left: 4px;
+  right: 4px;
+  bottom: calc(4px + var(--safe-bottom));
   z-index: 900;
-  padding: 6px;
-  border-radius: 18px;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 4px;
+  padding: 4px 5px;
+  border-radius: 14px;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 3px;
 }
 
 .mobile-bottom-nav__item {
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 48px;
-  padding: 6px 4px;
+  min-height: 42px;
+  padding: 4px 2px;
   border: 0;
-  border-radius: 14px;
+  border-radius: 10px;
   background: transparent;
   color: var(--text-muted);
   font: inherit;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 800;
   text-decoration: none;
   cursor: pointer;
+  min-width: 0;
 }
 
 .mobile-bottom-nav__item.is-active {
@@ -1320,8 +1325,12 @@ select option {
 
 .mobile-bottom-nav__label {
   display: block;
-  line-height: 1.2;
+  line-height: 1.15;
   text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
 }
 
 .mobile-nav-backdrop {
@@ -1702,6 +1711,14 @@ select option {
 
 .schedule-day-block__button:hover {
   filter: brightness(0.97);
+}
+
+.schedule-day-block__button--leave {
+  cursor: default;
+}
+
+.schedule-day-block__button--leave:hover {
+  filter: none;
 }
 
 .schedule-day-block__technician {

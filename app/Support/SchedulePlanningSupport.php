@@ -22,6 +22,8 @@ class SchedulePlanningSupport
 
     public const AFTERNOON_START = '12:00';
 
+    public const JOB_GAP_MINUTES = 60;
+
     public static function isLeaveRegistrationOpen(?Carbon $now = null): bool
     {
         $now ??= now();
@@ -244,7 +246,7 @@ class SchedulePlanningSupport
                     'account' => $employee->account,
                     'on_leave' => false,
                     'jobs' => $dayJobs,
-                    'open_slots' => self::openSlotsForJobs($allJobsPayload),
+                    'open_slots' => self::openSlotsForJobs($allJobsPayload, $areaFilter),
                 ];
             }
 
@@ -264,47 +266,129 @@ class SchedulePlanningSupport
 
     /**
      * @param  array<int, array<string, mixed>>  $jobs
+     * @param  array<int, string>  $areaFilter
      * @return array<int, array<string, string>>
      */
-    private static function openSlotsForJobs(array $jobs): array
+    private static function openSlotsForJobs(array $jobs, array $areaFilter = []): array
     {
         if ($jobs === []) {
-            return [[
-                'period' => 'full',
-                'label' => '全日可排',
-                'from' => self::WORKDAY_START,
-                'to' => self::WORKDAY_END,
-            ]];
+            return [self::fullDaySlot()];
         }
 
+        $sorted = collect($jobs)->sortBy('start_time')->values()->all();
+
+        if ($areaFilter !== []) {
+            $areaJobs = array_values(array_filter(
+                $sorted,
+                fn (array $job) => in_array($job['service_area'] ?? 'unknown', $areaFilter, true),
+            ));
+
+            if ($areaJobs === []) {
+                return [self::fullDaySlot()];
+            }
+
+            return self::buildGapSlots($sorted, $areaJobs);
+        }
+
+        return self::buildGapSlots($sorted, $sorted);
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $allJobs
+     * @param  array<int, array<string, mixed>>  $anchorJobs
+     * @return array<int, array<string, string>>
+     */
+    private static function buildGapSlots(array $allJobs, array $anchorJobs): array
+    {
         $slots = [];
-        $sorted = collect($jobs)->sortBy('start_time')->values();
-        $firstStart = $sorted->first()['start_time'] ?? self::WORKDAY_START;
+        $workStartMin = self::timeToMinutes(self::WORKDAY_START);
+        $workEndMin = self::timeToMinutes(self::WORKDAY_END);
+        $gap = self::JOB_GAP_MINUTES;
 
-        if (self::timeToMinutes($firstStart) > self::timeToMinutes(self::WORKDAY_START) + 30) {
-            $slots[] = [
-                'period' => 'morning',
-                'label' => '上午可排',
-                'from' => self::WORKDAY_START,
-                'to' => $firstStart,
-            ];
+        $firstAnchor = $anchorJobs[0];
+        $firstStartMin = self::timeToMinutes($firstAnchor['start_time']);
+
+        if ($firstStartMin - $workStartMin >= $gap) {
+            $slot = self::makeSlot($workStartMin, $firstStartMin, 'morning', '上午可排');
+
+            if ($slot !== null) {
+                $slots[] = $slot;
+            }
         }
 
-        $lastEnd = $sorted->last()['end_time'] ?? self::WORKDAY_END;
-        $afternoonStartMinutes = self::timeToMinutes(self::AFTERNOON_START);
-        $lastEndMinutes = self::timeToMinutes($lastEnd);
+        foreach ($anchorJobs as $anchorJob) {
+            $anchorEndMin = self::timeToMinutes($anchorJob['end_time']);
+            $afterStartMin = $anchorEndMin + $gap;
 
-        if ($lastEndMinutes < self::timeToMinutes(self::WORKDAY_END) - 30) {
-            $from = $lastEndMinutes >= $afternoonStartMinutes ? $lastEnd : self::AFTERNOON_START;
+            if ($afterStartMin >= $workEndMin) {
+                continue;
+            }
+
+            $nextBlockMin = $workEndMin;
+
+            foreach ($allJobs as $job) {
+                $jobStartMin = self::timeToMinutes($job['start_time']);
+
+                if ($jobStartMin > $anchorEndMin && $jobStartMin < $nextBlockMin) {
+                    $nextBlockMin = $jobStartMin;
+                }
+            }
+
+            $slotEndMin = min($workEndMin, $nextBlockMin);
+
+            if ($slotEndMin - $afterStartMin < $gap) {
+                continue;
+            }
+
+            $slotLabel = self::minutesToTime($afterStartMin).'後可排';
+
             $slots[] = [
                 'period' => 'afternoon',
-                'label' => '下午可排',
-                'from' => $from,
-                'to' => self::WORKDAY_END,
+                'label' => $slotLabel,
+                'from' => self::minutesToTime($afterStartMin),
+                'to' => self::minutesToTime($slotEndMin),
             ];
         }
 
         return $slots;
+    }
+
+    /**
+     * @return array{period: string, label: string, from: string, to: string}
+     */
+    private static function fullDaySlot(): array
+    {
+        return [
+            'period' => 'full',
+            'label' => '全日可排',
+            'from' => self::WORKDAY_START,
+            'to' => self::WORKDAY_END,
+        ];
+    }
+
+    /**
+     * @return array{period: string, label: string, from: string, to: string}|null
+     */
+    private static function makeSlot(int $fromMin, int $toMin, string $period, string $label): ?array
+    {
+        if ($toMin <= $fromMin) {
+            return null;
+        }
+
+        return [
+            'period' => $period,
+            'label' => $label,
+            'from' => self::minutesToTime($fromMin),
+            'to' => self::minutesToTime($toMin),
+        ];
+    }
+
+    private static function minutesToTime(int $minutes): string
+    {
+        $hour = intdiv($minutes, 60);
+        $minute = $minutes % 60;
+
+        return sprintf('%02d:%02d', $hour, $minute);
     }
 
     private static function formatTime(mixed $value): string

@@ -71,10 +71,10 @@ class SchedulePlanningApiTest extends TestCase
         $this->assertNotNull($employee);
         $this->assertCount(1, $employee['jobs']);
         $this->assertSame('chishang', $employee['jobs'][0]['service_area']);
-        $this->assertTrue(collect($employee['open_slots'])->contains('label', '下午可排'));
+        $this->assertTrue(collect($employee['open_slots'])->contains('from', '13:00'));
     }
 
-    public function test_availability_uses_all_jobs_for_open_slots_when_filtering_area(): void
+    public function test_availability_shows_full_day_when_filtered_area_has_no_jobs(): void
     {
         Sanctum::actingAs($this->admin);
 
@@ -97,7 +97,35 @@ class SchedulePlanningApiTest extends TestCase
         $employee = collect($day['employees'])->firstWhere('id', $this->employee->id);
 
         $this->assertSame([], $employee['jobs']);
-        $this->assertTrue(collect($employee['open_slots'])->contains('label', '下午可排'));
+        $this->assertTrue(collect($employee['open_slots'])->contains('label', '全日可排'));
+    }
+
+    public function test_availability_uses_one_hour_gap_after_same_area_job(): void
+    {
+        Sanctum::actingAs($this->admin);
+
+        $workDate = $this->futureWorkDate(5);
+
+        DailySchedule::query()->create($this->scheduleAttributes([
+            'user_id' => $this->employee->id,
+            'work_date' => $workDate,
+            'start_time' => '09:00',
+            'end_time' => '15:00',
+            'service_area' => 'chishang',
+        ]));
+
+        $response = $this->getJson('/api/admin/planning/availability?areas=chishang&days=7')
+            ->assertOk();
+
+        $day = collect($response->json('data.days'))
+            ->firstWhere('date', $workDate);
+
+        $employee = collect($day['employees'])->firstWhere('id', $this->employee->id);
+        $slot = collect($employee['open_slots'])->firstWhere('from', '16:00');
+
+        $this->assertNotNull($slot);
+        $this->assertSame('16:00', $slot['from']);
+        $this->assertSame('21:00', $slot['to']);
     }
 
     public function test_employee_cannot_leave_on_scheduled_day(): void

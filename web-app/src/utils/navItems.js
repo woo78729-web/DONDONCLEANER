@@ -42,6 +42,14 @@ export function getNavItems(user) {
 
   pushItem(items, user, {
     permission: 'schedules.manage',
+    to: '/admin/regional-scheduling',
+    label: '區域排班',
+    shortLabel: '區域',
+    tabOrder: prefersSchedulesHome ? 1.25 : 2.25,
+  });
+
+  pushItem(items, user, {
+    permission: 'schedules.manage',
     to: '/admin/leaves',
     end: true,
     label: '排假行事曆',
@@ -240,7 +248,7 @@ export function getNavStructure(user) {
   return structure.sort((a, b) => a.sortOrder - b.sortOrder);
 }
 
-export function getMobileTabItems(user, limit = 3) {
+export function getMobileTabItems(user, limit = 4) {
   return getNavItems(user)
     .slice()
     .sort((a, b) => a.tabOrder - b.tabOrder)

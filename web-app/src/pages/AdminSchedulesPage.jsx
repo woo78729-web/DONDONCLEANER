@@ -41,6 +41,14 @@ import {
   applyPriceCalculation,
 } from '../utils/scheduleCalendar';
 
+function getInitialDisplayDays(settings) {
+  if (typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches) {
+    return 1;
+  }
+
+  return Math.min(7, Math.max(1, settings.displayDays || 7));
+}
+
 export default function AdminSchedulesPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -61,7 +69,7 @@ export default function AdminSchedulesPage() {
   const [calendarSettings, setCalendarSettings] = useState(() => loadCalendarSettings());
   const [displayDays, setDisplayDays] = useState(() => {
     const settings = loadCalendarSettings();
-    return Math.min(7, Math.max(1, settings.displayDays || 7));
+    return getInitialDisplayDays(settings);
   });
   const [selectedAreas, setSelectedAreas] = useState([]);
   const [lookaheadDays, setLookaheadDays] = useState(() => loadAvailabilityDays(14));
@@ -69,6 +77,7 @@ export default function AdminSchedulesPage() {
   const [snapshotSchedule, setSnapshotSchedule] = useState(null);
   const [snapshotAnchor, setSnapshotAnchor] = useState(null);
   const [successSummary, setSuccessSummary] = useState(null);
+  const [mobileFilterOpen, setMobileFilterOpen] = useState(false);
 
   const schedules = useMemo(() => {
     if (!selectedAreas.length) {
@@ -123,6 +132,19 @@ export default function AdminSchedulesPage() {
   useEffect(() => {
     loadSchedules(currentDate, selectedEmployeeId, lookaheadDays, displayDays).catch((err) => setError(err.message));
   }, [currentDate, selectedEmployeeId, lookaheadDays, displayDays, loadSchedules]);
+
+  useEffect(() => {
+    if (!isMobile) {
+      return undefined;
+    }
+
+    const sheetOpen = mobileFilterOpen;
+    document.body.classList.toggle('schedule-mobile-sheet-open', sheetOpen);
+
+    return () => {
+      document.body.classList.remove('schedule-mobile-sheet-open');
+    };
+  }, [isMobile, mobileFilterOpen]);
 
   function openCreate(slot) {
     if (isSlotInPast(slot, { userRole })) {
@@ -340,13 +362,23 @@ export default function AdminSchedulesPage() {
   }
 
   function handleCalendarViewChange(view) {
-    if (view === calendarSettings.defaultView) {
-      return;
+    const nextDisplayDays = view === 'day'
+      ? 1
+      : view === 'week'
+        ? 7
+        : displayDays;
+
+    if (view === 'day' || view === 'week') {
+      setDisplayDays(nextDisplayDays);
     }
-    handleCalendarSettingsChange({
+
+    const nextSettings = {
       ...calendarSettings,
       defaultView: view,
-    });
+      displayDays: nextDisplayDays,
+    };
+    setCalendarSettings(nextSettings);
+    saveCalendarSettings(nextSettings);
   }
 
   function goToday() {
@@ -372,6 +404,9 @@ export default function AdminSchedulesPage() {
   function handleAvailabilityPickOpenSlot({ date, employeeId, slot, areas }) {
     const nextDate = new Date(`${date}T12:00:00`);
     setCurrentDate(nextDate);
+    if (isMobile) {
+      setMobileFilterOpen(false);
+    }
     if (areas?.length) {
       setSelectedAreas(areas);
     }
@@ -407,141 +442,229 @@ export default function AdminSchedulesPage() {
     return leaves.filter((leave) => String(leave.user_id) === String(selectedEmployeeId));
   }, [leaves, selectedEmployeeId]);
 
+  function renderEmployeeStrip() {
+    return (
+      <div className="employee-strip employee-strip--compact">
+        <button
+          type="button"
+          className={`employee-chip${selectedEmployeeId === '' ? ' is-active' : ''}`}
+          onClick={() => setSelectedEmployeeId('')}
+        >
+          全部師傅
+        </button>
+        {employees.map((employee) => (
+          <button
+            key={employee.id}
+            type="button"
+            className={`employee-chip${String(selectedEmployeeId) === String(employee.id) ? ' is-active' : ''}`}
+            onClick={() => setSelectedEmployeeId(String(employee.id))}
+          >
+            <EmployeeAvatar user={employee} size="sm" />
+            {employee.name}
+          </button>
+        ))}
+      </div>
+    );
+  }
+
+  function renderScheduleFilterPanel() {
+    return (
+      <>
+        <CalendarMiniMonth
+          rangeStart={currentDate}
+          displayDays={displayDays}
+          onRangeChange={handleMiniRangeChange}
+          schedules={schedules}
+          weekStartsOn={calendarSettings.weekStartsOn}
+        />
+
+        <div className="schedule-sidebar__actions">
+          <button type="button" className="btn btn-secondary btn-sm" onClick={goToday}>
+            今天
+          </button>
+          <button type="button" className="btn btn-secondary btn-sm" onClick={openSelectedDayList}>
+            當日列表
+          </button>
+        </div>
+
+        <div className="schedule-sidebar__legend">
+          {CUSTOMER_SOURCE_OPTIONS.map((option) => (
+            <span key={option.value} className="schedule-sidebar__legend-item">
+              <span className="source-badge__dot" style={{ backgroundColor: option.color }} />
+              {option.label}
+            </span>
+          ))}
+          <span className="schedule-sidebar__legend-item">
+            <span className="source-badge__dot" style={{ backgroundColor: '#FBC02D' }} />
+            休假
+          </span>
+        </div>
+
+        {renderEmployeeStrip()}
+
+        <ScheduleAreaFilter selectedAreas={selectedAreas} onChange={setSelectedAreas} />
+
+        <CalendarSettingsPanel
+          settings={calendarSettings}
+          onChange={handleCalendarSettingsChange}
+          showColorMode
+        />
+      </>
+    );
+  }
+
   return (
     <PageErrorBoundary title="派班行事曆載入失敗">
       <Layout title="派班行事曆">
-        <section className="card schedule-page-card">
-          <div className="card-header">
-            <div>
-              <h2 className="card-title">派班行事曆</h2>
-              <p className="hint">上方勾選區域可查師傅空檔。左側月曆跳日期，點行程看詳情，空白時段可新增派工。</p>
-            </div>
-            <div className="schedule-page-header-actions">
-              {canAccess(user, 'schedules.manage') && (
-                <Link to="/admin/projects" className="btn btn-secondary btn-sm">
-                  專案區
-                </Link>
-              )}
-              {canAccess(user, 'phone.lookup') && (
-                <Link to="/admin/phone-lookup" className="btn btn-secondary btn-sm">
-                  電話查詢
-                </Link>
-              )}
-              <button type="button" className="btn btn-primary btn-sm" onClick={() => openCreate({ start: new Date(), useDefaultShift: true })}>
-                新增行程
-              </button>
-            </div>
-          </div>
-
-          <ScheduleEmployeeAvailabilityPanel
-            selectedAreas={selectedAreas}
-            onSelectedAreasChange={setSelectedAreas}
-            lookaheadDays={lookaheadDays}
-            onLookaheadDaysChange={setLookaheadDays}
-            selectedEmployeeId={selectedEmployeeId}
-            onPickOpenSlot={handleAvailabilityPickOpenSlot}
-            employees={employees}
-            allSchedules={allSchedules}
-            leaves={leaves}
-          />
-
-          <div className={`schedule-layout${isDesktop ? ' schedule-layout--calendar-large' : ''}`}>
-            <button
-              type="button"
-              className="btn btn-secondary schedule-sidebar-toggle"
-              onClick={() => setSidebarOpen((open) => !open)}
-              aria-expanded={sidebarOpen}
-            >
-              {sidebarOpen ? '收合篩選與月曆' : '展開篩選與月曆'}
-            </button>
-
-            <aside className={`schedule-sidebar schedule-sidebar--collapsible${sidebarOpen ? ' is-open' : ''}`}>
-              <CalendarMiniMonth
-                rangeStart={currentDate}
-                displayDays={displayDays}
-                onRangeChange={handleMiniRangeChange}
-                schedules={schedules}
-                weekStartsOn={calendarSettings.weekStartsOn}
-              />
-
-              <div className="schedule-sidebar__actions">
-                <button type="button" className="btn btn-secondary btn-sm" onClick={goToday}>
-                  今天
-                </button>
-                <button type="button" className="btn btn-secondary btn-sm" onClick={openSelectedDayList}>
-                  當日列表
+        <section className={`card schedule-page-card${isMobile ? ' schedule-page-card--mobile-full' : ''}`}>
+          {!isMobile && (
+            <div className="card-header">
+              <div>
+                <h2 className="card-title">派班行事曆</h2>
+                <p className="hint">上方勾選區域可查師傅空檔。左側月曆跳日期，點行程看詳情，空白時段可新增派工。</p>
+              </div>
+              <div className="schedule-page-header-actions">
+                {canAccess(user, 'schedules.manage') && (
+                  <Link to="/admin/projects" className="btn btn-secondary btn-sm">
+                    專案區
+                  </Link>
+                )}
+                {canAccess(user, 'phone.lookup') && (
+                  <Link to="/admin/phone-lookup" className="btn btn-secondary btn-sm">
+                    電話查詢
+                  </Link>
+                )}
+                <button type="button" className="btn btn-primary btn-sm" onClick={() => openCreate({ start: new Date(), useDefaultShift: true })}>
+                  新增行程
                 </button>
               </div>
+            </div>
+          )}
 
-              <div className="schedule-sidebar__legend">
-                {CUSTOMER_SOURCE_OPTIONS.map((option) => (
-                  <span key={option.value} className="schedule-sidebar__legend-item">
-                    <span className="source-badge__dot" style={{ backgroundColor: option.color }} />
-                    {option.label}
-                  </span>
-                ))}
-                <span className="schedule-sidebar__legend-item">
-                  <span className="source-badge__dot" style={{ backgroundColor: '#FBC02D' }} />
-                  休假
-                </span>
-              </div>
+          {!isMobile && (
+            <ScheduleEmployeeAvailabilityPanel
+              selectedAreas={selectedAreas}
+              onSelectedAreasChange={setSelectedAreas}
+              lookaheadDays={lookaheadDays}
+              onLookaheadDaysChange={setLookaheadDays}
+              selectedEmployeeId={selectedEmployeeId}
+              onPickOpenSlot={handleAvailabilityPickOpenSlot}
+              employees={employees}
+              allSchedules={allSchedules}
+              leaves={leaves}
+            />
+          )}
 
-              <ScheduleAreaFilter selectedAreas={selectedAreas} onChange={setSelectedAreas} />
-
-              <CalendarSettingsPanel
-                settings={calendarSettings}
-                onChange={handleCalendarSettingsChange}
-                showColorMode
-              />
-            </aside>
-
-            <div className="schedule-main">
-              {isMobile && (
-                <p className="schedule-mobile-hint">點行程看詳情 · 長按拖曳調時間 · ✎ 編輯</p>
-              )}
-              <div className="employee-strip employee-strip--compact">
+          {isMobile && (
+            <div className="schedule-mobile-toolbar" aria-label="派班快捷功能">
+              <div className="schedule-mobile-toolbar__actions">
                 <button
                   type="button"
-                  className={`employee-chip${selectedEmployeeId === '' ? ' is-active' : ''}`}
-                  onClick={() => setSelectedEmployeeId('')}
+                  className="schedule-mobile-toolbar__btn"
+                  onClick={() => setMobileFilterOpen(true)}
                 >
-                  全部師傅
+                  篩選
                 </button>
-                {employees.map((employee) => (
-                  <button
-                    key={employee.id}
-                    type="button"
-                    className={`employee-chip${String(selectedEmployeeId) === String(employee.id) ? ' is-active' : ''}`}
-                    onClick={() => setSelectedEmployeeId(String(employee.id))}
-                  >
-                    <EmployeeAvatar user={employee} size="sm" />
-                    {employee.name}
-                  </button>
-                ))}
+                {canAccess(user, 'schedules.manage') && (
+                  <Link to="/admin/regional-scheduling" className="schedule-mobile-toolbar__btn schedule-mobile-toolbar__link">
+                    區域
+                  </Link>
+                )}
+                {canAccess(user, 'phone.lookup') && (
+                  <Link to="/admin/phone-lookup" className="schedule-mobile-toolbar__btn schedule-mobile-toolbar__link">
+                    電話
+                  </Link>
+                )}
+                <button
+                  type="button"
+                  className="schedule-mobile-toolbar__btn"
+                  onClick={goToday}
+                >
+                  今天
+                </button>
               </div>
+              <button
+                type="button"
+                className="schedule-mobile-toolbar__fab"
+                aria-label="新增行程"
+                onClick={() => openCreate({ start: new Date(), useDefaultShift: true })}
+              >
+                +
+              </button>
+            </div>
+          )}
+
+          <div className={`schedule-layout${isDesktop ? ' schedule-layout--calendar-large' : ''}`}>
+            {!isMobile && (
+              <>
+                <button
+                  type="button"
+                  className="btn btn-secondary schedule-sidebar-toggle"
+                  onClick={() => setSidebarOpen((open) => !open)}
+                  aria-expanded={sidebarOpen}
+                >
+                  {sidebarOpen ? '收合篩選與月曆' : '展開篩選與月曆'}
+                </button>
+
+                <aside className={`schedule-sidebar schedule-sidebar--collapsible${sidebarOpen ? ' is-open' : ''}`}>
+                  {renderScheduleFilterPanel()}
+                </aside>
+              </>
+            )}
+
+            <div className="schedule-main">
+              {!isMobile && renderEmployeeStrip()}
 
               <div className="schedule-calendar-host">
                 <ScheduleCalendar
-                schedules={schedules}
-                leaves={calendarLeaves}
-                leaveRange={leaveRange}
-                currentDate={currentDate}
-                displayDays={displayDays}
-                onNavigate={handleNavigate}
-                onSelectEvent={(event, clickEvent) => openSnapshot(event.resource, clickEvent)}
-                onSelectSlot={openCreate}
-                onDrillDown={(date) => navigate(`/admin/schedules/day/${formatDateOnly(date)}`)}
-                onEventDrop={handleEventDrop}
-                onEventResize={handleEventResize}
-                canDragEvent={(schedule) => canDragScheduleEvent(schedule, userRole)}
-                selectable
-                colorMode={calendarSettings.colorMode}
-                settings={calendarSettings}
-                onViewChange={handleCalendarViewChange}
-              />
+                  schedules={schedules}
+                  leaves={calendarLeaves}
+                  leaveRange={leaveRange}
+                  currentDate={currentDate}
+                  displayDays={displayDays}
+                  onNavigate={handleNavigate}
+                  onSelectEvent={(event, clickEvent) => openSnapshot(event.resource, clickEvent)}
+                  onSelectSlot={openCreate}
+                  onDrillDown={(date) => navigate(`/admin/schedules/day/${formatDateOnly(date)}`)}
+                  onEventDrop={handleEventDrop}
+                  onEventResize={handleEventResize}
+                  canDragEvent={(schedule) => canDragScheduleEvent(schedule, userRole)}
+                  selectable
+                  colorMode={calendarSettings.colorMode}
+                  settings={calendarSettings}
+                  onViewChange={handleCalendarViewChange}
+                  initialView={isMobile ? 'month' : null}
+                />
               </div>
             </div>
           </div>
+
+          {isMobile && mobileFilterOpen && (
+            <>
+              <button
+                type="button"
+                className="schedule-mobile-sheet-backdrop"
+                aria-label="關閉篩選"
+                onClick={() => setMobileFilterOpen(false)}
+              />
+              <aside className="schedule-mobile-sheet schedule-mobile-sheet--filter is-open" aria-label="篩選與設定">
+                <div className="schedule-mobile-sheet__header">
+                  <h3 className="schedule-mobile-sheet__title">篩選與設定</h3>
+                  <button
+                    type="button"
+                    className="schedule-mobile-sheet__close"
+                    aria-label="關閉"
+                    onClick={() => setMobileFilterOpen(false)}
+                  >
+                    ×
+                  </button>
+                </div>
+                <div className="schedule-mobile-sheet__body schedule-sidebar">
+                  {renderScheduleFilterPanel()}
+                </div>
+              </aside>
+            </>
+          )}
         </section>
 
         <PageAlert type="success" message={message} />

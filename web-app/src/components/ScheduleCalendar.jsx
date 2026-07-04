@@ -211,11 +211,19 @@ export function ScheduleCalendar({
 
   onViewChange,
 
+  initialView = null,
+
 }) {
 
   const safeDisplayDays = Math.min(7, Math.max(1, Number(displayDays) || 1));
 
-  const [view, setView] = useState(() => (safeDisplayDays === 1 ? 'day' : 'rolling'));
+  const [view, setView] = useState(() => {
+    if (initialView) {
+      return initialView;
+    }
+
+    return safeDisplayDays === 1 ? 'day' : 'week';
+  });
 
   const dragEnabled = Boolean(onEventDrop);
 
@@ -231,91 +239,39 @@ export function ScheduleCalendar({
 
 
 
-  const rollingView = useMemo(() => {
-
+  const weekView = useMemo(() => {
     try {
-
-      return createMultiDayView(safeDisplayDays);
-
+      const dayCount = safeDisplayDays <= 1 ? 7 : safeDisplayDays;
+      return createMultiDayView(dayCount);
     } catch (error) {
-
-      console.error('Failed to create rolling calendar view', error);
-
+      console.error('Failed to create week calendar view', error);
       return false;
-
     }
-
   }, [safeDisplayDays]);
 
-
-
   const views = useMemo(() => {
-
     const nextViews = {
-
       day: true,
-
       month: true,
-
       agenda: true,
-
     };
 
-
-
-    if (rollingView) {
-
-      nextViews.rolling = rollingView;
-
-    } else if (safeDisplayDays === 7) {
-
-      nextViews.week = true;
-
+    if (weekView) {
+      nextViews.week = weekView;
     }
-
-
 
     return nextViews;
-
-  }, [rollingView, safeDisplayDays]);
-
-
-
-  const activeView = useMemo(() => {
-
-    if (safeDisplayDays === 1) {
-
-      return 'day';
-
-    }
-
-
-
-    if (rollingView) {
-
-      return 'rolling';
-
-    }
-
-
-
-    return 'week';
-
-  }, [rollingView, safeDisplayDays]);
-
-
+  }, [weekView]);
 
   useEffect(() => {
-
     setView((previous) => {
-      if (previous === 'month' || previous === 'agenda' || previous === 'day') {
+      if (previous === 'month' || previous === 'agenda') {
         return previous;
       }
 
-      return activeView;
+      return safeDisplayDays === 1 ? 'day' : 'week';
     });
-
-  }, [activeView, safeDisplayDays]);
+  }, [safeDisplayDays]);
 
 
 
@@ -549,10 +505,10 @@ export function ScheduleCalendar({
 
   return (
 
-    <div className={`schedule-workspace schedule-calendar${colorMode === 'employee' ? ' schedule-calendar--avatars' : ''}${onDrillDown ? ' schedule-calendar--drilldown' : ''}${dragEnabled ? ' schedule-calendar--draggable' : ''}`}>
+    <div className={`schedule-workspace schedule-calendar schedule-calendar--view-${view}${colorMode === 'employee' ? ' schedule-calendar--avatars' : ''}${onDrillDown ? ' schedule-calendar--drilldown' : ''}${dragEnabled ? ' schedule-calendar--draggable' : ''}`}>
 
       <div
-        className={`schedule-calendar-scroll${safeDisplayDays > 1 && view !== 'day' && view !== 'month' && view !== 'agenda' ? ' schedule-calendar-scroll--wide' : ''}`}
+        className={`schedule-calendar-scroll${view === 'week' && safeDisplayDays > 1 ? ' schedule-calendar-scroll--wide' : ''}${view === 'month' ? ' schedule-calendar-scroll--month' : ''}`}
         style={{ '--calendar-day-count': safeDisplayDays }}
       >
 

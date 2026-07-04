@@ -403,9 +403,41 @@ export function buildScheduleCardLine(schedule) {
   return `${projectTag}${prefix}${address}${phone}${unitsPrice}`;
 }
 
+export function getScheduleReport(schedule) {
+  return schedule?.daily_report || schedule?.dailyReport || null;
+}
+
+export function getScheduleDisplayUnits(schedule) {
+  const report = getScheduleReport(schedule);
+
+  if (report?.completed_units != null && report.completed_units !== '') {
+    const completed = Number(report.completed_units);
+    return Number.isFinite(completed) ? completed : Number(schedule?.ac_units) || 0;
+  }
+
+  return Number(schedule?.ac_units) || 0;
+}
+
+export function getScheduleDisplayPrice(schedule) {
+  const report = getScheduleReport(schedule);
+
+  if (report?.collected_amount != null && report.collected_amount !== '') {
+    const collected = Number(report.collected_amount);
+    if (Number.isFinite(collected)) {
+      return collected;
+    }
+  }
+
+  if (schedule?.cleaning_price != null && schedule.cleaning_price !== '') {
+    return schedule.cleaning_price;
+  }
+
+  return parseTaskDetails(schedule?.task_details).cleaning_price;
+}
+
 export function buildScheduleUnitsPriceTag(schedule) {
-  const units = schedule?.ac_units;
-  const total = schedule?.cleaning_price;
+  const units = getScheduleDisplayUnits(schedule);
+  const total = getScheduleDisplayPrice(schedule);
 
   if (units || total) {
     return `[${units || '-'}離${total || '-'}]`;
@@ -421,8 +453,8 @@ export function buildScheduleUnitsPriceTag(schedule) {
 }
 
 export function formatScheduleUnitsAndTotal(schedule) {
-  const units = schedule?.ac_units ?? parseTaskDetails(schedule?.task_details).ac_units;
-  const total = schedule?.cleaning_price ?? parseTaskDetails(schedule?.task_details).cleaning_price;
+  const units = getScheduleDisplayUnits(schedule);
+  const total = getScheduleDisplayPrice(schedule);
 
   if (!units && !total) {
     return '';
@@ -432,12 +464,12 @@ export function formatScheduleUnitsAndTotal(schedule) {
 }
 
 export function formatScheduleAcUnits(schedule) {
-  const units = schedule?.ac_units ?? parseTaskDetails(schedule?.task_details).ac_units;
+  const units = getScheduleDisplayUnits(schedule);
   return units ? `${units} 台` : '-';
 }
 
 export function formatScheduleTotalPrice(schedule) {
-  const total = schedule?.cleaning_price ?? parseTaskDetails(schedule?.task_details).cleaning_price;
+  const total = getScheduleDisplayPrice(schedule);
   return total ? `${total} 元` : '-';
 }
 

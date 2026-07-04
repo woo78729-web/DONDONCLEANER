@@ -18,11 +18,16 @@ import {
   canModifyScheduleByMonth,
   canMutateScheduleWorkDate,
   emptyScheduleForm,
+  expandLeavesToEvents,
   formatChineseTimeRange,
   formatDateOnly,
   formatTimeValue,
+  getCalendarLoadRange,
+  getLeaveEventStyle,
   getScheduleEventStyle,
   isSlotInPast,
+  LEAVE_BAND_END_HOUR,
+  LEAVE_BAND_START_HOUR,
   scheduleToForm,
   slotToForm,
 } from '../utils/scheduleCalendar';
@@ -48,6 +53,7 @@ export default function AdminScheduleDayPage() {
   const userRole = user?.role || 'admin';
   const [employees, setEmployees] = useState([]);
   const [schedules, setSchedules] = useState([]);
+  const [leaves, setLeaves] = useState([]);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState('');
   const [form, setForm] = useState(emptyScheduleForm);
   const [editId, setEditId] = useState(null);
@@ -66,6 +72,38 @@ export default function AdminScheduleDayPage() {
     [schedules],
   );
 
+  const dayLeaveEvents = useMemo(() => {
+    let events = expandLeavesToEvents(leaves, dateParam, dateParam);
+
+    if (selectedEmployeeId) {
+      events = events.filter((event) => String(event.resource?.user_id) === String(selectedEmployeeId));
+    }
+
+    return events.sort((left, right) => left.start - right.start);
+  }, [dateParam, leaves, selectedEmployeeId]);
+
+  const dayTimelineEntries = useMemo(() => {
+    const leaveEntries = dayLeaveEvents.map((event) => ({
+      kind: 'leave',
+      key: event.id,
+      leave: event.resource,
+      sortKey: `${String(LEAVE_BAND_START_HOUR).padStart(2, '0')}:00`,
+    }));
+
+    const scheduleEntries = sortedSchedules.map((schedule) => ({
+      kind: 'schedule',
+      key: `schedule-${schedule.id}`,
+      schedule,
+      sortKey: formatTimeValue(schedule.start_time),
+    }));
+
+    return [...leaveEntries, ...scheduleEntries].sort((left, right) => (
+      left.sortKey.localeCompare(right.sortKey)
+    ));
+  }, [dayLeaveEvents, sortedSchedules]);
+
+  const leaveTimeLabel = `${String(LEAVE_BAND_START_HOUR).padStart(2, '0')}:00 - ${String(LEAVE_BAND_END_HOUR).padStart(2, '0')}:00`;
+
   const loadEmployees = useCallback(async () => {
     const result = await api.getEmployees();
     setEmployees(result.data.filter((item) => item.role === 'employee' && item.is_active));
@@ -80,13 +118,18 @@ export default function AdminScheduleDayPage() {
     setError('');
 
     try {
-      const result = await api.getCalendarSchedules({
-        date_from: dateParam,
-        date_to: dateParam,
-        user_id: selectedEmployeeId || undefined,
-      });
+      const leaveRange = getCalendarLoadRange(parseISO(dateParam));
+      const [result, leaveResult] = await Promise.all([
+        api.getCalendarSchedules({
+          date_from: dateParam,
+          date_to: dateParam,
+          user_id: selectedEmployeeId || undefined,
+        }),
+        api.getPlanningLeaves(leaveRange),
+      ]);
 
       setSchedules(result.data.schedules);
+      setLeaves(leaveResult.data.leaves || []);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -264,7 +307,11 @@ export default function AdminScheduleDayPage() {
         <div className="card-header">
           <div>
             <h2 className="card-title">{formatDayTitle(dateParam)}</h2>
-            <p className="hint">共 {sortedSchedules.length} 筆派工。格式：地址＋電話＋[台數離金額]，點選可展開詳細視窗。</p>
+            <p className="hint">
+              共 {sortedSchedules.length} 筆派工
+              {dayLeaveEvents.length ? `、${dayLeaveEvents.length} 筆排休` : ''}
+              。格式：地址＋電話＋[台數離金額]，點選派工可展開詳細視窗。
+            </p>
           </div>
           <div className="button-row">
             <Link to="/admin/schedules" className="btn btn-secondary btn-sm">
@@ -326,13 +373,38 @@ export default function AdminScheduleDayPage() {
         </div>
 
         <div className="schedule-workspace schedule-workspace--day-list">
-          {!sortedSchedules.length && !loading && (
-            <p className="hint schedule-day-empty">這天目前沒有派工。</p>
+          {!dayTimelineEntries.length && !loading && (
+            <p className="hint schedule-day-empty">這天目前沒有派工或排休。</p>
           )}
 
           <div className="schedule-day-timeline">
-            {sortedSchedules.map((schedule) => (
-                <article className="schedule-day-block" key={schedule.id}>
+            {dayTimelineEntries.map((entry) => {
+              if (entry.kind === 'leave') {
+                const leave = entry.leave;
+                const name = leave.user?.name || leave.user?.account || '師傅';
+
+                return (
+                  <article className="schedule-day-block schedule-day-block--leave" key={entry.key}>
+                    <div
+                      className="schedule-day-block__button schedule-day-block__button--leave"
+                      style={getLeaveEventStyle()}
+                    >
+                      <ScheduleTechnicianBadge
+                        user={leave.user}
+                        size="sm"
+                        className="schedule-day-block__technician"
+                      />
+                      <p className="schedule-day-block__line">{name} 休假</p>
+                      <p className="schedule-day-block__time">{leaveTimeLabel}</p>
+                    </div>
+                  </article>
+                );
+              }
+
+              const schedule = entry.schedule;
+
+              return (
+                <article className="schedule-day-block" key={entry.key}>
                   <button
                     type="button"
                     className="schedule-day-block__button"
@@ -348,7 +420,8 @@ export default function AdminScheduleDayPage() {
                     <p className="schedule-day-block__time">{formatChineseTimeRange(schedule)}</p>
                   </button>
                 </article>
-              ))}
+              );
+            })}
           </div>
         </div>
       </section>
@@ -380,7 +453,7 @@ export default function AdminScheduleDayPage() {
         canDelete={Boolean(editId) && canModifyScheduleByMonth(editingSchedule, userRole)}
         userRole={userRole}
         allSchedules={schedules}
-        leaves={[]}
+        leaves={leaves}
         error={error}
         onChange={setForm}
         onClose={closeModal}
