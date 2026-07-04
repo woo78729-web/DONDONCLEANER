@@ -143,9 +143,13 @@ class ScheduleListApiTest extends TestCase
                 ['ac_units' => 2, 'unit_price' => 1500],
             ],
             'needs_invoice' => true,
+            'invoice_tax_id' => '12345678',
+            'invoice_title' => '測試有限公司',
         ])->assertCreated()
             ->assertJsonPath('data.unit_price', 1500)
             ->assertJsonPath('data.needs_invoice', true)
+            ->assertJsonPath('data.invoice_tax_id', '12345678')
+            ->assertJsonPath('data.invoice_title', '測試有限公司')
             ->assertJsonPath('data.cleaning_price', 3150);
     }
 }

@@ -16,7 +16,7 @@ import { EmployeeAvatar } from '../components/EmployeeAvatar';
 import { useIsMobile } from '../hooks/useIsMobile';
 import { api } from '../api/client';
 import { useAuth } from '../context/AuthContext';
-import { canAccess } from '../utils/permissions';
+import { canAccess, canManageSchedulePricing } from '../utils/permissions';
 import { loadCalendarSettings, saveCalendarSettings } from '../utils/calendarSettings';
 import { loadAvailabilityDays } from '../utils/taitungAreas';
 import { resolveScheduleEventAnchor } from '../utils/schedulePopover';
@@ -634,6 +634,7 @@ export default function AdminSchedulesPage() {
                   settings={calendarSettings}
                   onViewChange={handleCalendarViewChange}
                   initialView={isMobile ? 'month' : null}
+                  hidePrice={!canManageSchedulePricing(userRole)}
                 />
               </div>
             </div>

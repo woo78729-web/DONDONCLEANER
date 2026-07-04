@@ -322,8 +322,8 @@ export function getCalendarDisplayRange(view, rangeStart, displayDays = 7) {
   return getVisibleScheduleRange(rangeStart, displayDays);
 }
 
-export function buildScheduleCalendarEvents(schedules, leaves, dateFrom, dateTo) {
-  const scheduleEvents = schedules.map((schedule) => scheduleToEvent(schedule));
+export function buildScheduleCalendarEvents(schedules, leaves, dateFrom, dateTo, options = {}) {
+  const scheduleEvents = schedules.map((schedule) => scheduleToEvent(schedule, options));
   const leaveEvents = expandLeavesToEvents(leaves, dateFrom, dateTo);
 
   return [...leaveEvents, ...scheduleEvents];
@@ -388,15 +388,15 @@ export function hasScheduleReport(schedule) {
   return Boolean(schedule?.daily_report || schedule?.dailyReport);
 }
 
-export function buildScheduleEventTitle(schedule) {
-  return buildScheduleCardLine(schedule);
+export function buildScheduleEventTitle(schedule, options = {}) {
+  return buildScheduleCardLine(schedule, options);
 }
 
-export function buildScheduleCardLine(schedule) {
+export function buildScheduleCardLine(schedule, { hidePrice = false } = {}) {
   const surname = getCustomerSurname(schedule.customer_name);
   const address = String(schedule.customer_address || '').trim();
   const phone = String(schedule.customer_phone || '').trim().replace(/\s+/g, '');
-  const unitsPrice = buildScheduleUnitsPriceTag(schedule);
+  const unitsPrice = buildScheduleUnitsPriceTag(schedule, { hidePrice });
   const prefix = surname ? `${surname})` : '';
   const projectTag = schedule?.cleaning_project_id ? '[專]' : '';
 
@@ -435,8 +435,13 @@ export function getScheduleDisplayPrice(schedule) {
   return parseTaskDetails(schedule?.task_details).cleaning_price;
 }
 
-export function buildScheduleUnitsPriceTag(schedule) {
+export function buildScheduleUnitsPriceTag(schedule, { hidePrice = false } = {}) {
   const units = getScheduleDisplayUnits(schedule);
+
+  if (hidePrice) {
+    return units ? `[${units}台]` : '';
+  }
+
   const total = getScheduleDisplayPrice(schedule);
 
   if (units || total) {
@@ -908,7 +913,7 @@ export function parseTaskDetails(taskDetails) {
   };
 }
 
-export function scheduleToEvent(schedule) {
+export function scheduleToEvent(schedule, options = {}) {
   const displayTimes = getScheduleDisplayTimes(schedule);
   const start = combineDateTime(schedule.work_date, displayTimes.start_time);
   let end = combineDateTime(schedule.work_date, displayTimes.end_time);
@@ -919,7 +924,7 @@ export function scheduleToEvent(schedule) {
 
   return {
     id: schedule.id,
-    title: buildScheduleEventTitle(schedule),
+    title: buildScheduleEventTitle(schedule, options),
     start,
     end,
     resource: schedule,
@@ -947,6 +952,8 @@ export const emptyScheduleForm = {
   ac_units: '1',
   unit_price: '1500',
   needs_invoice: false,
+  invoice_tax_id: '',
+  invoice_title: '',
   cleaning_price: '1500',
   notes: '',
 };
@@ -985,6 +992,8 @@ export function scheduleToForm(schedule) {
     line_display_name: schedule.line_display_name || '',
     pricing_lines: pricingLines,
     needs_invoice: Boolean(schedule.needs_invoice),
+    invoice_tax_id: schedule.invoice_tax_id ?? '',
+    invoice_title: schedule.invoice_title ?? '',
     notes: schedule.notes || '',
   });
 }
@@ -1200,7 +1209,10 @@ export function buildSchedulePayload(form, { original = null, userRole = 'admin'
     throw new Error(timingError);
   }
 
-  const summary = summarizePricingLines(form.pricing_lines, Boolean(form.needs_invoice));
+  const hidePricing = userRole === 'customer_service';
+  const summary = hidePricing
+    ? summarizePricingLines(form.pricing_lines, false)
+    : summarizePricingLines(form.pricing_lines, Boolean(form.needs_invoice));
   const pricingLines = summary.pricing_lines.map(({ ac_units, unit_price }) => ({
     ac_units: Number(ac_units),
     unit_price: Number(unit_price),
@@ -1210,7 +1222,7 @@ export function buildSchedulePayload(form, { original = null, userRole = 'admin'
     throw new Error('請填寫有效的冷氣台數');
   }
 
-  if (pricingLines.some((line) => !UNIT_PRICE_OPTIONS.includes(line.unit_price))) {
+  if (!hidePricing && pricingLines.some((line) => !UNIT_PRICE_OPTIONS.includes(line.unit_price))) {
     throw new Error('請選擇有效的單價');
   }
 
@@ -1236,6 +1248,8 @@ export function buildSchedulePayload(form, { original = null, userRole = 'admin'
     line_display_name: form.line_display_name?.trim() || null,
     pricing_lines: pricingLines,
     needs_invoice: Boolean(form.needs_invoice),
+    invoice_tax_id: form.needs_invoice ? form.invoice_tax_id?.trim() || null : null,
+    invoice_title: form.needs_invoice ? form.invoice_title?.trim() || null : null,
     notes: form.notes?.trim() || null,
   };
 }

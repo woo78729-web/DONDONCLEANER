@@ -9,6 +9,7 @@ import {
   formatScheduleTotalPrice,
   getScheduleBlockColor,
 } from '../utils/scheduleCalendar';
+import { canManageSchedulePricing } from '../utils/permissions';
 import { computeSchedulePopoverStyle } from '../utils/schedulePopover';
 
 export function ScheduleSnapshotModal({
@@ -49,6 +50,7 @@ export function ScheduleSnapshotModal({
 
   const blockColor = getScheduleBlockColor(schedule);
   const canModify = showActions && !schedule.daily_report && canModifyScheduleByMonth(schedule, userRole);
+  const canManagePricing = canManageSchedulePricing(userRole);
   const isAnchored = Boolean(anchor && popoverStyle);
   const dateTimeLabel = [
     formatScheduleDateLabel(schedule.work_date),
@@ -113,10 +115,12 @@ export function ScheduleSnapshotModal({
               <span className="schedule-popover__label">清洗台數</span>
               <span className="schedule-popover__value">{formatScheduleAcUnits(schedule)}</span>
             </li>
+            {canManagePricing && (
             <li>
               <span className="schedule-popover__label">總金額</span>
               <span className="schedule-popover__value">{formatScheduleTotalPrice(schedule)}</span>
             </li>
+            )}
             <li>
               <span className="schedule-popover__label">備註</span>
               <span className="schedule-popover__value">{schedule.notes?.trim() || '-'}</span>

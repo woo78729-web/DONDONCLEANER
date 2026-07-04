@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\DailySchedule;
 use App\Models\User;
 use App\Support\CustomerSource;
+use App\Support\ScheduleCustomerServicePolicy;
 use App\Support\ScheduleMutationPolicy;
 use App\Support\SchedulePricing;
 use App\Support\TaitungServiceArea;
@@ -111,7 +112,9 @@ class ScheduleController extends Controller
             return $error;
         }
 
+        $validated = ScheduleCustomerServicePolicy::preparePayload($validated, $request->user());
         $validated = $this->normalizeSchedulePayload($validated);
+        $validated = ScheduleCustomerServicePolicy::finalizePayload($validated, $request->user());
 
         $schedule = DailySchedule::query()->create($validated);
 
@@ -173,10 +176,14 @@ class ScheduleController extends Controller
             'cleaning_price' => $schedule->cleaning_price,
             'unit_price' => $schedule->unit_price,
             'needs_invoice' => $schedule->needs_invoice,
+            'invoice_tax_id' => $schedule->invoice_tax_id,
+            'invoice_title' => $schedule->invoice_title,
             'notes' => $schedule->notes,
         ], $validated);
 
+        $payload = ScheduleCustomerServicePolicy::preparePayload($payload, $request->user(), $schedule);
         $validated = $this->normalizeSchedulePayload($payload);
+        $validated = ScheduleCustomerServicePolicy::finalizePayload($validated, $request->user(), $schedule);
 
         if ($error = $this->validateScheduleMutationAccess($request, $validated['work_date'], $schedule)) {
             return $error;
@@ -304,6 +311,8 @@ class ScheduleController extends Controller
             'pricing_lines.*.ac_units' => ['required', 'integer', 'min:1', 'max:99'],
             'pricing_lines.*.unit_price' => ['required', 'integer', Rule::in(SchedulePricing::unitPrices())],
             'needs_invoice' => ['nullable', 'boolean'],
+            'invoice_tax_id' => ['nullable', 'string', 'max:20'],
+            'invoice_title' => ['nullable', 'string', 'max:255'],
             'notes' => ['nullable', 'string', 'max:500'],
         ];
     }
@@ -345,6 +354,18 @@ class ScheduleController extends Controller
             $payload['mail_recipient'] = null;
             $payload['mail_phone'] = null;
             $payload['mail_address'] = null;
+        }
+
+        if ($needsInvoice) {
+            $payload['invoice_tax_id'] = isset($payload['invoice_tax_id']) && $payload['invoice_tax_id'] !== ''
+                ? trim((string) $payload['invoice_tax_id'])
+                : null;
+            $payload['invoice_title'] = isset($payload['invoice_title']) && $payload['invoice_title'] !== ''
+                ? trim((string) $payload['invoice_title'])
+                : null;
+        } else {
+            $payload['invoice_tax_id'] = null;
+            $payload['invoice_title'] = null;
         }
 
         $payload['service_area'] = $payload['service_area'] ?? null;

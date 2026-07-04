@@ -4,7 +4,7 @@ import {
 } from '../utils/scheduleCalendar';
 import { ScheduleTechnicianBadge } from './ScheduleTechnicianBadge';
 
-export function CalendarScheduleEvent({ event, view }) {
+export function CalendarScheduleEvent({ event, view, hidePrice = false }) {
   const schedule = event.resource;
   const compact = view === 'month';
 
@@ -52,7 +52,7 @@ export function CalendarScheduleEvent({ event, view }) {
         centered
         className="calendar-event-detail__technician"
       />
-      <p className="calendar-event-detail__line">{buildScheduleCardLine(schedule)}</p>
+      <p className="calendar-event-detail__line">{buildScheduleCardLine(schedule, { hidePrice })}</p>
       <p className="calendar-event-detail__time">{formatScheduleDisplayTimeRange(schedule)}</p>
     </div>
   );

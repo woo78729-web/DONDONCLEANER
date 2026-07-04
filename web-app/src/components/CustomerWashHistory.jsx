@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../api/client';
+import { useAuth } from '../context/AuthContext';
+import { canManageSchedulePricing } from '../utils/permissions';
 import { formatDateOnly, formatTimeValue } from '../utils/scheduleCalendar';
 
 function normalizePhone(value) {
@@ -7,6 +9,8 @@ function normalizePhone(value) {
 }
 
 export function CustomerWashHistory({ phone, onApply }) {
+  const { user } = useAuth();
+  const showPricing = canManageSchedulePricing(user);
   const [history, setHistory] = useState(null);
   const [loading, setLoading] = useState(false);
   const normalizedPhone = useMemo(() => normalizePhone(phone), [phone]);
@@ -72,7 +76,7 @@ export function CustomerWashHistory({ phone, onApply }) {
               <th>時間</th>
               <th>師傅</th>
               <th>地址</th>
-              <th>金額</th>
+              {showPricing && <th>金額</th>}
               {onApply && <th>操作</th>}
             </tr>
           </thead>
@@ -83,7 +87,7 @@ export function CustomerWashHistory({ phone, onApply }) {
                 <td>{formatTimeValue(schedule.start_time)}</td>
                 <td>{schedule.user?.name || '-'}</td>
                 <td>{schedule.customer_address}</td>
-                <td className="num">{schedule.cleaning_price || '-'} 元</td>
+                {showPricing && <td className="num">{schedule.cleaning_price || '-'} 元</td>}
                 {onApply && (
                   <td>
                     <button type="button" className="btn btn-secondary btn-sm" onClick={() => onApply(schedule)}>

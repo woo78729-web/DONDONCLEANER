@@ -1830,6 +1830,36 @@
   min-width: 0;
 }
 
+.address-autocomplete-host {
+  flex: 1;
+  min-width: 0;
+}
+
+.address-autocomplete-widget {
+  display: block;
+  width: 100%;
+  color-scheme: dark;
+}
+
+.schedule-form-modal gmp-place-autocomplete.address-autocomplete-widget {
+  flex: 1;
+  min-width: 0;
+}
+
+.address-autocomplete-hidden-input {
+  position: absolute;
+  width: 0;
+  height: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.schedule-form-modal .address-autocomplete-host input,
+.schedule-form-modal .address-autocomplete-widget input {
+  width: 100%;
+  box-sizing: border-box;
+}
+
 .map-link-btn {
   flex-shrink: 0;
   align-self: stretch;
@@ -2028,6 +2058,12 @@
   margin-top: 12px;
   padding-top: 12px;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.form-section__body--flush {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
 }
 
 .field-checkbox--sub {

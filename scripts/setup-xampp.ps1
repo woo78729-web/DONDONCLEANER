@@ -43,6 +43,33 @@ if ($content -match '#LoadModule rewrite_module') {
 
 Set-Content -Path $httpdConf -Value $content -Encoding UTF8
 
+Write-Host "建立 storage 連結..." -ForegroundColor Yellow
+Set-Location $projectRoot
+$storageLink = Join-Path $projectRoot "public\storage"
+$storageTarget = Join-Path $projectRoot "storage\app\public"
+$linkOk = $false
+if (Test-Path $storageLink) {
+    $item = Get-Item -LiteralPath $storageLink -Force -ErrorAction SilentlyContinue
+    if ($item -and ($item.LinkType -eq 'Junction' -or $item.LinkType -eq 'SymbolicLink')) {
+        $target = $item.Target
+        if ($target -is [System.Array]) { $target = $target[0] }
+        $linkOk = ([System.IO.Path]::GetFullPath($target) -eq [System.IO.Path]::GetFullPath($storageTarget))
+    }
+}
+if ($linkOk) {
+    Write-Host "  storage 連結已正確" -ForegroundColor DarkGray
+} else {
+    if (Test-Path $storageLink) {
+        Remove-Item -LiteralPath $storageLink -Force -Recurse -ErrorAction SilentlyContinue
+    }
+    & php artisan storage:link 2>$null | Out-Null
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host "  storage 連結已建立" -ForegroundColor DarkGray
+    } else {
+        Write-Host "  [警告] storage 連結建立失敗" -ForegroundColor Yellow
+    }
+}
+
 Write-Host ""
 Write-Host "XAMPP 已指向專案 public 資料夾。" -ForegroundColor Green
 Write-Host "請到 XAMPP 控制台：Stop Apache → Start Apache" -ForegroundColor Yellow

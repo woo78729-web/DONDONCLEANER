@@ -93,3 +93,8 @@ export function canViewMaintenanceCompensation(user) {
 export function canEditMaintenanceCompensation(user) {
   return ['admin', 'customer_service'].includes(user?.role);
 }
+
+export function canManageSchedulePricing(userOrRole) {
+  const role = typeof userOrRole === 'string' ? userOrRole : userOrRole?.role;
+  return role === 'admin';
+}

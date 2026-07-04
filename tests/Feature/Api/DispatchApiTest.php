@@ -157,7 +157,9 @@ class DispatchApiTest extends TestCase
                 ['ac_units' => 11, 'unit_price' => 1000],
             ],
             'needs_invoice' => false,
-        ])->assertCreated();
+        ])->assertCreated()
+            ->assertJsonPath('data.cleaning_price', 0)
+            ->assertJsonPath('data.task_details', '11台');
     }
 
     public function test_customer_service_cannot_mutate_previous_month_schedule(): void

@@ -11,7 +11,6 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
-use Illuminate\Support\Facades\Storage;
 use Laravel\Sanctum\HasApiTokens;
 
 #[Fillable(['account', 'password', 'name', 'phone', 'bank_account', 'clothing_size', 'avatar_path', 'role', 'is_active', 'rules_accepted_at', 'must_change_password', 'google_id', 'google_email'])]
@@ -79,8 +78,12 @@ class User extends Authenticatable
 
     protected function avatarUrl(): Attribute
     {
-        return Attribute::get(fn () => $this->avatar_path
-            ? Storage::disk('public')->url($this->avatar_path)
-            : null);
+        return Attribute::get(function () {
+            if (! $this->avatar_path) {
+                return null;
+            }
+
+            return '/storage/'.ltrim(str_replace('\\', '/', $this->avatar_path), '/');
+        });
     }
 }

@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import { api } from '../api/client';
+import { useAuth } from '../context/AuthContext';
+import { canManageSchedulePricing } from '../utils/permissions';
 import { MaintenanceReportFromScheduleModal } from './MaintenanceReportFromScheduleModal';
 import { formatDateOnly, formatTimeValue, getCustomerSourceLabel } from '../utils/scheduleCalendar';
 
@@ -9,6 +11,8 @@ export function CustomerPhoneLookup({
   onMaintenanceCreated,
   onSearchComplete,
 }) {
+  const { user } = useAuth();
+  const showPricing = canManageSchedulePricing(user);
   const [phone, setPhone] = useState('');
   const [schedules, setSchedules] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -81,7 +85,7 @@ export function CustomerPhoneLookup({
                 <th>FB/LINE</th>
                 <th>師傅</th>
                 <th>來源</th>
-                <th>金額</th>
+                {showPricing && <th>金額</th>}
                 {(onSelectSchedule || showMaintenanceButton) && <th>操作</th>}
               </tr>
             </thead>
@@ -97,7 +101,7 @@ export function CustomerPhoneLookup({
                   </td>
                   <td>{schedule.user?.name ?? '-'}</td>
                   <td>{getCustomerSourceLabel(schedule.customer_source)}</td>
-                  <td>{schedule.cleaning_price} 元</td>
+                  {showPricing && <td>{schedule.cleaning_price} 元</td>}
                   {(onSelectSchedule || showMaintenanceButton) && (
                     <td>
                       <div className="button-row">

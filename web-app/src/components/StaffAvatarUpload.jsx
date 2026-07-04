@@ -1,4 +1,5 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { getEmployeeInitials } from '../utils/employeeAvatar';
 
 export function StaffAvatarUpload({
   staff,
@@ -7,6 +8,7 @@ export function StaffAvatarUpload({
 }) {
   const inputRef = useRef(null);
   const [uploading, setUploading] = useState(false);
+  const [imageFailed, setImageFailed] = useState(false);
 
   async function handleChange(event) {
     const file = event.target.files?.[0];
@@ -25,7 +27,12 @@ export function StaffAvatarUpload({
     }
   }
 
-  const initials = (staff.name || staff.account || '?').slice(0, 1);
+  const initials = getEmployeeInitials(staff);
+  const showImage = staff.avatar_url && !imageFailed;
+
+  useEffect(() => {
+    setImageFailed(false);
+  }, [staff.avatar_url, staff.id]);
 
   return (
     <div className="staff-avatar-upload">
@@ -37,8 +44,13 @@ export function StaffAvatarUpload({
         aria-label={`${staff.name || staff.account} 上傳頭像`}
         title={uploading ? '上傳中...' : '點擊上傳頭像'}
       >
-        {staff.avatar_url ? (
-          <img src={staff.avatar_url} alt="" className="staff-avatar-upload__image" />
+        {showImage ? (
+          <img
+            src={staff.avatar_url}
+            alt=""
+            className="staff-avatar-upload__image"
+            onError={() => setImageFailed(true)}
+          />
         ) : (
           <span className="staff-avatar-upload__placeholder">{initials}</span>
         )}

@@ -72,4 +72,30 @@ class RolePermissionApiTest extends TestCase
             ->assertJsonPath('data.user.role', 'finance')
             ->assertJsonFragment(['permissions' => ['remittance.track', 'reports.view', 'reports.export']]);
     }
+
+    public function test_customer_service_can_list_employees_for_scheduling(): void
+    {
+        $customerService = User::query()->create([
+            'account' => 'cs1',
+            'password' => Hash::make('password123'),
+            'name' => '客服',
+            'role' => 'customer_service',
+            'is_active' => true,
+        ]);
+
+        User::query()->create([
+            'account' => 'emp1',
+            'password' => Hash::make('password123'),
+            'name' => '師傅甲',
+            'role' => 'employee',
+            'is_active' => true,
+        ]);
+
+        Sanctum::actingAs($customerService);
+
+        $this->getJson('/api/admin/users?role=employee')
+            ->assertOk()
+            ->assertJsonPath('status', 'success')
+            ->assertJsonFragment(['name' => '師傅甲']);
+    }
 }

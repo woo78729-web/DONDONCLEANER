@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { getEmployeeAvatarUrl, getEmployeeInitials } from '../utils/employeeAvatar';
 
 export function EmployeeAvatar({
@@ -7,6 +8,7 @@ export function EmployeeAvatar({
 }) {
   const avatarUrl = getEmployeeAvatarUrl(user);
   const initials = getEmployeeInitials(user);
+  const [imageFailed, setImageFailed] = useState(false);
   const sizeClass = size === 'xs'
     ? 'employee-avatar--xs'
     : size === 'sm'
@@ -17,8 +19,13 @@ export function EmployeeAvatar({
 
   return (
     <span className={`employee-avatar ${sizeClass} ${className}`.trim()} aria-hidden="true">
-      {avatarUrl ? (
-        <img src={avatarUrl} alt="" className="employee-avatar__image" />
+      {avatarUrl && !imageFailed ? (
+        <img
+          src={avatarUrl}
+          alt=""
+          className="employee-avatar__image"
+          onError={() => setImageFailed(true)}
+        />
       ) : (
         <span className="employee-avatar__initials">{initials}</span>
       )}

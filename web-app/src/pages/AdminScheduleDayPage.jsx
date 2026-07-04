@@ -11,6 +11,7 @@ import { EmployeeAvatar } from '../components/EmployeeAvatar';
 import { ScheduleTechnicianBadge } from '../components/ScheduleTechnicianBadge';
 import { api } from '../api/client';
 import { useAuth } from '../context/AuthContext';
+import { canManageSchedulePricing } from '../utils/permissions';
 import {
   buildSchedulePayload,
   buildScheduleCardLine,
@@ -416,7 +417,7 @@ export default function AdminScheduleDayPage() {
                       size="sm"
                       className="schedule-day-block__technician"
                     />
-                    <p className="schedule-day-block__line">{buildScheduleCardLine(schedule)}</p>
+                    <p className="schedule-day-block__line">{buildScheduleCardLine(schedule, { hidePrice: !canManageSchedulePricing(userRole) })}</p>
                     <p className="schedule-day-block__time">{formatChineseTimeRange(schedule)}</p>
                   </button>
                 </article>

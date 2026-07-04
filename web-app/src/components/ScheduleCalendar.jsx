@@ -213,6 +213,8 @@ export function ScheduleCalendar({
 
   initialView = null,
 
+  hidePrice = false,
+
 }) {
 
   const safeDisplayDays = Math.min(7, Math.max(1, Number(displayDays) || 1));
@@ -290,8 +292,9 @@ export function ScheduleCalendar({
       leaves,
       displayRange.date_from,
       displayRange.date_to,
+      { hidePrice },
     ),
-    [displayRange, leaves, schedules],
+    [displayRange, hidePrice, leaves, schedules],
   );
 
   const [eventOverrides, setEventOverrides] = useState(() => new Map());
@@ -431,8 +434,8 @@ export function ScheduleCalendar({
 
 
   const components = useMemo(() => ({
-    event: (props) => <CalendarScheduleEvent {...props} view={view} />,
-  }), [view]);
+    event: (props) => <CalendarScheduleEvent {...props} view={view} hidePrice={hidePrice} />,
+  }), [hidePrice, view]);
 
 
 

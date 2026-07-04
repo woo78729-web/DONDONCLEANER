@@ -29,6 +29,7 @@ Route::middleware('auth:sanctum')->group(function () {
 });
 
 Route::middleware(['auth:sanctum', 'role:admin|customer_service'])->prefix('admin')->group(function () {
+    Route::get('/users', [AdminUserController::class, 'index']);
     Route::get('/customer-lookup', CustomerLookupController::class);
     Route::get('/projects', [AdminCleaningProjectController::class, 'index']);
     Route::post('/projects', [AdminCleaningProjectController::class, 'store']);
@@ -66,7 +67,6 @@ Route::middleware(['auth:sanctum', 'role:admin|customer_service|finance'])->pref
 });
 
 Route::middleware(['auth:sanctum', 'role:admin'])->prefix('admin')->group(function () {
-    Route::get('/users', [AdminUserController::class, 'index']);
     Route::post('/users', [AdminUserController::class, 'store']);
     Route::patch('/users/{user}', [AdminUserController::class, 'update']);
     Route::delete('/users/{user}', [AdminUserController::class, 'destroy']);

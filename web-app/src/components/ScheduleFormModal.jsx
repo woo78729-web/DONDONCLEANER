@@ -10,10 +10,13 @@ import {
   UNIT_PRICE_OPTIONS,
 } from '../utils/scheduleCalendar';
 import { TAITUNG_SERVICE_AREAS } from '../utils/taitungAreas';
+import { canManageSchedulePricing } from '../utils/permissions';
 import { Link } from 'react-router-dom';
 import { GoogleMapsLink } from './GoogleMapsLink';
+import { AddressAutocompleteInput } from './AddressAutocompleteInput';
 import { CustomerWashHistory } from './CustomerWashHistory';
 import { EmployeeDayScheduleSidebar } from './EmployeeDayScheduleSidebar';
+import { InvoiceTaxIdFields } from './InvoiceTaxIdFields';
 import './schedule-calendar.css';
 
 function updateForm(onChange, form, partial) {
@@ -98,6 +101,22 @@ export function ScheduleFormModal({
   }
 
   const showDaySchedule = Boolean(form.user_id && form.work_date);
+  const canManagePricing = canManageSchedulePricing(userRole);
+  const showInvoiceOption = canManagePricing || userRole === 'customer_service';
+
+  function toggleNeedsInvoice(checked) {
+    const patch = checked
+      ? { needs_invoice: true }
+      : { needs_invoice: false, invoice_tax_id: '', invoice_title: '' };
+
+    if (canManagePricing) {
+      onChange(applyPriceCalculation(patchScheduleForm(form, patch)));
+      return;
+    }
+
+    onChange(patchScheduleForm(form, patch));
+  }
+
   const dayScheduleSidebarProps = {
     employeeId: form.user_id,
     workDate: form.work_date,
@@ -177,6 +196,29 @@ export function ScheduleFormModal({
                 );
               })}
             </div>
+            {!employees.length && (
+              <span className="hint">無法載入師傅名單，請重新整理頁面或聯絡管理員。</span>
+            )}
+          </div>
+
+          <div className="field" style={{ gridColumn: '1 / -1' }}>
+            <span className="field-label">客戶來源</span>
+            <div className="option-chip-group" role="radiogroup" aria-label="客戶來源">
+              {CUSTOMER_SOURCE_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={form.customer_source === option.value}
+                  className={`option-chip option-chip--source${form.customer_source === option.value ? ' is-active' : ''}`}
+                  style={{ '--chip-color': option.color }}
+                  onClick={() => handleChange({ customer_source: option.value })}
+                >
+                  <span className="option-chip__dot" />
+                  {option.label}
+                </button>
+              ))}
+            </div>
           </div>
 
           {showDaySchedule && (
@@ -220,6 +262,7 @@ export function ScheduleFormModal({
             <span className="hint">依台數自動估算（每台約 1 小時），仍可手動調整</span>
           </label>
 
+          {canManagePricing ? (
           <div className="field schedule-form-modal__pricing-section" style={{ gridColumn: '1 / -1' }}>
             <div className="pricing-lines__header">
               <span className="field-label">清洗項目（可分段加總台數與單價）</span>
@@ -281,7 +324,28 @@ export function ScheduleFormModal({
               ))}
             </div>
           </div>
+          ) : (
+          <label className="field" style={{ gridColumn: '1 / -1' }}>
+            <span className="field-label">清洗台數</span>
+            <input
+              className="field-control"
+              type="number"
+              min="1"
+              max="99"
+              value={(form.pricing_lines || [createPricingLine()])[0]?.ac_units || '1'}
+              onChange={(e) => updateForm(onChange, form, {
+                pricing_lines: [{
+                  ...(form.pricing_lines?.[0] || createPricingLine()),
+                  ac_units: e.target.value,
+                }],
+              })}
+              required
+            />
+            <span className="hint">僅供排班估算時間，金額由管理員後續確認</span>
+          </label>
+          )}
 
+          {canManagePricing && (
           <div className="field" style={{ gridColumn: '1 / -1' }}>
             <span className="field-label">合計</span>
             <div className="price-summary">
@@ -289,6 +353,7 @@ export function ScheduleFormModal({
               {form.needs_invoice && <span className="hint">已含 5% 發票加價</span>}
             </div>
           </div>
+          )}
 
           <label className="field">
             <span className="field-label">清洗聯絡人</span>
@@ -308,6 +373,20 @@ export function ScheduleFormModal({
               onChange={(e) => handleChange({ customer_phone: e.target.value })}
               required
             />
+          </label>
+
+          <label className="field" style={{ gridColumn: '1 / -1' }}>
+            <span className="field-label">清洗地址</span>
+            <div className="field-action-row">
+              <AddressAutocompleteInput
+                value={form.customer_address}
+                onChange={(address) => handleChange({ customer_address: address })}
+                placeholder="請輸入完整地址"
+                required
+                showFallbackHint={false}
+              />
+              <GoogleMapsLink address={form.customer_address} />
+            </div>
           </label>
 
           <div style={{ gridColumn: '1 / -1' }}>
@@ -332,40 +411,6 @@ export function ScheduleFormModal({
             </div>
           </div>
 
-          <div className="field" style={{ gridColumn: '1 / -1' }}>
-            <span className="field-label">客戶來源</span>
-            <div className="option-chip-group" role="radiogroup" aria-label="客戶來源">
-              {CUSTOMER_SOURCE_OPTIONS.map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  role="radio"
-                  aria-checked={form.customer_source === option.value}
-                  className={`option-chip option-chip--source${form.customer_source === option.value ? ' is-active' : ''}`}
-                  style={{ '--chip-color': option.color }}
-                  onClick={() => handleChange({ customer_source: option.value })}
-                >
-                  <span className="option-chip__dot" />
-                  {option.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <label className="field" style={{ gridColumn: '1 / -1' }}>
-            <span className="field-label">清洗地址</span>
-            <div className="field-action-row">
-              <input
-                className="field-control"
-                value={form.customer_address}
-                onChange={(e) => handleChange({ customer_address: e.target.value })}
-                placeholder="請輸入完整地址"
-                required
-              />
-              <GoogleMapsLink address={form.customer_address} />
-            </div>
-          </label>
-
           <div className="form-options-row" style={{ gridColumn: '1 / -1' }}>
             <label className="field field-checkbox">
               <input
@@ -376,15 +421,29 @@ export function ScheduleFormModal({
               <span>如需寄信</span>
             </label>
 
+            {showInvoiceOption && (
             <label className="field field-checkbox">
               <input
                 type="checkbox"
                 checked={Boolean(form.needs_invoice)}
-                onChange={(e) => updateForm(onChange, form, { needs_invoice: e.target.checked })}
+                onChange={(e) => toggleNeedsInvoice(e.target.checked)}
               />
-              <span>是否開發票（統編，加 5%）</span>
+              <span>{canManagePricing ? '是否開發票（統編，加 5%）' : '是否開發票（需填抬頭、統編）'}</span>
             </label>
+            )}
           </div>
+
+          {form.needs_invoice && (
+            <div className="form-section" style={{ gridColumn: '1 / -1' }}>
+              <div className="form-section__body form-section__body--flush">
+                <InvoiceTaxIdFields
+                  invoiceTitle={form.invoice_title}
+                  invoiceTaxId={form.invoice_tax_id}
+                  onChange={handleChange}
+                />
+              </div>
+            </div>
+          )}
 
           {form.needs_mail && (
             <div className="form-section" style={{ gridColumn: '1 / -1' }}>

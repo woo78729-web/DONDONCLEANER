@@ -28,6 +28,49 @@ try {
     Write-Host "  [warn] migrate failed: $($_.Exception.Message)" -ForegroundColor Yellow
 }
 
+Write-Host "Ensuring storage link..." -ForegroundColor Yellow
+function Test-ProjectStorageLink {
+    param(
+        [string]$LinkPath,
+        [string]$ExpectedTarget
+    )
+
+    if (-not (Test-Path $LinkPath)) {
+        return $false
+    }
+
+    $item = Get-Item -LiteralPath $LinkPath -Force -ErrorAction SilentlyContinue
+    if (-not $item -or ($item.LinkType -ne 'Junction' -and $item.LinkType -ne 'SymbolicLink')) {
+        return $false
+    }
+
+    $target = $item.Target
+    if ($target -is [System.Array]) {
+        $target = $target[0]
+    }
+
+    return ([System.IO.Path]::GetFullPath($target) -eq [System.IO.Path]::GetFullPath($ExpectedTarget))
+}
+
+$storageLink = Join-Path $projectRoot "public\storage"
+$storageTarget = Join-Path $projectRoot "storage\app\public"
+
+if (Test-ProjectStorageLink -LinkPath $storageLink -ExpectedTarget $storageTarget) {
+    Write-Host "  storage link OK" -ForegroundColor DarkGray
+} else {
+    if (Test-Path $storageLink) {
+        Remove-Item -LiteralPath $storageLink -Force -Recurse -ErrorAction SilentlyContinue
+    }
+
+    $linkOutput = & php artisan storage:link 2>&1 | Out-String
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host "  storage link created" -ForegroundColor DarkGray
+    } else {
+        Write-Host "  [warn] storage link failed" -ForegroundColor Yellow
+        Write-Host "  $linkOutput" -ForegroundColor DarkGray
+    }
+}
+
 Write-Host "2/3 Ensure dev accounts..." -ForegroundColor Yellow
 try {
     & php artisan dev:ensure-accounts
