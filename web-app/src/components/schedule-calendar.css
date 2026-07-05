@@ -3087,6 +3087,10 @@
   font-size: 13px;
 }
 
+.schedule-form-modal .hint.hint--warning {
+  color: #ffb74d;
+}
+
 .schedule-form-modal__date-field {
   grid-column: 1 / -1;
 }

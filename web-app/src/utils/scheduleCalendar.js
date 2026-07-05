@@ -41,11 +41,11 @@ export function isTriplicateInvoice(form) {
 }
 
 export function shouldChargeCustomerTax(form) {
-  if (!form.needs_invoice) {
-    return hasTaxablePricingLine(form.pricing_lines);
+  if (form.needs_invoice) {
+    return isTriplicateInvoice(form) || Boolean(form.invoice_charge_customer_tax);
   }
 
-  return isTriplicateInvoice(form) || Boolean(form.invoice_charge_customer_tax);
+  return hasTaxablePricingLine(form.pricing_lines);
 }
 
 export function syncInvoiceTaxFlags(form) {
@@ -124,6 +124,36 @@ export function resolveScheduleDocumentType(schedule) {
 
 export function scheduleHasMailTrackingItem(schedule) {
   return Boolean(schedule?.needs_mail || schedule?.needs_invoice || schedule?.needs_receipt);
+}
+
+export function getTotalPricingUnits(form) {
+  return normalizePricingLines(form?.pricing_lines).reduce(
+    (total, line) => total + (Number(line.ac_units) || 0),
+    0,
+  );
+}
+
+export function getTotalAddressUnits(addresses) {
+  return (addresses || []).reduce(
+    (total, row) => total + (Number(row.ac_units) || 0),
+    0,
+  );
+}
+
+export function parseMultiAddressNote(notes) {
+  const text = String(notes || '');
+  const match = text.match(/\[多址\s+(\d+)\/(\d+)(?:·共(\d+)離(\d+))?\]/);
+
+  if (!match) {
+    return null;
+  }
+
+  return {
+    index: Number(match[1]),
+    total: Number(match[2]),
+    groupUnits: match[3] ? Number(match[3]) : null,
+    groupPrice: match[4] ? Number(match[4]) : null,
+  };
 }
 
 export function normalizeServiceAddresses(form) {
@@ -335,9 +365,15 @@ export function inferUnitPrice(schedule) {
 export function applyPriceCalculation(form) {
   const synced = syncInvoiceTaxFlags(form);
   const summary = summarizePricingLines(synced.pricing_lines, shouldChargeCustomerTax(synced));
-  const serviceAddresses = normalizeServiceAddresses(synced);
+  let serviceAddresses = normalizeServiceAddresses(synced);
+  if (serviceAddresses.length === 1) {
+    serviceAddresses = serviceAddresses.map((row) => ({
+      ...row,
+      ac_units: String(summary.ac_units),
+    }));
+  }
   const timelineUnits = serviceAddresses.length > 1
-    ? serviceAddresses.reduce((total, row) => total + (Number(row.ac_units) || 0), 0)
+    ? getTotalAddressUnits(serviceAddresses)
     : Number(summary.ac_units);
   const end_time = calculateEndTimeFromUnits(
     synced.start_time || DEFAULT_FIRST_SHIFT_START,
@@ -624,6 +660,20 @@ export function getScheduleDisplayPrice(schedule) {
 
 export function buildScheduleUnitsPriceTag(schedule, { hidePrice = false } = {}) {
   const units = getScheduleDisplayUnits(schedule);
+  const multi = parseMultiAddressNote(schedule?.notes);
+
+  if (multi) {
+    if (hidePrice) {
+      return units ? `[${units}台]` : '';
+    }
+
+    const localTag = `[${units || '-'}離]`;
+    if (multi.index === 1 && multi.groupUnits && multi.groupPrice != null) {
+      return `${localTag}[共${multi.groupUnits}離${multi.groupPrice}]`;
+    }
+
+    return localTag;
+  }
 
   if (hidePrice) {
     return units ? `[${units}台]` : '';
@@ -1432,8 +1482,11 @@ export function slotToForm(slot, { schedules = [], userId = '', userRole = 'admi
   });
 }
 
-export function appendMultiAddressNote(notes, index, total) {
-  const marker = `[多址 ${index + 1}/${total}]`;
+export function appendMultiAddressNote(notes, index, total, { groupUnits = null, groupPrice = null } = {}) {
+  const groupPart = index === 0 && groupUnits && groupPrice != null
+    ? `·共${groupUnits}離${groupPrice}`
+    : '';
+  const marker = `[多址 ${index + 1}/${total}${groupPart}]`;
   const base = String(notes || '').trim();
 
   if (index === 0) {
@@ -1457,7 +1510,7 @@ export function validateScheduleForm(form, { userRole = 'admin', original = null
   const hidePricing = userRole === 'customer_service';
   const canManagePricing = !hidePricing;
   const serviceAddresses = normalizeServiceAddresses(form);
-  const needsInvoice = hidePricing ? Boolean(form.needs_invoice) : deriveNeedsInvoice(form);
+  const needsInvoice = Boolean(form.needs_invoice);
 
   if (!form.user_id) {
     messages.push('請選擇清洗師傅');
@@ -1533,6 +1586,15 @@ export function validateScheduleForm(form, { userRole = 'admin', original = null
     const taxId = String(form.invoice_tax_id || '').trim();
     if (taxId && !/^\d{8}$/.test(taxId)) {
       messages.push('統一編號須為 8 碼數字');
+    }
+  }
+
+  if (serviceAddresses.length > 1) {
+    const pricingUnits = getTotalPricingUnits(form);
+    const addressUnits = getTotalAddressUnits(serviceAddresses);
+
+    if (addressUnits !== pricingUnits) {
+      messages.push(`各站台數加總（${addressUnits} 台）需等於清洗台數（${pricingUnits} 台）`);
     }
   }
 
@@ -1632,6 +1694,14 @@ export function buildSchedulePayload(form, { original = null, userRole = 'admin'
 
 export function buildSchedulePayloads(form, options = {}) {
   const addresses = normalizeServiceAddresses(form);
+  const synced = syncInvoiceTaxFlags(form);
+  const chargeTax = shouldChargeCustomerTax(synced);
+  const summary = summarizePricingLines(synced.pricing_lines, chargeTax);
+  const totalUnits = getTotalPricingUnits(synced);
+  const groupPrice = Number(summary.cleaning_price) || 0;
+  const primaryLine = normalizePricingLines(synced.pricing_lines)[0] || createPricingLine();
+  const primaryUnitPrice = Number(primaryLine.unit_price) || 1500;
+  const primaryTaxable = Boolean(primaryLine.is_taxable);
 
   if (addresses.length <= 1) {
     const row = addresses[0];
@@ -1640,6 +1710,11 @@ export function buildSchedulePayloads(form, options = {}) {
       customer_address: row.address,
       customer_phone: row.same_as_customer ? form.customer_phone : (row.phone || form.customer_phone),
     }, options)];
+  }
+
+  const addressUnits = getTotalAddressUnits(addresses);
+  if (addressUnits !== totalUnits) {
+    throw new Error(`各站台數加總（${addressUnits} 台）需等於清洗台數（${totalUnits} 台）`);
   }
 
   let currentStart = form.start_time;
@@ -1656,13 +1731,11 @@ export function buildSchedulePayloads(form, options = {}) {
       end_time: endTime,
       customer_address: row.address,
       customer_phone: row.same_as_customer ? form.customer_phone : (row.phone || form.customer_phone),
-      pricing_lines: isFirst
-        ? form.pricing_lines
-        : [{
-          ...(form.pricing_lines?.[0] || createPricingLine()),
-          ac_units: String(units),
-          is_taxable: false,
-        }],
+      pricing_lines: [{
+        ac_units: String(units),
+        unit_price: String(primaryUnitPrice),
+        is_taxable: isFirst ? primaryTaxable : false,
+      }],
       needs_mail: isFirst ? form.needs_mail : false,
       needs_invoice: isFirst ? form.needs_invoice : false,
       needs_receipt: isFirst ? form.needs_receipt : false,
@@ -1671,8 +1744,17 @@ export function buildSchedulePayloads(form, options = {}) {
       invoice_charge_customer_tax: isFirst ? form.invoice_charge_customer_tax : false,
       invoice_tax_id: isFirst ? form.invoice_tax_id : '',
       invoice_title: isFirst ? form.invoice_title : '',
-      multi_address_part: isFirst ? undefined : { index: index + 1, total: addresses.length },
-      notes: appendMultiAddressNote(form.notes, index, addresses.length),
+      multi_address_part: {
+        index: index + 1,
+        total: addresses.length,
+        segment_units: units,
+        group_units: totalUnits,
+        group_price: groupPrice,
+      },
+      notes: appendMultiAddressNote(form.notes, index, addresses.length, {
+        groupUnits: totalUnits,
+        groupPrice: groupPrice,
+      }),
     }, options));
 
     currentStart = endTime;

@@ -1,5 +1,6 @@
 {
     "php": {
         "version": "8.3"
-    }
+    },
+    "start_command": "php artisan migrate --force && php artisan storage:link --force && _startup"
 }

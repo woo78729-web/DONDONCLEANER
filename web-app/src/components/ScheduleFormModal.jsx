@@ -8,6 +8,7 @@ import {
   formatScheduleValidationAlert,
   getFormContactId,
   getMinScheduleWorkDate,
+  getTotalAddressUnits,
   hasScheduleReport,
   hasTaxablePricingLine,
   isTriplicateInvoice,
@@ -201,6 +202,9 @@ export function ScheduleFormModal({
       ac_units: form.ac_units || '1',
     })];
   const hasMultipleAddresses = serviceAddresses.length > 1;
+  const addressUnitsSum = getTotalAddressUnits(serviceAddresses);
+  const pricingUnitsTotal = Number(form.ac_units) || 0;
+  const addressUnitsMismatch = hasMultipleAddresses && addressUnitsSum !== pricingUnitsTotal;
   const invoiceAutoEnabled = hasTaxablePricingLine(form.pricing_lines);
   const triplicateInvoice = isTriplicateInvoice(form);
   const contactIdLabel = form.customer_source === 'line'
@@ -221,8 +225,24 @@ export function ScheduleFormModal({
   }
 
   function addServiceAddress() {
+    const totalUnits = pricingUnitsTotal || 1;
+
+    if (serviceAddresses.length === 1) {
+      const firstUnits = Math.max(1, Math.floor(totalUnits / 2));
+      const secondUnits = Math.max(1, totalUnits - firstUnits);
+
+      handleChange({
+        service_addresses: [
+          { ...serviceAddresses[0], ac_units: String(firstUnits) },
+          createServiceAddress({ ac_units: String(secondUnits) }),
+        ],
+      });
+      return;
+    }
+
+    const remaining = Math.max(1, totalUnits - addressUnitsSum);
     handleChange({
-      service_addresses: [...serviceAddresses, createServiceAddress()],
+      service_addresses: [...serviceAddresses, createServiceAddress({ ac_units: String(remaining) })],
     });
   }
 
@@ -393,9 +413,14 @@ export function ScheduleFormModal({
             <PricingLineEditor
               lines={form.pricing_lines || [createPricingLine()]}
               onChange={(pricing_lines) => updateForm(onChange, form, { pricing_lines })}
-              showTax
+              showTax={!form.needs_invoice}
               showAdd
             />
+            {form.needs_invoice && (
+              <p className="hint" style={{ marginTop: 8 }}>
+                已勾選發票時，+5% 請在下方「向客戶加收 5%」設定；不勾則為二聯、實收不含稅。
+              </p>
+            )}
           </div>
           ) : (
           <label className="field" style={{ gridColumn: '1 / -1' }}>
@@ -423,7 +448,10 @@ export function ScheduleFormModal({
             <span className="field-label">合計</span>
             <div className="price-summary">
               <strong>共 {form.ac_units} 台，{form.cleaning_price || 0} 元</strong>
-              {invoiceAutoEnabled && <span className="hint">部分品項已含 5% 稅</span>}
+              {!form.needs_invoice && invoiceAutoEnabled && <span className="hint">部分品項已含 5% 稅</span>}
+              {form.needs_invoice && !triplicateInvoice && !form.invoice_charge_customer_tax && (
+                <span className="hint">二聯發票，實收不含 5%</span>
+              )}
             </div>
           </div>
           )}
@@ -464,7 +492,10 @@ export function ScheduleFormModal({
             </div>
 
             {hasMultipleAddresses && (
-              <p className="hint">多地址會依序排在時間軸上，每站各顯示一個工作框。</p>
+              <p className={`hint${addressUnitsMismatch ? ' hint--warning' : ''}`}>
+                各站台數加總：{addressUnitsSum} / {pricingUnitsTotal} 台
+                {addressUnitsMismatch ? '（需相等才能送出）' : '（依序排在時間軸，每站一個工作框）'}
+              </p>
             )}
 
             <div className="service-addresses__list">
@@ -572,21 +603,15 @@ export function ScheduleFormModal({
               <span>郵寄</span>
             </label>
 
-            {showInvoiceOption && (
             <label className="field field-checkbox">
               <input
                 type="checkbox"
                 checked={Boolean(form.needs_invoice)}
-                disabled={invoiceAutoEnabled || Boolean(form.needs_receipt)}
+                disabled={Boolean(form.needs_receipt)}
                 onChange={(e) => toggleNeedsInvoice(e.target.checked)}
               />
-              <span>
-                {canManagePricing && invoiceAutoEnabled
-                  ? '發票（二聯／三聯，已由品項含稅自動開啟）'
-                  : '發票（二聯／三聯）'}
-              </span>
+              <span>發票（二聯／三聯）</span>
             </label>
-            )}
 
             <label className="field field-checkbox">
               <input
@@ -608,14 +633,19 @@ export function ScheduleFormModal({
                   onChange={handleInvoiceFieldChange}
                 />
                 {!triplicateInvoice && canManagePricing && (
-                  <label className="field field-checkbox" style={{ marginTop: 12 }}>
-                    <input
-                      type="checkbox"
-                      checked={Boolean(form.invoice_charge_customer_tax)}
-                      onChange={(e) => toggleInvoiceChargeCustomerTax(e.target.checked)}
-                    />
-                    <span>向客戶加收 5% 稅金（二聯）</span>
-                  </label>
+                  <>
+                    <p className="hint" style={{ marginTop: 12 }}>
+                      不填抬頭／統編即為二聯；若要向客戶加收 5% 再勾選下方選項。
+                    </p>
+                    <label className="field field-checkbox" style={{ marginTop: 8 }}>
+                      <input
+                        type="checkbox"
+                        checked={Boolean(form.invoice_charge_customer_tax)}
+                        onChange={(e) => toggleInvoiceChargeCustomerTax(e.target.checked)}
+                      />
+                      <span>向客戶加收 5% 稅金（二聯）</span>
+                    </label>
+                  </>
                 )}
                 {triplicateInvoice && canManagePricing && (
                   <p className="hint" style={{ marginTop: 12 }}>三聯發票已自動向客戶加收 5% 稅金。</p>

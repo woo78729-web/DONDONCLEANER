@@ -327,8 +327,11 @@ class ScheduleController extends Controller
             'pricing_lines.*.unit_price' => ['required', 'integer', Rule::in(SchedulePricing::unitPrices())],
             'pricing_lines.*.is_taxable' => ['nullable', 'boolean'],
             'multi_address_part' => ['nullable', 'array'],
-            'multi_address_part.index' => ['nullable', 'integer', 'min:2'],
+            'multi_address_part.index' => ['nullable', 'integer', 'min:1'],
             'multi_address_part.total' => ['nullable', 'integer', 'min:2'],
+            'multi_address_part.segment_units' => ['nullable', 'integer', 'min:1'],
+            'multi_address_part.group_units' => ['nullable', 'integer', 'min:1'],
+            'multi_address_part.group_price' => ['nullable', 'integer', 'min:0'],
             'needs_invoice' => ['nullable', 'boolean'],
             'needs_receipt' => ['nullable', 'boolean'],
             'invoice_charge_customer_tax' => ['nullable', 'boolean'],
@@ -375,33 +378,53 @@ class ScheduleController extends Controller
 
         $summary = SchedulePricing::summarizeLines($lines, $needsInvoice);
 
-        if ($multiAddressPart && (int) ($multiAddressPart['index'] ?? 0) > 1) {
-            $units = max(1, (int) ($lines[0]['ac_units'] ?? 1));
+        if ($multiAddressPart) {
+            $partIndex = max(1, (int) ($multiAddressPart['index'] ?? 1));
+            $segmentUnits = max(1, (int) ($multiAddressPart['segment_units'] ?? ($lines[0]['ac_units'] ?? 1)));
+            $groupUnits = max($segmentUnits, (int) ($multiAddressPart['group_units'] ?? $segmentUnits));
+            $groupPrice = max(0, (int) ($multiAddressPart['group_price'] ?? 0));
             $unitPrice = (int) ($lines[0]['unit_price'] ?? 1500);
-            $lines = [[
-                'ac_units' => $units,
-                'unit_price' => $unitPrice,
-                'is_taxable' => false,
-            ]];
-            $summary = [
-                'ac_units' => $units,
-                'unit_price' => $unitPrice,
-                'cleaning_price' => 0,
-                'needs_invoice' => false,
-                'task_details' => $units.'台'.$unitPrice,
-            ];
-            $payload['needs_mail'] = false;
-            $payload['needs_invoice'] = false;
-            $payload['needs_receipt'] = false;
-            $payload['invoice_charge_customer_tax'] = false;
-            $payload['invoice_planned_date'] = null;
+            $isTaxable = (bool) ($lines[0]['is_taxable'] ?? false);
+
+            if ($partIndex === 1) {
+                $lines = [[
+                    'ac_units' => $segmentUnits,
+                    'unit_price' => $unitPrice,
+                    'is_taxable' => $isTaxable,
+                ]];
+                $summary = [
+                    'ac_units' => $segmentUnits,
+                    'unit_price' => $unitPrice,
+                    'cleaning_price' => $groupPrice,
+                    'needs_invoice' => $needsInvoice,
+                    'task_details' => $segmentUnits.'台'.$unitPrice.'·共'.$groupUnits.'台'.$groupPrice,
+                ];
+            } else {
+                $lines = [[
+                    'ac_units' => $segmentUnits,
+                    'unit_price' => $unitPrice,
+                    'is_taxable' => false,
+                ]];
+                $summary = [
+                    'ac_units' => $segmentUnits,
+                    'unit_price' => $unitPrice,
+                    'cleaning_price' => 0,
+                    'needs_invoice' => false,
+                    'task_details' => $segmentUnits.'台'.$unitPrice,
+                ];
+                $payload['needs_mail'] = false;
+                $payload['needs_invoice'] = false;
+                $payload['needs_receipt'] = false;
+                $payload['invoice_charge_customer_tax'] = false;
+                $payload['invoice_planned_date'] = null;
+            }
         }
 
         $payload['pricing_lines'] = $lines;
         $payload['ac_units'] = $summary['ac_units'];
         $payload['unit_price'] = $summary['unit_price'];
-        $payload['needs_invoice'] = $needsInvoice && ! ($multiAddressPart && (int) ($multiAddressPart['index'] ?? 0) > 1);
-        $payload['needs_receipt'] = $needsReceipt && ! ($multiAddressPart && (int) ($multiAddressPart['index'] ?? 0) > 1);
+        $payload['needs_invoice'] = $needsInvoice && (! $multiAddressPart || (int) ($multiAddressPart['index'] ?? 1) === 1);
+        $payload['needs_receipt'] = $needsReceipt && (! $multiAddressPart || (int) ($multiAddressPart['index'] ?? 1) === 1);
         $payload['invoice_charge_customer_tax'] = $needsInvoice && $chargeCustomerTax;
         $payload['invoice_planned_date'] = isset($payload['invoice_planned_date']) && $payload['invoice_planned_date'] !== ''
             ? $payload['invoice_planned_date']
