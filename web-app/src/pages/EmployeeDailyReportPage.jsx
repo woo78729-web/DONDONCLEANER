@@ -4,6 +4,7 @@ import { PageAlert } from '../components/PageAlert';
 import { PricingLineEditor } from '../components/PricingLineEditor';
 import { ReportConfirmModal } from '../components/ReportConfirmModal';
 import { GoogleMapsLink } from '../components/GoogleMapsLink';
+import { PhoneLink } from '../components/PhoneLink';
 import { api } from '../api/client';
 import {
   buildDefaultReportDraft,
@@ -351,6 +352,11 @@ export default function EmployeeDailyReportPage() {
                   {formatDateOnly(schedule.work_date)} {formatTimeValue(schedule.start_time)} – {formatTimeValue(schedule.end_time)}
                 </p>
                 <p className="hint">{schedule.customer_address} <GoogleMapsLink address={schedule.customer_address} /></p>
+                {schedule.customer_phone && (
+                  <p className="hint employee-report-card__phone">
+                    聯絡電話：<PhoneLink phone={schedule.customer_phone} />
+                  </p>
+                )}
               </div>
               <span className="hint">{expanded ? '收起' : '填寫回報'}</span>
             </button>

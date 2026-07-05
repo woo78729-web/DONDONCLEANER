@@ -1882,6 +1882,46 @@ select option {
   font-weight: 700;
 }
 
+.phone-link {
+  color: var(--brand-500);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.phone-link:hover {
+  text-decoration: underline;
+}
+
+.schedule-popover__phone-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: rgba(255, 140, 0, 0.14);
+  border: 1px solid rgba(255, 140, 0, 0.35);
+}
+
+.employee-report-card__phone .phone-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 2px 10px;
+  margin-left: 4px;
+  border-radius: 999px;
+  background: rgba(255, 140, 0, 0.12);
+  border: 1px solid rgba(255, 140, 0, 0.28);
+}
+
+@media (max-width: 768px) {
+  .phone-link,
+  .schedule-popover__phone-link,
+  .employee-report-card__phone .phone-link {
+    min-height: 44px;
+    padding-inline: 14px;
+  }
+}
+
 .schedule-popover__brand {
   margin: 18px 0 0;
   padding-top: 14px;

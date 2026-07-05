@@ -1,5 +1,6 @@
 import { useLayoutEffect, useState } from 'react';
 import { GoogleMapsLink } from './GoogleMapsLink';
+import { PhoneLink } from './PhoneLink';
 import {
   canModifyScheduleByMonth,
   formatScheduleAcUnits,
@@ -97,6 +98,15 @@ export function ScheduleSnapshotModal({
             <li>
               <span className="schedule-popover__label">客戶名稱</span>
               <span className="schedule-popover__value">{schedule.customer_name || '-'}</span>
+            </li>
+            <li>
+              <span className="schedule-popover__label">聯絡電話</span>
+              <span className="schedule-popover__value">
+                <PhoneLink
+                  phone={schedule.customer_phone}
+                  className="phone-link schedule-popover__phone-link"
+                />
+              </span>
             </li>
             <li>
               <span className="schedule-popover__label">清洗地址</span>
