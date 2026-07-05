@@ -1882,6 +1882,14 @@ select option {
   font-weight: 700;
 }
 
+.auth-loading-card {
+  position: relative;
+  z-index: 1;
+  min-width: min(100%, 320px);
+  padding: 28px 24px;
+  text-align: center;
+}
+
 .phone-link {
   color: var(--brand-500);
   font-weight: 700;

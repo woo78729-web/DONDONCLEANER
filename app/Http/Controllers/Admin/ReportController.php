@@ -9,6 +9,8 @@ use App\Support\EmployeeReportSupport;
 use App\Support\ReportFilter;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class ReportController extends Controller
@@ -45,48 +47,78 @@ class ReportController extends Controller
 
     public function unitChangeAlerts(Request $request): JsonResponse
     {
-        $reports = DailyReport::query()
-            ->with(['dailySchedule.user:id,name'])
-            ->where('unit_mismatch', true)
-            ->whereNull('admin_unit_alert_dismissed_at')
-            ->orderByDesc('created_at')
-            ->limit(20)
-            ->get()
-            ->map(function (DailyReport $report) {
-                $schedule = $report->dailySchedule;
+        try {
+            if (! Schema::hasColumn('daily_reports', 'admin_unit_alert_dismissed_at')) {
+                Log::warning('unit-change-alerts skipped: admin_unit_alert_dismissed_at column missing');
 
-                return [
-                    'id' => $report->id,
-                    'work_date' => $schedule?->work_date?->toDateString(),
-                    'employee_name' => $schedule?->user?->name,
-                    'customer_name' => $schedule?->customer_name,
-                    'customer_address' => $schedule?->customer_address,
-                    'planned_units' => $report->planned_units,
-                    'completed_units' => $report->completed_units,
-                    'skip_reason' => $report->skip_reason,
-                    'created_at' => $report->created_at?->toDateTimeString(),
-                ];
-            })
-            ->values()
-            ->all();
+                return $this->success(['items' => []], '台數異動通知查詢成功');
+            }
 
-        return $this->success(['items' => $reports], '台數異動通知查詢成功');
+            $reports = DailyReport::query()
+                ->with(['dailySchedule.user:id,name'])
+                ->where('unit_mismatch', true)
+                ->whereNull('admin_unit_alert_dismissed_at')
+                ->orderByDesc('created_at')
+                ->limit(20)
+                ->get()
+                ->map(function (DailyReport $report) {
+                    $schedule = $report->dailySchedule;
+
+                    return [
+                        'id' => $report->id,
+                        'work_date' => $schedule?->work_date?->toDateString(),
+                        'employee_name' => $schedule?->user?->name,
+                        'customer_name' => $schedule?->customer_name,
+                        'customer_address' => $schedule?->customer_address,
+                        'planned_units' => $report->planned_units,
+                        'completed_units' => $report->completed_units,
+                        'skip_reason' => $report->skip_reason,
+                        'created_at' => $report->created_at?->toDateTimeString(),
+                    ];
+                })
+                ->values()
+                ->all();
+
+            return $this->success(['items' => $reports], '台數異動通知查詢成功');
+        } catch (\Throwable $exception) {
+            Log::error('unit-change-alerts failed', [
+                'message' => $exception->getMessage(),
+                'trace' => $exception->getTraceAsString(),
+            ]);
+
+            return $this->error('台數異動通知查詢失敗，請確認資料庫 migration 已執行', 500);
+        }
     }
 
     public function dismissUnitChangeAlerts(Request $request): JsonResponse
     {
+        if (! Schema::hasColumn('daily_reports', 'admin_unit_alert_dismissed_at')) {
+            Log::warning('dismiss unit-change-alerts skipped: admin_unit_alert_dismissed_at column missing');
+
+            return $this->success(null, '台數異動通知已標記為已讀');
+        }
+
         $validated = $request->validate([
             'report_ids' => ['required', 'array', 'min:1'],
             'report_ids.*' => ['integer', 'exists:daily_reports,id'],
         ]);
 
-        DailyReport::query()
-            ->whereIn('id', $validated['report_ids'])
-            ->where('unit_mismatch', true)
-            ->whereNull('admin_unit_alert_dismissed_at')
-            ->update(['admin_unit_alert_dismissed_at' => now()]);
+        try {
+            DailyReport::query()
+                ->whereIn('id', $validated['report_ids'])
+                ->where('unit_mismatch', true)
+                ->whereNull('admin_unit_alert_dismissed_at')
+                ->update(['admin_unit_alert_dismissed_at' => now()]);
 
-        return $this->success(null, '台數異動通知已標記為已讀');
+            return $this->success(null, '台數異動通知已標記為已讀');
+        } catch (\Throwable $exception) {
+            Log::error('dismiss unit-change-alerts failed', [
+                'message' => $exception->getMessage(),
+                'trace' => $exception->getTraceAsString(),
+            ]);
+
+            return $this->error('台數異動通知更新失敗', 500);
+        }
     }
 
     public function update(Request $request, DailyReport $report): JsonResponse

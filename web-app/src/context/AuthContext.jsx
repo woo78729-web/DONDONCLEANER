@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { api, ApiError } from '../api/client';
 
 const AuthContext = createContext(null);
+const AUTH_BOOT_TIMEOUT_MS = 15000;
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
@@ -20,6 +21,8 @@ export function AuthProvider({ children }) {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+
     api.syncTokenFromStorage();
 
     function handleUnauthorized() {
@@ -32,21 +35,51 @@ export function AuthProvider({ children }) {
 
     window.addEventListener('ac:unauthorized', handleUnauthorized);
 
-    if (!api.getToken()) {
-      setLoading(false);
-      return () => window.removeEventListener('ac:unauthorized', handleUnauthorized);
+    function finishBoot() {
+      if (!cancelled) {
+        setLoading(false);
+      }
     }
 
-    api.me()
-      .then((result) => setUser(result.data))
-      .catch(() => {
-        api.setToken('');
-        setUser(null);
-        setError('');
-      })
-      .finally(() => setLoading(false));
+    if (!api.getToken()) {
+      finishBoot();
+      return () => {
+        cancelled = true;
+        window.removeEventListener('ac:unauthorized', handleUnauthorized);
+      };
+    }
 
-    return () => window.removeEventListener('ac:unauthorized', handleUnauthorized);
+    const timeoutId = window.setTimeout(() => {
+      api.setToken('');
+      setUser(null);
+      setError('連線逾時，請重新登入');
+      finishBoot();
+    }, AUTH_BOOT_TIMEOUT_MS);
+
+    api.me()
+      .then((result) => {
+        if (!cancelled) {
+          setUser(result.data);
+          setError('');
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          api.setToken('');
+          setUser(null);
+          setError('');
+        }
+      })
+      .finally(() => {
+        window.clearTimeout(timeoutId);
+        finishBoot();
+      });
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeoutId);
+      window.removeEventListener('ac:unauthorized', handleUnauthorized);
+    };
   }, []);
 
   const value = useMemo(() => ({

@@ -51,7 +51,7 @@ function GoogleIcon() {
 export default function LoginPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { user, login, error, setError } = useAuth();
+  const { user, loading, login, error, setError } = useAuth();
   const [account, setAccount] = useState(() => localStorage.getItem('ac_remember_account') || '');
   const [password, setPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(() => Boolean(localStorage.getItem('ac_remember_account')));
@@ -66,6 +66,21 @@ export default function LoginPage() {
       setSearchParams({}, { replace: true });
     }
   }, [searchParams, setError, setSearchParams]);
+
+  if (loading) {
+    return (
+      <div className="login-screen">
+        <div className="login-screen__backdrop" aria-hidden="true">
+          <div className="login-screen__photo login-screen__photo--left" />
+          <div className="login-screen__photo login-screen__photo--right" />
+          <div className="login-screen__overlay" />
+        </div>
+        <div className="login-card auth-loading-card">
+          <p className="hint">正在連線...</p>
+        </div>
+      </div>
+    );
+  }
 
   if (user) {
     return <Navigate to={getPostLoginPath(user)} replace />;

@@ -132,7 +132,7 @@ export function PartnerSettlementReport({ settlement, employees = [] }) {
     return null;
   }
 
-  const { basis, interPartner, atai, hongyi } = settlement;
+  const { basis, inter_partner: interPartner, atai, hongyi } = settlement;
   const ataiCollectTotal = Number(atai.employee_payment_due || 0) + Number(atai.compensation_from_employees || 0);
   const dongdongToHongyi = interPartner?.direction === 'dongdong_to_hongyi';
 

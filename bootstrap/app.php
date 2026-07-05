@@ -15,6 +15,14 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->append(\App\Http\Middleware\SecurityHeaders::class);
 
+        $middleware->redirectGuestsTo(function (Request $request) {
+            if ($request->is('api/*') || $request->expectsJson()) {
+                return null;
+            }
+
+            return '/spa/login';
+        });
+
         $middleware->alias([
             'role' => \App\Http\Middleware\EnsureUserRole::class,
             'employee.onboarded' => \App\Http\Middleware\EnsureEmployeeOnboardingComplete::class,

@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Support\PublicStorageLink;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\RateLimiter;
@@ -22,6 +23,8 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        PublicStorageLink::ensure();
+
         RateLimiter::for('login', function (Request $request) {
             $account = strtolower((string) $request->input('account', 'unknown'));
             $attempts = app()->environment('production') ? 10 : 60;

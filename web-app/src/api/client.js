@@ -133,8 +133,13 @@ class AcCleaningApi {
         method,
         headers,
         body: body ? (body instanceof FormData ? body : JSON.stringify(body)) : undefined,
+        signal: AbortSignal.timeout(30000),
       });
-    } catch {
+    } catch (error) {
+      if (error?.name === 'TimeoutError') {
+        throw new ApiError('伺服器回應逾時，請稍後再試', 0, null);
+      }
+
       throw new ApiError('無法連線伺服器，請先雙擊執行「在家一鍵啟動.bat」', 0, null);
     }
 

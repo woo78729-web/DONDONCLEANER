@@ -1,5 +1,6 @@
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { AuthLoadingScreen } from './AppStatusScreens';
 import {
   EMPLOYEE_ONBOARDING_PATH,
   needsEmployeeOnboarding,
@@ -11,16 +12,7 @@ export function EmployeeOnboardingRoute() {
   const location = useLocation();
 
   if (loading) {
-    return (
-      <div className="app-shell">
-        <div className="app-shell__backdrop" aria-hidden="true" />
-        <div className="app-shell__content page-content">
-          <div className="card">
-            <p className="hint">載入中...</p>
-          </div>
-        </div>
-      </div>
-    );
+    return <AuthLoadingScreen />;
   }
 
   if (!user) {

@@ -21,6 +21,9 @@ $env:DB_CONNECTION = "mysql"
 Write-Host "執行 migration..." -ForegroundColor Cyan
 php artisan migrate --force
 
+Write-Host "建立 storage 公開連結..." -ForegroundColor Cyan
+php artisan storage:link --force
+
 Write-Host "是否寫入測試資料？(y/N)" -ForegroundColor Yellow
 $seed = Read-Host
 if ($seed -eq "y" -or $seed -eq "Y") {
@@ -28,4 +31,4 @@ if ($seed -eq "y" -or $seed -eq "Y") {
     Write-Host "Seeder 完成。" -ForegroundColor Green
 }
 
-Write-Host "Migration 完成。" -ForegroundColor Green
+Write-Host "Migration 與 storage:link 完成。" -ForegroundColor Green

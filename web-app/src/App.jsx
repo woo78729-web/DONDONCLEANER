@@ -1,5 +1,6 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
+import { AppErrorBoundary } from './components/AppStatusScreens';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { EmployeeOnboardingRoute } from './components/EmployeeOnboardingRoute';
 import LoginPage from './pages/LoginPage';
@@ -31,8 +32,9 @@ import EmployeeRulesPage from './pages/EmployeeRulesPage';
 
 export default function App() {
   return (
-    <AuthProvider>
-      <BrowserRouter basename={import.meta.env.BASE_URL.replace(/\/$/, '') || '/spa'}>
+    <AppErrorBoundary>
+      <AuthProvider>
+        <BrowserRouter basename={import.meta.env.BASE_URL.replace(/\/$/, '') || '/spa'}>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/login/google-callback" element={<GoogleAuthCallbackPage />} />
@@ -104,5 +106,6 @@ export default function App() {
         </Routes>
       </BrowserRouter>
     </AuthProvider>
+    </AppErrorBoundary>
   );
 }
