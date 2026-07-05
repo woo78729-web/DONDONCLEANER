@@ -1226,25 +1226,31 @@
   }
 
   .pricing-line {
-    grid-template-columns: 1fr auto;
+    grid-template-columns: 1fr;
     grid-template-areas:
       "label remove"
       "units units"
       "price price"
       "tax tax";
     align-items: start;
-  }
-
-  .pricing-line__label {
-    grid-area: label;
-  }
-
-  .pricing-line__units {
-    grid-area: units;
+    width: 100%;
+    box-sizing: border-box;
   }
 
   .pricing-line__price {
     grid-area: price;
+    width: 100%;
+    min-width: 0;
+    overflow: visible;
+  }
+
+  .pricing-line__units {
+    grid-area: units;
+    width: 100%;
+  }
+
+  .pricing-line__label {
+    grid-area: label;
   }
 
   .pricing-line__remove {
@@ -1258,8 +1264,10 @@
   }
 
   .option-chip-group--price-inline {
-    grid-template-columns: repeat(3, minmax(76px, 1fr));
-    gap: 6px;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 4px;
+    width: 100%;
   }
 
   .option-chip--price {
@@ -1270,22 +1278,27 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 2px;
-    min-height: 48px;
-    padding: 6px 4px;
+    gap: 1px;
+    min-height: 44px;
+    padding: 5px 2px;
     border-radius: 10px;
     box-sizing: border-box;
     overflow: hidden;
   }
 
   .option-chip__amount {
-    font-size: 14px;
-    line-height: 1;
+    font-size: 12px;
+    line-height: 1.1;
   }
 
   .option-chip__unit {
-    font-size: 9px;
+    font-size: 8px;
     white-space: nowrap;
+  }
+
+  .employee-report-pricing .pricing-line,
+  .pricing-lines-editor .pricing-line {
+    padding: 10px;
   }
 
   .form-options-row {
@@ -2105,7 +2118,7 @@
 
 .option-chip-group--price-inline {
   display: grid;
-  grid-template-columns: repeat(3, minmax(76px, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
   width: 100%;
 }
@@ -3340,7 +3353,7 @@
 
 .pricing-line {
   display: grid;
-  grid-template-columns: auto minmax(72px, 96px) minmax(228px, 1fr) auto;
+  grid-template-columns: auto minmax(72px, 96px) minmax(0, 1fr) auto;
   gap: 12px;
   align-items: center;
   padding: 12px 14px;
@@ -3367,10 +3380,17 @@
 
 .employee-report-pricing {
   grid-column: 1 / -1;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .employee-report-pricing .pricing-lines {
   margin-top: 8px;
+  min-width: 0;
+}
+
+.employee-report-pricing .pricing-line {
+  min-width: 0;
 }
 
 .pricing-line__price .field-label {

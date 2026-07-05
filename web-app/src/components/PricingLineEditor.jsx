@@ -1,4 +1,5 @@
 import { createPricingLine, UNIT_PRICE_OPTIONS } from '../utils/scheduleCalendar';
+import './schedule-calendar.css';
 
 export function PricingLineEditor({
   lines,
