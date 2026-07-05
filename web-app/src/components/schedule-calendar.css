@@ -3100,7 +3100,28 @@
   border: 1px solid var(--glass-border-soft);
   box-shadow: var(--shadow-card);
   backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
   text-align: center;
+}
+
+.schedule-success-modal--capture,
+.schedule-success-modal--capture * {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+.schedule-success-modal--capture {
+  background: #121214 !important;
+  border-color: rgba(255, 255, 255, 0.12) !important;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45) !important;
+}
+
+.schedule-success-modal--capture .btn-primary {
+  background: linear-gradient(180deg, #ffab40 0%, #ff8c00 55%, #e65100 100%) !important;
+}
+
+.schedule-success-modal--capture .btn-secondary {
+  background: rgba(255, 255, 255, 0.08) !important;
 }
 
 .schedule-success-modal__icon {
