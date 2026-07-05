@@ -188,7 +188,7 @@ export default function AdminAccountingPage() {
             <span className="stat-badge">發票帳匯款 {formatMoney(totals.company_inbound_expected)}</span>
           </section>
 
-          <PartnerSettlementReport settlement={data.partner_settlement} />
+          <PartnerSettlementReport settlement={data.partner_settlement} employees={data.employees} />
 
           {(data.auto_charges || []).length > 0 && (
             <section className="card">
@@ -450,17 +450,17 @@ export default function AdminAccountingPage() {
                 <thead>
                   <tr>
                     <th>員工</th>
-                    <th>1500台</th>
-                    <th>1300台</th>
-                    <th>1000台</th>
-                    <th>總台數</th>
-                    <th>客戶總額</th>
-                    <th>公司抽成</th>
-                    <th>發票稅8%</th>
-                    <th>賠償</th>
-                    <th>車馬費</th>
-                    <th>師傅實拿</th>
-                    <th>應向師傅收</th>
+                    <th className="num">1500台</th>
+                    <th className="num">1300台</th>
+                    <th className="num">1000台</th>
+                    <th className="num">總台數</th>
+                    <th className="num">客戶總額</th>
+                    <th className="num">公司抽成</th>
+                    <th className="num">發票稅8%</th>
+                    <th className="num">賠償</th>
+                    <th className="num">車馬費</th>
+                    <th className="num">師傅實拿</th>
+                    <th className="num">應向師傅收</th>
                   </tr>
                 </thead>
                 <tbody>

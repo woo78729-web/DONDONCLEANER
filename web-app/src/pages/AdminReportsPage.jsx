@@ -88,7 +88,7 @@ export default function AdminReportsPage() {
 
           <section className="card table-card">
             <div className="table-wrap">
-              <table className="data-table">
+              <table className="data-table data-table--with-address">
                 <thead>
                   <tr>
                     <th>日期</th>

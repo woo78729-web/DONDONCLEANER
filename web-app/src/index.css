@@ -449,8 +449,8 @@ a {
     padding-right: 26px;
   }
 
-  .data-table th:nth-child(3),
-  .data-table td:nth-child(3) {
+  .data-table--with-address th:nth-child(3),
+  .data-table--with-address td:nth-child(3) {
     min-width: 240px;
   }
 
@@ -1007,6 +1007,29 @@ select option {
   color: #fdba74;
   font-weight: 800;
   font-size: 1.2rem;
+}
+
+.accounting-performance-table th,
+.accounting-performance-table td {
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.accounting-performance-table th.num,
+.accounting-performance-table td.num {
+  text-align: right;
+  width: 1%;
+}
+
+.accounting-performance-table thead th:first-child,
+.accounting-performance-table tbody td:first-child {
+  min-width: 72px;
+}
+
+.accounting-employee-due-table th.num,
+.accounting-employee-due-table td.num {
+  text-align: right;
+  white-space: nowrap;
 }
 
 .field-checkbox {
