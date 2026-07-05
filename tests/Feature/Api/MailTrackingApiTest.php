@@ -158,6 +158,42 @@ class MailTrackingApiTest extends TestCase
         $this->assertSame('回報抬頭', $schedule->invoice_title);
     }
 
+    public function test_mail_tracking_report_payload_includes_schedule_customer_source(): void
+    {
+        Sanctum::actingAs($this->admin);
+
+        $employee = User::query()->create([
+            'account' => 'empfb',
+            'password' => Hash::make('password123'),
+            'name' => '師傅FB',
+            'role' => 'employee',
+            'is_active' => true,
+            'rules_accepted_at' => now(),
+            'must_change_password' => false,
+        ]);
+
+        $schedule = DailySchedule::query()->create($this->scheduleAttributes([
+            'user_id' => $employee->id,
+            'work_date' => now()->toDateString(),
+            'customer_source' => 'fb',
+            'fb_display_name' => 'Ching Chem',
+        ]));
+
+        DailyReport::query()->create([
+            'schedule_id' => $schedule->id,
+            'completed_units' => 1,
+            'collected_amount' => 1500,
+            'needs_invoice_and_mail' => false,
+            'needs_receipt_and_mail' => true,
+            'invoice_sent' => false,
+        ]);
+
+        $this->getJson('/api/admin/mail-tracking')
+            ->assertOk()
+            ->assertJsonPath('data.pending.reports.0.daily_schedule.customer_source', 'fb')
+            ->assertJsonPath('data.pending.reports.0.daily_schedule.fb_display_name', 'Ching Chem');
+    }
+
     public function test_admin_can_search_mail_history_by_tax_id_title_and_phone(): void
     {
         Sanctum::actingAs($this->admin);

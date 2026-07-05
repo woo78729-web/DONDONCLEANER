@@ -859,14 +859,6 @@ export function getScheduleBlockColor(schedule) {
     };
   }
 
-  if (hasScheduleReport(schedule)) {
-    return {
-      backgroundColor: '#2E7D32',
-      borderColor: '#1B5E20',
-      textColor: '#ffffff',
-    };
-  }
-
   const palette = {
     line: {
       backgroundColor: '#43A047',
@@ -897,17 +889,16 @@ export function getScheduleEventClassName(schedule) {
     return 'rbc-event-project';
   }
 
-  if (hasScheduleReport(schedule)) {
-    return 'rbc-event-reported';
-  }
-
   const source = schedule?.customer_source || 'phone';
+  const sourceClass = (source === 'line' || source === 'fb' || source === 'phone')
+    ? `rbc-event-source-${source}`
+    : 'rbc-event-source-phone';
 
-  if (source === 'line' || source === 'fb' || source === 'phone') {
-    return `rbc-event-source-${source}`;
+  if (hasScheduleReport(schedule)) {
+    return `${sourceClass} rbc-event-reported`;
   }
 
-  return 'rbc-event-source-phone';
+  return sourceClass;
 }
 
 export function getLeaveEventStyle() {

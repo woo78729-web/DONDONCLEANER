@@ -1565,8 +1565,7 @@
 }
 
 .schedule-workspace.schedule-calendar .rbc-event.rbc-event-reported {
-  background: #2e7d32 !important;
-  color: #fff !important;
+  box-shadow: inset 0 0 0 2px rgba(255, 140, 0, 0.85) !important;
 }
 
 .schedule-workspace.schedule-calendar .rbc-event.rbc-event-leave,
@@ -3043,9 +3042,7 @@
 }
 
 .schedule-workspace .rbc-event.rbc-event-reported {
-  background: #2e7d32 !important;
-  border: none !important;
-  color: #fff !important;
+  box-shadow: inset 0 0 0 2px rgba(255, 140, 0, 0.85) !important;
 }
 
 .schedule-form-overlay {
