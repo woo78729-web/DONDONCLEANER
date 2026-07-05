@@ -154,7 +154,7 @@ class ReportController extends Controller
         ], $validated);
 
         try {
-            $payload = EmployeeReportSupport::buildFromSchedule($report->dailySchedule, $input);
+            $payload = EmployeeReportSupport::buildFromSchedule($report->dailySchedule, $input, $report);
         } catch (\InvalidArgumentException $exception) {
             return $this->error($exception->getMessage(), 422);
         }

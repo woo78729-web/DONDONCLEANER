@@ -3,6 +3,11 @@ import { Layout } from '../components/Layout';
 import { PageAlert } from '../components/PageAlert';
 import { api } from '../api/client';
 import { formatDateOnly } from '../utils/scheduleCalendar';
+import {
+  collectScheduleIdsFromMailRow,
+  mergeHistoryRows,
+  mergePendingMailRows,
+} from '../utils/mailTracking';
 import '../components/schedule-calendar.css';
 
 function formatSentAt(value) {
@@ -69,7 +74,7 @@ function buildReportDraft(report) {
   };
 }
 
-function MailTrackingEditModal({ item, kind, open, onClose, onSave, saving, sentEdit = false }) {
+function MailTrackingEditModal({ item, kind, open, onClose, onSave, saving, sentEdit = false, mergedCount = 1 }) {
   const [draft, setDraft] = useState(() => (
     kind === 'schedule' ? buildScheduleDraft(item) : buildReportDraft(item)
   ));
@@ -90,7 +95,6 @@ function MailTrackingEditModal({ item, kind, open, onClose, onSave, saving, sent
   const title = sentEdit
     ? '修改寄件資料'
     : (kind === 'schedule' ? '班表寄件資料' : '回報寄件資料');
-  const showTrackingNumber = sentEdit || draft.invoice_sent;
 
   return (
     <div className="modal-overlay schedule-form-overlay" role="presentation" onClick={onClose}>
@@ -104,6 +108,7 @@ function MailTrackingEditModal({ item, kind, open, onClose, onSave, saving, sent
               {schedule?.user?.name || '-'}
               {' · '}
               {kind === 'schedule' ? scheduleTypeLabel(item) : reportTypeLabel(item)}
+              {mergedCount > 1 && ` · 已合併 ${mergedCount} 筆同天寄件`}
             </p>
           </div>
           <button type="button" className="modal-close" onClick={onClose} aria-label="關閉">×</button>
@@ -166,6 +171,17 @@ function MailTrackingEditModal({ item, kind, open, onClose, onSave, saving, sent
             />
           </label>
 
+          <label className="field">
+            <span className="field-label">郵件號碼</span>
+            <input
+              className="field-control"
+              value={draft.mail_tracking_number}
+              onChange={(event) => setDraft((previous) => ({ ...previous, mail_tracking_number: event.target.value }))}
+              placeholder="請輸入郵局掛號或包裹編號"
+            />
+            <span className="hint">填寫後儲存，方便後續追蹤寄件狀態。</span>
+          </label>
+
           <label className="field field-checkbox mail-tracking-modal__sent">
             <input
               type="checkbox"
@@ -173,20 +189,8 @@ function MailTrackingEditModal({ item, kind, open, onClose, onSave, saving, sent
               disabled={sentEdit}
               onChange={(event) => setDraft((previous) => ({ ...previous, invoice_sent: event.target.checked }))}
             />
-            <span>已完成寄出</span>
+            <span>已寄件完成</span>
           </label>
-
-          {showTrackingNumber && (
-            <label className="field">
-              <span className="field-label">郵件號碼</span>
-              <input
-                className="field-control"
-                value={draft.mail_tracking_number}
-                onChange={(event) => setDraft((previous) => ({ ...previous, mail_tracking_number: event.target.value }))}
-                placeholder="請輸入郵局掛號或包裹編號"
-              />
-            </label>
-          )}
 
           <div className="modal-actions">
             <button type="submit" className="btn btn-primary btn-pill" disabled={saving}>
@@ -206,6 +210,7 @@ function MailTrackingTable({
   showSentAt = false,
   showTrackingNumber = false,
   onEdit,
+  onDelete,
   editButtonLabel = '填寫／處理',
 }) {
   if (!rows.length) {
@@ -214,14 +219,19 @@ function MailTrackingTable({
 
   return (
     <div className="table-wrap">
-      <table className="data-table">
+      <table className="data-table mail-tracking-table">
         <thead>
           <tr>
+            {onDelete && <th>刪除</th>}
+            <th aria-label="來源" />
             <th>日期</th>
-            <th>師傅</th>
-            <th>客戶</th>
+            <th>Line／FB ID</th>
+            <th>收件人</th>
+            <th>電話</th>
+            <th>地址</th>
             <th>類型</th>
-            <th>抬頭／電話</th>
+            <th>抬頭／統編</th>
+            <th>處理狀況</th>
             {showTrackingNumber && <th>郵件號碼</th>}
             {showSentAt && <th>寄出時間</th>}
             {onEdit && <th>操作</th>}
@@ -229,23 +239,52 @@ function MailTrackingTable({
         </thead>
         <tbody>
           {rows.map((row) => (
-            <tr key={row.key}>
-              <td>{formatDateOnly(row.date)}</td>
-              <td>{row.employee}</td>
-              <td>{row.customer}</td>
+            <tr key={row.key} className={row.plannedDate ? 'mail-tracking-row--planned' : ''}>
+              {onDelete && (
+                <td>
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm mail-tracking-delete-btn"
+                    onClick={() => onDelete(row)}
+                  >
+                    刪除
+                  </button>
+                </td>
+              )}
+              <td>
+                <span
+                  className="mail-tracking-source-dot"
+                  style={{ backgroundColor: row.sourceColor }}
+                  title={row.sourceLabel}
+                />
+              </td>
+              <td>
+                {formatDateOnly(row.date)}
+                {row.plannedDate && (
+                  <div className="hint">預開 {formatDateOnly(row.plannedDate)}</div>
+                )}
+              </td>
+              <td>{row.contactId || '-'}</td>
+              <td>{row.recipient || '-'}</td>
+              <td>{row.phone || '-'}</td>
+              <td className="mail-tracking-address">{row.address || '-'}</td>
               <td>{row.type}</td>
               <td>
                 <div className="mail-tracking-contact">
-                  <span>{row.invoiceTitle || row.recipient || '-'}</span>
-                  <span className="hint">{row.phone || '-'}</span>
+                  <span>{row.invoiceTitle || '-'}</span>
                   {row.taxId && <span className="hint">統編 {row.taxId}</span>}
                 </div>
               </td>
+              <td>{row.status || '-'}</td>
               {showTrackingNumber && <td>{row.trackingNumber || '-'}</td>}
               {showSentAt && <td>{formatSentAt(row.sentAt)}</td>}
               {onEdit && (
                 <td>
-                  <button type="button" className="btn btn-secondary btn-sm" onClick={() => onEdit(row.source, row.kind)}>
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => onEdit(row)}
+                  >
                     {editButtonLabel}
                   </button>
                 </td>
@@ -256,49 +295,6 @@ function MailTrackingTable({
       </table>
     </div>
   );
-}
-
-function mapScheduleRows(schedules) {
-  return (schedules || []).map((schedule) => ({
-    key: `schedule-${schedule.id}`,
-    kind: 'schedule',
-    source: schedule,
-    date: schedule.work_date,
-    employee: schedule.user?.name || '-',
-    customer: schedule.customer_name,
-    type: scheduleTypeLabel(schedule),
-    recipient: schedule.mail_recipient,
-    invoiceTitle: schedule.invoice_title,
-    taxId: schedule.invoice_tax_id,
-    phone: schedule.mail_phone,
-    trackingNumber: schedule.mail_tracking_number,
-    sentAt: schedule.invoice_sent_at,
-  }));
-}
-
-function mapReportRows(reports) {
-  return (reports || []).map((report) => ({
-    key: `report-${report.id}`,
-    kind: 'report',
-    source: report,
-    date: report.daily_schedule?.work_date,
-    employee: report.daily_schedule?.user?.name || '-',
-    customer: report.daily_schedule?.customer_name || '-',
-    type: reportTypeLabel(report),
-    recipient: report.daily_schedule?.mail_recipient,
-    invoiceTitle: report.daily_schedule?.invoice_title,
-    taxId: report.daily_schedule?.invoice_tax_id,
-    phone: report.daily_schedule?.mail_phone,
-    trackingNumber: report.daily_schedule?.mail_tracking_number,
-    sentAt: report.invoice_sent_at,
-  }));
-}
-
-function mergeHistoryRows(schedules, reports) {
-  return [
-    ...mapScheduleRows(schedules),
-    ...mapReportRows(reports),
-  ].sort((left, right) => String(right.sentAt || '').localeCompare(String(left.sentAt || '')));
 }
 
 export default function MailTrackingPage() {
@@ -342,13 +338,22 @@ export default function MailTrackingPage() {
     setMessage('');
 
     try {
-      if (editTarget.kind === 'schedule') {
-        await api.updateScheduleMailTracking(editTarget.item.id, draft);
-      } else {
-        await api.updateReportMailTracking(editTarget.item.id, draft);
+      const members = editTarget.members || [{ kind: editTarget.kind, source: editTarget.item }];
+
+      for (const member of members) {
+        if (member.kind === 'schedule') {
+          await api.updateScheduleMailTracking(member.source.id, draft);
+        } else {
+          await api.updateReportMailTracking(member.source.id, draft);
+        }
       }
 
-      setMessage(editTarget.sentEdit || !draft.invoice_sent ? '寄件資料已更新' : '已標記寄出完成');
+      const mergedCount = members.length;
+      setMessage(
+        editTarget.sentEdit || !draft.invoice_sent
+          ? (mergedCount > 1 ? `已更新 ${mergedCount} 筆合併寄件資料` : '寄件資料已更新')
+          : (mergedCount > 1 ? `已標記 ${mergedCount} 筆同天寄件完成` : '已標記寄出完成'),
+      );
       setEditTarget(null);
       await loadTracking();
 
@@ -418,12 +423,53 @@ export default function MailTrackingPage() {
     }
   }
 
-  function openEdit(item, kind, sentEdit = false) {
-    setEditTarget({ item, kind, sentEdit });
+  function openEdit(row, sentEdit = false) {
+    const primary = row.members?.[0] || { kind: row.kind, source: row.source };
+
+    setEditTarget({
+      item: primary.source,
+      kind: primary.kind,
+      members: row.members || [{ kind: row.kind, source: row.source }],
+      sentEdit,
+    });
   }
 
-  const pendingRows = mergeHistoryRows(data?.pending?.schedules, data?.pending?.reports)
-    .sort((left, right) => String(right.date || '').localeCompare(String(left.date || '')));
+  async function handleDeleteRow(row) {
+    const scheduleIds = collectScheduleIdsFromMailRow(row);
+
+    if (!scheduleIds.length) {
+      return;
+    }
+
+    const mergedCount = row.members?.length || 1;
+    const confirmMessage = mergedCount > 1
+      ? `確定刪除這 ${mergedCount} 筆合併工單？相關回報、郵資、匯款紀錄將一併刪除。`
+      : '確定刪除此工單？相關回報、郵資、匯款紀錄將一併刪除。';
+
+    if (!window.confirm(confirmMessage)) {
+      return;
+    }
+
+    setError('');
+    setMessage('');
+
+    try {
+      for (const scheduleId of scheduleIds) {
+        await api.deleteSchedule(scheduleId);
+      }
+
+      setMessage(scheduleIds.length > 1 ? '工單與相關資料已刪除' : '工單與相關資料已刪除');
+      await loadTracking();
+
+      if (historySearched) {
+        await refreshHistorySearch();
+      }
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  const pendingRows = mergePendingMailRows(data?.pending?.schedules, data?.pending?.reports);
 
   const sentThisMonthRows = mergeHistoryRows(data?.sent_this_month?.schedules, data?.sent_this_month?.reports);
 
@@ -433,7 +479,7 @@ export default function MailTrackingPage() {
         <div className="card-header">
           <div>
             <h2 className="card-title">發票／收據寄信追蹤</h2>
-            <p className="hint">開單勾選需寄發票或收據後，會出現在待寄清單；填寫店名、統編、抬頭，完成寄出時可填郵件號碼。</p>
+            <p className="hint">郵寄、發票、收據項目會出現在此；同天同地址郵資仍只計 28 元。預開／延後發票會置頂顯示。</p>
           </div>
           <button type="button" className="btn btn-secondary btn-sm" onClick={loadTracking} disabled={loading}>
             重新整理
@@ -452,8 +498,10 @@ export default function MailTrackingPage() {
             <h3 className="section-label mail-tracking-section-title">待寄清單</h3>
             <MailTrackingTable
               rows={pendingRows}
-              emptyText="目前沒有待寄項目。開單時請勾選「如需寄信」或「是否開發票」。"
-              onEdit={(item, kind) => openEdit(item, kind, false)}
+              emptyText="目前沒有待處理項目。開單時請勾選「郵寄」、「發票」或「收據」。"
+              showTrackingNumber
+              onEdit={(row) => openEdit(row, false)}
+              onDelete={handleDeleteRow}
             />
           </section>
 
@@ -465,7 +513,7 @@ export default function MailTrackingPage() {
               showSentAt
               showTrackingNumber
               editButtonLabel="修改"
-              onEdit={(item, kind) => openEdit(item, kind, true)}
+              onEdit={(row) => openEdit(row, true)}
             />
           </section>
 
@@ -513,7 +561,7 @@ export default function MailTrackingPage() {
                 showSentAt
                 showTrackingNumber
                 editButtonLabel="修改"
-                onEdit={(item, kind) => openEdit(item, kind, true)}
+                onEdit={(row) => openEdit(row, true)}
               />
             )}
 
@@ -532,6 +580,7 @@ export default function MailTrackingPage() {
         onClose={() => setEditTarget(null)}
         onSave={handleSaveDraft}
         saving={saving}
+        mergedCount={editTarget?.members?.length || 1}
       />
     </Layout>
   );

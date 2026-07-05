@@ -79,7 +79,7 @@ class ScheduleCalendarApiTest extends TestCase
         $this->assertDatabaseMissing('daily_schedules', ['id' => $schedule->id]);
     }
 
-    public function test_admin_cannot_delete_schedule_with_report(): void
+    public function test_admin_can_delete_schedule_with_report_and_dependents(): void
     {
         Sanctum::actingAs($this->admin);
 
@@ -93,14 +93,21 @@ class ScheduleCalendarApiTest extends TestCase
             'task_details' => '14台14000',
         ]));
 
-        $schedule->dailyReport()->create([
+        $report = $schedule->dailyReport()->create([
             'completed_units' => 1,
             'collected_amount' => 11000,
+            'paid_to_company' => true,
         ]);
 
+        \App\Support\CompanyRemittanceSupport::syncForReport($report);
+
         $this->deleteJson('/api/admin/schedules/'.$schedule->id)
-            ->assertStatus(400)
-            ->assertJsonPath('message', '此班表已有回報紀錄，無法刪除');
+            ->assertOk()
+            ->assertJsonPath('message', '班表與相關回報、匯款紀錄已刪除');
+
+        $this->assertDatabaseMissing('daily_schedules', ['id' => $schedule->id]);
+        $this->assertDatabaseMissing('daily_reports', ['id' => $report->id]);
+        $this->assertDatabaseMissing('company_remittances', ['report_id' => $report->id]);
     }
 
     public function test_employee_can_fetch_month_schedules(): void

@@ -164,7 +164,7 @@ class DispatchApiTest extends TestCase
             ->assertJsonPath('data.task_details', '11台');
     }
 
-    public function test_customer_service_cannot_mutate_previous_month_schedule(): void
+    public function test_customer_service_can_mutate_previous_month_schedule(): void
     {
         Carbon::setTestNow(Carbon::parse('2026-07-04 10:00:00'));
 
@@ -178,13 +178,12 @@ class DispatchApiTest extends TestCase
         Sanctum::actingAs($this->customerService);
 
         $this->patchJson('/api/admin/schedules/'.$schedule->id, [
-            'customer_name' => '客服不可改',
-        ])->assertForbidden()
-            ->assertJsonPath('message', '已跨月的班表僅管理員可修改');
+            'customer_name' => '客服可改',
+        ])->assertOk()
+            ->assertJsonPath('data.customer_name', '客服可改');
 
         $this->deleteJson('/api/admin/schedules/'.$schedule->id)
-            ->assertForbidden()
-            ->assertJsonPath('message', '已跨月的班表僅管理員可修改');
+            ->assertOk();
     }
 
     public function test_admin_can_mutate_previous_month_schedule(): void
@@ -206,7 +205,7 @@ class DispatchApiTest extends TestCase
             ->assertJsonPath('data.customer_name', '管理員可改');
     }
 
-    public function test_customer_service_cannot_create_schedule_in_previous_month(): void
+    public function test_customer_service_can_create_schedule_in_previous_month(): void
     {
         Carbon::setTestNow(Carbon::parse('2026-07-04 10:00:00'));
 
@@ -225,8 +224,8 @@ class DispatchApiTest extends TestCase
                 ['ac_units' => 11, 'unit_price' => 1000],
             ],
             'needs_invoice' => false,
-        ])->assertForbidden()
-            ->assertJsonPath('message', '僅能調整當月班表，跨月後請由管理員修改');
+        ])->assertCreated()
+            ->assertJsonPath('data.customer_name', '測試客戶');
     }
 
     public function test_employee_cannot_access_admin_routes(): void

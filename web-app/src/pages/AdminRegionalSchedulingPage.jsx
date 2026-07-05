@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { PageErrorBoundary } from '../components/PageErrorBoundary';
 import { Layout } from '../components/Layout';
 import { ScheduleEmployeeAvailabilityPanel } from '../components/ScheduleEmployeeAvailabilityPanel';
@@ -17,7 +17,8 @@ import {
   buildSchedulePayload,
   buildSchedulePayloads,
   buildScheduleSuccessSummary,
-  canModifyScheduleByMonth,
+  canEditSchedule,
+  canDeleteSchedule,
   emptyScheduleForm,
   formatDateOnly,
   getAvailabilityLoadRange,
@@ -29,6 +30,7 @@ import {
 
 export default function AdminRegionalSchedulingPage() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const userRole = user?.role || 'admin';
   const isMobile = useIsMobile();
   const [employees, setEmployees] = useState([]);
@@ -167,6 +169,10 @@ export default function AdminRegionalSchedulingPage() {
           await api.createSchedule(item);
         }
         closeModal();
+        if (payloads.some((item) => item.needs_mail)) {
+          navigate('/admin/mail-tracking');
+          return;
+        }
       }
 
       setSuccessSummary(summaryPayload);
@@ -270,7 +276,7 @@ export default function AdminRegionalSchedulingPage() {
           form={form}
           employees={getFormEmployees()}
           editId={editId}
-          canDelete={Boolean(editId) && canModifyScheduleByMonth(editingSchedule, userRole)}
+          canDelete={Boolean(editId) && canDeleteSchedule(editingSchedule, userRole)}
           userRole={userRole}
           originalSchedule={editId ? editingSchedule : null}
           allSchedules={allSchedules}

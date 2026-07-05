@@ -32,7 +32,98 @@ export function hasTaxablePricingLine(lines) {
 }
 
 export function deriveNeedsInvoice(form) {
-  return hasTaxablePricingLine(form.pricing_lines) || Boolean(form.needs_invoice);
+  return Boolean(form.needs_invoice) || hasTaxablePricingLine(form.pricing_lines);
+}
+
+export function isTriplicateInvoice(form) {
+  return Boolean(form.needs_invoice)
+    && Boolean(String(form.invoice_title || '').trim() || String(form.invoice_tax_id || '').trim());
+}
+
+export function shouldChargeCustomerTax(form) {
+  if (!form.needs_invoice) {
+    return hasTaxablePricingLine(form.pricing_lines);
+  }
+
+  return isTriplicateInvoice(form) || Boolean(form.invoice_charge_customer_tax);
+}
+
+export function syncInvoiceTaxFlags(form) {
+  const chargeTax = shouldChargeCustomerTax(form);
+
+  return {
+    ...form,
+    pricing_lines: (form.pricing_lines || [createPricingLine()]).map((line) => ({
+      ...line,
+      is_taxable: form.needs_invoice ? chargeTax : Boolean(line.is_taxable),
+    })),
+  };
+}
+
+export function getScheduleContactId(schedule) {
+  if (!schedule) {
+    return '';
+  }
+
+  if (schedule.customer_source === 'line') {
+    return schedule.line_display_name || schedule.customer_name || '';
+  }
+
+  if (schedule.customer_source === 'fb') {
+    return schedule.fb_display_name || schedule.customer_name || '';
+  }
+
+  return schedule.customer_name || '';
+}
+
+export function getFormContactId(form) {
+  if (form.customer_source === 'line') {
+    return form.line_display_name || form.customer_name || '';
+  }
+
+  if (form.customer_source === 'fb') {
+    return form.fb_display_name || form.customer_name || '';
+  }
+
+  return form.customer_name || '';
+}
+
+export function patchFormContactId(form, value) {
+  const trimmed = String(value || '').trim();
+
+  if (form.customer_source === 'line') {
+    return { line_display_name: trimmed, customer_name: trimmed };
+  }
+
+  if (form.customer_source === 'fb') {
+    return { fb_display_name: trimmed, customer_name: trimmed };
+  }
+
+  return { customer_name: trimmed };
+}
+
+export function resolveScheduleDocumentType(schedule) {
+  if (!schedule) {
+    return '';
+  }
+
+  if (schedule.needs_receipt) {
+    return '收據';
+  }
+
+  if (schedule.needs_invoice) {
+    return isTriplicateInvoice(schedule) ? '三聯' : '二聯';
+  }
+
+  if (schedule.needs_mail) {
+    return '郵寄';
+  }
+
+  return '';
+}
+
+export function scheduleHasMailTrackingItem(schedule) {
+  return Boolean(schedule?.needs_mail || schedule?.needs_invoice || schedule?.needs_receipt);
 }
 
 export function normalizeServiceAddresses(form) {
@@ -242,30 +333,43 @@ export function inferUnitPrice(schedule) {
 }
 
 export function applyPriceCalculation(form) {
-  const summary = summarizePricingLines(form.pricing_lines, Boolean(form.needs_invoice));
-  const serviceAddresses = normalizeServiceAddresses(form);
+  const synced = syncInvoiceTaxFlags(form);
+  const summary = summarizePricingLines(synced.pricing_lines, shouldChargeCustomerTax(synced));
+  const serviceAddresses = normalizeServiceAddresses(synced);
   const timelineUnits = serviceAddresses.length > 1
     ? serviceAddresses.reduce((total, row) => total + (Number(row.ac_units) || 0), 0)
     : Number(summary.ac_units);
   const end_time = calculateEndTimeFromUnits(
-    form.start_time || DEFAULT_FIRST_SHIFT_START,
+    synced.start_time || DEFAULT_FIRST_SHIFT_START,
     timelineUnits,
   );
   const primaryAddress = serviceAddresses[0];
 
   return applyMailSync({
-    ...form,
+    ...synced,
     ...summary,
-    customer_address: primaryAddress?.address || form.customer_address,
+    needs_invoice: Boolean(synced.needs_invoice),
+    customer_address: primaryAddress?.address || synced.customer_address,
     service_addresses: serviceAddresses,
     end_time,
   });
 }
 
+export function resolveMailContactFields(form) {
+  const addresses = normalizeServiceAddresses(form);
+  const primary = addresses[0];
+  const phone = primary?.same_as_customer !== false
+    ? String(form.customer_phone || '').trim()
+    : String(primary?.phone || form.customer_phone || '').trim();
+  const address = String(primary?.address || form.customer_address || '').trim();
+
+  return { phone, address };
+}
+
 export function mailMatchesCustomer(form) {
-  return form.mail_recipient === form.customer_name
-    && form.mail_phone === form.customer_phone
-    && form.mail_address === form.customer_address;
+  const { phone, address } = resolveMailContactFields(form);
+
+  return form.mail_phone === phone && form.mail_address === address;
 }
 
 export function applyMailSync(form) {
@@ -273,11 +377,12 @@ export function applyMailSync(form) {
     return form;
   }
 
+  const { phone, address } = resolveMailContactFields(form);
+
   return {
     ...form,
-    mail_recipient: form.customer_name,
-    mail_phone: form.customer_phone,
-    mail_address: form.customer_address,
+    mail_phone: phone,
+    mail_address: address,
   };
 }
 
@@ -568,7 +673,7 @@ export function formatScheduleMailInvoiceSummary(schedule) {
   const parts = [];
 
   if (schedule.needs_mail) {
-    const mailParts = ['需郵寄'];
+    const mailParts = ['郵寄'];
     if (schedule.mail_recipient) {
       mailParts.push(`收件：${schedule.mail_recipient}`);
     }
@@ -576,12 +681,11 @@ export function formatScheduleMailInvoiceSummary(schedule) {
       mailParts.push(`地址：${schedule.mail_address}`);
     }
     parts.push(mailParts.join(' · '));
-  } else {
-    parts.push('不需郵寄');
   }
 
   if (schedule.needs_invoice) {
-    const invoiceParts = ['需統編/發票'];
+    const docType = resolveScheduleDocumentType(schedule);
+    const invoiceParts = [`發票（${docType}）`];
     if (schedule.invoice_title) {
       invoiceParts.push(`抬頭：${schedule.invoice_title}`);
     }
@@ -589,11 +693,17 @@ export function formatScheduleMailInvoiceSummary(schedule) {
       invoiceParts.push(`統編：${schedule.invoice_tax_id}`);
     }
     parts.push(invoiceParts.join(' · '));
-  } else {
-    parts.push('不需統編/發票');
   }
 
-  return parts.join('；');
+  if (schedule.needs_receipt) {
+    parts.push('收據');
+  }
+
+  if (schedule.invoice_planned_date) {
+    parts.push(`預計開票：${formatDateOnly(schedule.invoice_planned_date)}`);
+  }
+
+  return parts.length ? parts.join('；') : '無郵資／發票／收據';
 }
 
 export function formatChineseTimeValue(value) {
@@ -1023,6 +1133,7 @@ export const emptyScheduleForm = {
   customer_address: '',
   service_addresses: [createServiceAddress()],
   needs_mail: false,
+  needs_receipt: false,
   mail_same_as_customer: false,
   mail_recipient: '',
   mail_phone: '',
@@ -1035,6 +1146,9 @@ export const emptyScheduleForm = {
   ac_units: '1',
   unit_price: '1500',
   needs_invoice: false,
+  invoice_charge_customer_tax: false,
+  invoice_pre_issue: false,
+  invoice_planned_date: '',
   invoice_tax_id: '',
   invoice_title: '',
   cleaning_price: '1500',
@@ -1065,14 +1179,13 @@ export function scheduleToForm(schedule) {
       same_as_customer: true,
     })],
     needs_mail: Boolean(schedule.needs_mail || schedule.mail_recipient || schedule.mail_phone || schedule.mail_address),
+    needs_receipt: Boolean(schedule.needs_receipt),
     mail_recipient: schedule.mail_recipient ?? '',
     mail_phone: schedule.mail_phone ?? '',
     mail_address: schedule.mail_address ?? '',
     mail_same_as_customer: mailMatchesCustomer({
-      customer_name: schedule.customer_name || '',
       customer_phone: schedule.customer_phone ?? '',
       customer_address: schedule.customer_address ?? '',
-      mail_recipient: schedule.mail_recipient ?? '',
       mail_phone: schedule.mail_phone ?? '',
       mail_address: schedule.mail_address ?? '',
     }),
@@ -1082,6 +1195,9 @@ export function scheduleToForm(schedule) {
     line_display_name: schedule.line_display_name || '',
     pricing_lines: pricingLines,
     needs_invoice: Boolean(schedule.needs_invoice),
+    invoice_charge_customer_tax: Boolean(schedule.invoice_charge_customer_tax),
+    invoice_pre_issue: Boolean(schedule.invoice_planned_date),
+    invoice_planned_date: formatDateOnly(schedule.invoice_planned_date) || '',
     invoice_tax_id: schedule.invoice_tax_id ?? '',
     invoice_title: schedule.invoice_title ?? '',
     notes: schedule.notes || '',
@@ -1113,17 +1229,41 @@ export function isWorkDateBeforeCurrentMonth(workDate, anchor = new Date()) {
   return Boolean(dateKey) && dateKey < getCurrentMonthStartDate(anchor);
 }
 
+export function canBypassScheduleTimeRestrictions(userRole = 'admin') {
+  return userRole === 'admin' || userRole === 'customer_service';
+}
+
+export function canForceMutateReportedSchedule(userRole = 'admin') {
+  return canBypassScheduleTimeRestrictions(userRole);
+}
+
+export function canEditSchedule(schedule, userRole = 'admin') {
+  if (!canModifyScheduleByMonth(schedule, userRole)) {
+    return false;
+  }
+
+  if (hasScheduleReport(schedule) && !canForceMutateReportedSchedule(userRole)) {
+    return false;
+  }
+
+  return true;
+}
+
+export function canDeleteSchedule(schedule, userRole = 'admin') {
+  return canEditSchedule(schedule, userRole);
+}
+
 export function canMutateScheduleWorkDate(workDate, { userRole = 'admin', original = null } = {}) {
   if (original) {
     const originalDate = formatDateOnly(original.work_date);
 
-    if (isWorkDateBeforeCurrentMonth(originalDate) && userRole !== 'admin') {
-      return '已跨月的班表僅管理員可修改';
+    if (isWorkDateBeforeCurrentMonth(originalDate) && !canBypassScheduleTimeRestrictions(userRole)) {
+      return '已跨月的班表僅管理員或客服可修改';
     }
   }
 
-  if (isWorkDateBeforeCurrentMonth(workDate) && userRole !== 'admin') {
-    return '僅能調整當月班表，跨月後請由管理員修改';
+  if (isWorkDateBeforeCurrentMonth(workDate) && !canBypassScheduleTimeRestrictions(userRole)) {
+    return '僅能調整當月班表，跨月後請由管理員或客服修改';
   }
 
   return null;
@@ -1177,7 +1317,7 @@ export function canDragScheduleEvent(schedule, userRole = 'admin') {
     return false;
   }
 
-  if (hasScheduleReport(schedule)) {
+  if (hasScheduleReport(schedule) && !canForceMutateReportedSchedule(userRole)) {
     return false;
   }
 
@@ -1213,7 +1353,7 @@ export function getMinWorkDate() {
 }
 
 export function getMinScheduleWorkDate(userRole = 'admin') {
-  if (userRole === 'admin') {
+  if (canBypassScheduleTimeRestrictions(userRole)) {
     return undefined;
   }
 
@@ -1226,13 +1366,13 @@ export function isScheduleInPast(workDate, startTime) {
 }
 
 export function isSlotInPast(slot, { userRole = 'admin' } = {}) {
-  const start = slot?.start instanceof Date ? slot.start : new Date();
-
-  if (isWorkDateInCurrentMonth(start)) {
+  if (canBypassScheduleTimeRestrictions(userRole)) {
     return false;
   }
 
-  if (userRole === 'admin' && isWorkDateBeforeCurrentMonth(start)) {
+  const start = slot?.start instanceof Date ? slot.start : new Date();
+
+  if (isWorkDateInCurrentMonth(start)) {
     return false;
   }
 
@@ -1263,7 +1403,7 @@ export function validateScheduleTiming(form, { original = null, userRole = 'admi
     return null;
   }
 
-  if (isScheduleInPast(form.work_date, form.start_time)) {
+  if (isScheduleInPast(form.work_date, form.start_time) && !canBypassScheduleTimeRestrictions(userRole)) {
     return '不可預約過去的日期或時間，請選擇現在之後的時段';
   }
 
@@ -1274,7 +1414,7 @@ export function slotToForm(slot, { schedules = [], userId = '', userRole = 'admi
   const now = new Date();
   let start = slot.start instanceof Date ? slot.start : new Date();
 
-  if (!isWorkDateInCurrentMonth(start) && !(userRole === 'admin' && isWorkDateBeforeCurrentMonth(start))) {
+  if (!isWorkDateInCurrentMonth(start) && !(canBypassScheduleTimeRestrictions(userRole) && isWorkDateBeforeCurrentMonth(start))) {
     if (start.getTime() < now.getTime()) {
       start = new Date(now);
     }
@@ -1422,10 +1562,11 @@ export function buildSchedulePayload(form, { original = null, userRole = 'admin'
   }
 
   const hidePricing = userRole === 'customer_service';
+  const synced = syncInvoiceTaxFlags(form);
   const summary = hidePricing
-    ? summarizePricingLines(form.pricing_lines, false)
-    : summarizePricingLines(form.pricing_lines, Boolean(form.needs_invoice));
-  const needsInvoice = hidePricing ? Boolean(form.needs_invoice) : summary.needs_invoice;
+    ? summarizePricingLines(synced.pricing_lines, false)
+    : summarizePricingLines(synced.pricing_lines, shouldChargeCustomerTax(synced));
+  const needsInvoice = Boolean(synced.needs_invoice);
   const pricingLines = summary.pricing_lines.map(({ ac_units, unit_price, is_taxable }) => ({
     ac_units: Number(ac_units),
     unit_price: Number(unit_price),
@@ -1472,6 +1613,11 @@ export function buildSchedulePayload(form, { original = null, userRole = 'admin'
     line_display_name: form.line_display_name?.trim() || null,
     pricing_lines: pricingLines,
     needs_invoice: needsInvoice,
+    needs_receipt: Boolean(form.needs_receipt),
+    invoice_charge_customer_tax: needsInvoice ? Boolean(form.invoice_charge_customer_tax) : false,
+    invoice_planned_date: form.invoice_pre_issue && form.invoice_planned_date
+      ? form.invoice_planned_date
+      : null,
     invoice_tax_id: needsInvoice ? form.invoice_tax_id?.trim() || null : null,
     invoice_title: needsInvoice ? form.invoice_title?.trim() || null : null,
     notes: form.notes?.trim() || null,
@@ -1517,6 +1663,14 @@ export function buildSchedulePayloads(form, options = {}) {
           ac_units: String(units),
           is_taxable: false,
         }],
+      needs_mail: isFirst ? form.needs_mail : false,
+      needs_invoice: isFirst ? form.needs_invoice : false,
+      needs_receipt: isFirst ? form.needs_receipt : false,
+      invoice_pre_issue: isFirst ? form.invoice_pre_issue : false,
+      invoice_planned_date: isFirst ? form.invoice_planned_date : '',
+      invoice_charge_customer_tax: isFirst ? form.invoice_charge_customer_tax : false,
+      invoice_tax_id: isFirst ? form.invoice_tax_id : '',
+      invoice_title: isFirst ? form.invoice_title : '',
       multi_address_part: isFirst ? undefined : { index: index + 1, total: addresses.length },
       notes: appendMultiAddressNote(form.notes, index, addresses.length),
     }, options));

@@ -8,8 +8,10 @@ use App\Models\User;
 use App\Support\CustomerSource;
 use App\Support\ScheduleBackfillSupport;
 use App\Support\ScheduleCustomerServicePolicy;
+use App\Support\ScheduleDeletionSupport;
 use App\Support\ScheduleMutationPolicy;
 use App\Support\SchedulePricing;
+use App\Support\EmployeeReportSupport;
 use App\Support\TaitungServiceArea;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -132,7 +134,9 @@ class ScheduleController extends Controller
 
     public function update(Request $request, DailySchedule $schedule): JsonResponse
     {
-        if ($schedule->dailyReport()->exists()) {
+        $hasReport = $schedule->dailyReport()->exists();
+
+        if ($hasReport && ! ScheduleMutationPolicy::canForceMutateReportedSchedule($request->user())) {
             return $this->error('此班表已有回報紀錄，無法編輯', 400);
         }
 
@@ -178,6 +182,9 @@ class ScheduleController extends Controller
             'cleaning_price' => $schedule->cleaning_price,
             'unit_price' => $schedule->unit_price,
             'needs_invoice' => $schedule->needs_invoice,
+            'needs_receipt' => $schedule->needs_receipt,
+            'invoice_charge_customer_tax' => $schedule->invoice_charge_customer_tax,
+            'invoice_planned_date' => $schedule->invoice_planned_date?->format('Y-m-d'),
             'invoice_tax_id' => $schedule->invoice_tax_id,
             'invoice_title' => $schedule->invoice_title,
             'notes' => $schedule->notes,
@@ -202,6 +209,10 @@ class ScheduleController extends Controller
         $schedule->fill($validated);
         $schedule->save();
 
+        if ($hasReport) {
+            EmployeeReportSupport::resyncFromSchedule($schedule->dailyReport()->first());
+        }
+
         return $this->success(
             $schedule->fresh()->load([
                 'user:id,name,account,role,is_active,avatar_path',
@@ -213,7 +224,9 @@ class ScheduleController extends Controller
 
     public function destroy(Request $request, DailySchedule $schedule): JsonResponse
     {
-        if ($schedule->dailyReport()->exists()) {
+        $hasReport = $schedule->dailyReport()->exists();
+
+        if ($hasReport && ! ScheduleMutationPolicy::canForceMutateReportedSchedule($request->user())) {
             return $this->error('此班表已有回報紀錄，無法刪除', 400);
         }
 
@@ -223,9 +236,9 @@ class ScheduleController extends Controller
             return $error;
         }
 
-        $schedule->delete();
+        ScheduleDeletionSupport::deleteWithDependents($schedule);
 
-        return $this->success(null, '班表刪除成功');
+        return $this->success(null, $hasReport ? '班表與相關回報、匯款紀錄已刪除' : '班表刪除成功');
     }
 
     /**
@@ -317,6 +330,9 @@ class ScheduleController extends Controller
             'multi_address_part.index' => ['nullable', 'integer', 'min:2'],
             'multi_address_part.total' => ['nullable', 'integer', 'min:2'],
             'needs_invoice' => ['nullable', 'boolean'],
+            'needs_receipt' => ['nullable', 'boolean'],
+            'invoice_charge_customer_tax' => ['nullable', 'boolean'],
+            'invoice_planned_date' => ['nullable', 'date'],
             'invoice_tax_id' => ['nullable', 'string', 'max:20'],
             'invoice_title' => ['nullable', 'string', 'max:255'],
             'notes' => ['nullable', 'string', 'max:500'],
@@ -330,6 +346,7 @@ class ScheduleController extends Controller
     private function normalizeSchedulePayload(array $payload): array
     {
         $needsInvoice = (bool) ($payload['needs_invoice'] ?? false);
+        $needsReceipt = (bool) ($payload['needs_receipt'] ?? false);
         $lines = SchedulePricing::normalizeLines(
             $payload['pricing_lines'] ?? null,
             isset($payload['ac_units']) ? (int) $payload['ac_units'] : null,
@@ -338,6 +355,24 @@ class ScheduleController extends Controller
         $multiAddressPart = is_array($payload['multi_address_part'] ?? null)
             ? $payload['multi_address_part']
             : null;
+        $isTriplicate = $needsInvoice && (
+            trim((string) ($payload['invoice_title'] ?? '')) !== ''
+            || trim((string) ($payload['invoice_tax_id'] ?? '')) !== ''
+        );
+        $chargeCustomerTax = $isTriplicate || (bool) ($payload['invoice_charge_customer_tax'] ?? false);
+
+        if ($needsInvoice && $chargeCustomerTax) {
+            $lines = array_map(
+                static fn (array $line): array => [...$line, 'is_taxable' => true],
+                $lines
+            );
+        } elseif (! $needsInvoice) {
+            $lines = array_map(
+                static fn (array $line): array => [...$line, 'is_taxable' => false],
+                $lines
+            );
+        }
+
         $summary = SchedulePricing::summarizeLines($lines, $needsInvoice);
 
         if ($multiAddressPart && (int) ($multiAddressPart['index'] ?? 0) > 1) {
@@ -355,12 +390,22 @@ class ScheduleController extends Controller
                 'needs_invoice' => false,
                 'task_details' => $units.'台'.$unitPrice,
             ];
+            $payload['needs_mail'] = false;
+            $payload['needs_invoice'] = false;
+            $payload['needs_receipt'] = false;
+            $payload['invoice_charge_customer_tax'] = false;
+            $payload['invoice_planned_date'] = null;
         }
 
         $payload['pricing_lines'] = $lines;
         $payload['ac_units'] = $summary['ac_units'];
         $payload['unit_price'] = $summary['unit_price'];
-        $payload['needs_invoice'] = $summary['needs_invoice'];
+        $payload['needs_invoice'] = $needsInvoice && ! ($multiAddressPart && (int) ($multiAddressPart['index'] ?? 0) > 1);
+        $payload['needs_receipt'] = $needsReceipt && ! ($multiAddressPart && (int) ($multiAddressPart['index'] ?? 0) > 1);
+        $payload['invoice_charge_customer_tax'] = $needsInvoice && $chargeCustomerTax;
+        $payload['invoice_planned_date'] = isset($payload['invoice_planned_date']) && $payload['invoice_planned_date'] !== ''
+            ? $payload['invoice_planned_date']
+            : null;
         $payload['cleaning_price'] = $summary['cleaning_price'];
         $payload['task_details'] = $summary['task_details'];
         unset($payload['multi_address_part']);
@@ -396,6 +441,14 @@ class ScheduleController extends Controller
         } else {
             $payload['invoice_tax_id'] = null;
             $payload['invoice_title'] = null;
+            $payload['invoice_charge_customer_tax'] = false;
+        }
+
+        if ($payload['needs_receipt']) {
+            $payload['invoice_tax_id'] = null;
+            $payload['invoice_title'] = null;
+            $payload['needs_invoice'] = false;
+            $payload['invoice_charge_customer_tax'] = false;
         }
 
         $payload['service_area'] = $payload['service_area'] ?? null;

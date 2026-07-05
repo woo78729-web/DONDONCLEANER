@@ -104,13 +104,29 @@ export default function AdminReportsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.reports.map((report) => (
-                    <tr key={report.id} className={report.unit_mismatch ? 'row-warning' : ''}>
+                  {data.reports.map((report) => {
+                    const hasUnitChange = Boolean(report.unit_mismatch);
+                    const plannedUnits = report.planned_units ?? report.daily_schedule?.ac_units;
+
+                    return (
+                    <tr key={report.id} className={hasUnitChange ? 'row-report-changed' : ''}>
                       <td>{report.daily_schedule?.work_date?.slice?.(0, 10) ?? report.daily_schedule?.work_date}</td>
                       <td>{report.daily_schedule?.user?.name}</td>
                       <td>{report.daily_schedule?.customer_address}</td>
-                      <td className="num">{report.planned_units ?? report.daily_schedule?.ac_units}</td>
-                      <td className="num">{report.completed_units}</td>
+                      <td className="num">
+                        {hasUnitChange ? (
+                          <span className="report-units-changed">{plannedUnits}</span>
+                        ) : (
+                          plannedUnits
+                        )}
+                      </td>
+                      <td className="num">
+                        {hasUnitChange ? (
+                          <span className="report-units-changed">{report.completed_units}</span>
+                        ) : (
+                          report.completed_units
+                        )}
+                      </td>
                       <td className="num">{report.total_amount ?? report.collected_amount}</td>
                       <td className="num">{report.employee_received ?? report.collected_amount}</td>
                       <td className="num">
@@ -126,14 +142,18 @@ export default function AdminReportsPage() {
                           : '-'}
                       </td>
                       <td>
+                        {hasUnitChange && (
+                          <div className="report-change-box" title={report.skip_reason || '台數異動'}>
+                            <strong>台數異動</strong>
+                            <span>
+                              預計 {plannedUnits} → 完成 {report.completed_units}
+                            </span>
+                            {report.skip_reason && <span className="report-change-box__reason">{report.skip_reason}</span>}
+                          </div>
+                        )}
                         {report.paid_to_company && (
                           <span className={`status-pill${report.company_remittance?.is_overdue ? ' status-pill--warn' : ''}`}>
                             {report.company_remittance?.status_label || '待入帳'}
-                          </span>
-                        )}
-                        {report.unit_mismatch && (
-                          <span className="status-pill status-pill--warn" title={report.skip_reason || '台數不符'}>
-                            台數不符
                           </span>
                         )}
                         {report.temporary_request && (
@@ -148,7 +168,8 @@ export default function AdminReportsPage() {
                         </td>
                       )}
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

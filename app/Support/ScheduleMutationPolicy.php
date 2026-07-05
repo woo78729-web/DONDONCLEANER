@@ -8,6 +8,19 @@ use Carbon\Carbon;
 
 class ScheduleMutationPolicy
 {
+    /** @var list<string> */
+    private const TIME_RESTRICTION_BYPASS_ROLES = ['admin', 'customer_service'];
+
+    public static function canBypassTimeRestrictions(User $user): bool
+    {
+        return in_array($user->role, self::TIME_RESTRICTION_BYPASS_ROLES, true);
+    }
+
+    public static function canForceMutateReportedSchedule(User $user): bool
+    {
+        return self::canBypassTimeRestrictions($user);
+    }
+
     public static function currentMonthStart(?Carbon $now = null): Carbon
     {
         return ($now ?? now())->copy()->startOfMonth()->startOfDay();
@@ -32,13 +45,13 @@ class ScheduleMutationPolicy
         if ($existing) {
             $existingDate = $existing->work_date?->format('Y-m-d') ?? (string) $existing->work_date;
 
-            if (self::isWorkDateBeforeCurrentMonth($existingDate) && $user->role !== 'admin') {
-                return '已跨月的班表僅管理員可修改';
+            if (self::isWorkDateBeforeCurrentMonth($existingDate) && ! self::canBypassTimeRestrictions($user)) {
+                return '已跨月的班表僅管理員或客服可修改';
             }
         }
 
-        if (self::isWorkDateBeforeCurrentMonth($workDate) && $user->role !== 'admin') {
-            return '僅能調整當月班表，跨月後請由管理員修改';
+        if (self::isWorkDateBeforeCurrentMonth($workDate) && ! self::canBypassTimeRestrictions($user)) {
+            return '僅能調整當月班表，跨月後請由管理員或客服修改';
         }
 
         return null;

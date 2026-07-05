@@ -18,6 +18,8 @@ import {
   buildScheduleCardLine,
   buildScheduleSuccessSummary,
   canModifyScheduleByMonth,
+  canEditSchedule,
+  canDeleteSchedule,
   canMutateScheduleWorkDate,
   emptyScheduleForm,
   expandLeavesToEvents,
@@ -27,6 +29,7 @@ import {
   getCalendarLoadRange,
   getLeaveEventStyle,
   getScheduleEventStyle,
+  hasScheduleReport,
   isSlotInPast,
   LEAVE_BAND_END_HOUR,
   LEAVE_BAND_START_HOUR,
@@ -183,8 +186,8 @@ export default function AdminScheduleDayPage() {
   }
 
   function openEdit(schedule) {
-    if (schedule.daily_report) {
-      setError('此班表已有回報紀錄，無法編輯');
+    if (!canEditSchedule(schedule, userRole)) {
+      setError(hasScheduleReport(schedule) ? '此班表已有回報紀錄，無法編輯' : '無法編輯此班表');
       return;
     }
 
@@ -263,6 +266,10 @@ export default function AdminScheduleDayPage() {
           await api.createSchedule(item);
         }
         closeModal();
+        if (payloads.some((item) => item.needs_mail)) {
+          navigate('/admin/mail-tracking');
+          return;
+        }
       }
 
       setSuccessSummary(summaryPayload);
@@ -288,7 +295,16 @@ export default function AdminScheduleDayPage() {
   }
 
   async function handleDeleteFromSnapshot(schedule) {
-    if (!window.confirm('確定刪除此行程？')) {
+    if (!canDeleteSchedule(schedule, userRole)) {
+      setError('此班表已有回報紀錄，無法刪除');
+      return;
+    }
+
+    const confirmMessage = hasScheduleReport(schedule)
+      ? '確定刪除此工單？相關回報、郵資、匯款紀錄將一併刪除。'
+      : '確定刪除此行程？';
+
+    if (!window.confirm(confirmMessage)) {
       return;
     }
 
@@ -458,7 +474,7 @@ export default function AdminScheduleDayPage() {
         form={form}
         employees={getFormEmployees()}
         editId={editId}
-        canDelete={Boolean(editId) && canModifyScheduleByMonth(editingSchedule, userRole)}
+        canDelete={Boolean(editId) && canDeleteSchedule(editingSchedule, userRole)}
         userRole={userRole}
         originalSchedule={editId ? editingSchedule : null}
         allSchedules={schedules}

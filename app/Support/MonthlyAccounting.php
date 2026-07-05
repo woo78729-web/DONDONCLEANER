@@ -151,12 +151,23 @@ class MonthlyAccounting
      */
     private static function countMailReports(Collection $reports): int
     {
-        return $reports->filter(function (DailyReport $report) {
-            return (int) $report->temporary_postage > 0
-                || (bool) $report->needs_invoice_and_mail
-                || (bool) $report->needs_receipt_and_mail
-                || (bool) $report->dailySchedule?->needs_mail;
-        })->count();
+        $keys = [];
+
+        foreach ($reports as $report) {
+            if ((int) $report->temporary_postage <= 0) {
+                continue;
+            }
+
+            $schedule = $report->dailySchedule;
+
+            if (! $schedule) {
+                continue;
+            }
+
+            $keys[MailRecipientSupport::recipientKey($schedule)] = true;
+        }
+
+        return count($keys);
     }
 
     /**

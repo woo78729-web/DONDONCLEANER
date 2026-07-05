@@ -1680,12 +1680,64 @@ select option {
 
 .status-pill--warn {
   background: rgba(255, 87, 34, 0.16);
-  color: #c2410c;
-  border: 1px solid rgba(255, 87, 34, 0.35);
+  color: #ffb74d;
+  border: 1px solid rgba(255, 140, 0, 0.45);
 }
 
-.data-table tbody tr.row-warning td {
-  background: rgba(255, 87, 34, 0.08);
+.data-table tbody tr.row-warning td,
+.data-table tbody tr.row-report-changed td {
+  background: rgba(255, 140, 0, 0.1);
+}
+
+.data-table tbody tr.row-report-changed td {
+  border-top: 1px solid rgba(255, 140, 0, 0.35);
+  border-bottom: 1px solid rgba(255, 140, 0, 0.35);
+  box-shadow: inset 4px 0 0 var(--brand-500);
+}
+
+.data-table tbody tr.row-report-changed td:first-child {
+  border-left: 1px solid rgba(255, 140, 0, 0.35);
+}
+
+.data-table tbody tr.row-report-changed td:last-child {
+  border-right: 1px solid rgba(255, 140, 0, 0.35);
+}
+
+.report-units-changed {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2.2em;
+  padding: 4px 10px;
+  border-radius: 10px;
+  border: 2px solid rgba(255, 140, 0, 0.65);
+  background: rgba(255, 140, 0, 0.18);
+  color: #ffb74d;
+  font-weight: 800;
+  box-shadow: 0 0 0 1px rgba(255, 140, 0, 0.15);
+}
+
+.report-change-box {
+  display: grid;
+  gap: 4px;
+  padding: 8px 10px;
+  margin-bottom: 6px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 140, 0, 0.55);
+  background: rgba(255, 140, 0, 0.12);
+  color: #ffe0b2;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.report-change-box strong {
+  color: #ffb74d;
+  font-size: 13px;
+}
+
+.report-change-box__reason {
+  color: rgba(255, 255, 255, 0.82);
+  word-break: break-word;
 }
 
 .modal-panel--wide {
@@ -1766,31 +1818,25 @@ select option {
 }
 
 .schedule-popover-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1350;
+  display: grid;
+  place-items: center;
+  padding: max(20px, env(safe-area-inset-top)) 20px max(20px, env(safe-area-inset-bottom));
   background: rgba(38, 40, 44, 0.32);
   backdrop-filter: blur(2px);
-  z-index: 1350;
-}
-
-.schedule-popover-overlay--anchored {
-  background: rgba(38, 40, 44, 0.18);
-  backdrop-filter: blur(1px);
-  align-items: flex-start;
-  justify-content: flex-start;
 }
 
 .schedule-popover {
   width: min(460px, calc(100vw - 32px));
+  max-height: min(85vh, 640px);
+  overflow: auto;
   background: #fff;
   color: #2f3438;
   border-radius: 20px;
   border: 1px solid #e3e7eb;
   box-shadow: 0 10px 36px rgba(38, 40, 44, 0.14);
-  overflow: hidden;
-}
-
-.schedule-popover--anchored {
-  margin: 0;
-  box-shadow: 0 12px 40px rgba(38, 40, 44, 0.22);
 }
 
 .schedule-popover__toolbar {
@@ -1941,25 +1987,6 @@ select option {
 
 .schedule-popover__list--compact {
   gap: 14px;
-}
-
-@media (max-width: 768px) {
-  .schedule-popover-overlay--anchored {
-    padding: 12px;
-    align-items: center;
-    justify-content: center;
-  }
-
-  .schedule-popover--anchored {
-    position: fixed !important;
-    top: auto !important;
-    left: 12px !important;
-    right: 12px !important;
-    width: auto !important;
-    max-width: none !important;
-    bottom: calc(12px + var(--safe-bottom, 0px));
-    max-height: min(72vh, 520px);
-  }
 }
 
 .schedule-day-block__header {
@@ -2296,6 +2323,28 @@ select option {
 
 .mail-tracking-modal__sent {
   margin-top: 4px;
+}
+
+.mail-tracking-source-dot {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.12);
+}
+
+.mail-tracking-table .mail-tracking-address {
+  max-width: 220px;
+  white-space: normal;
+  word-break: break-word;
+}
+
+.mail-tracking-row--planned {
+  background: rgba(255, 193, 7, 0.08);
+}
+
+.mail-tracking-delete-btn {
+  min-width: 56px;
 }
 
 .mail-tracking-search {

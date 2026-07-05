@@ -230,14 +230,27 @@ class MaintenanceRecordController extends Controller
             ->where(function ($builder) {
                 $builder
                     ->where('needs_mail', true)
-                    ->orWhere('needs_invoice', true);
+                    ->orWhere('needs_invoice', true)
+                    ->orWhere('needs_receipt', true);
             });
 
         $pendingSchedules = (clone $scheduleQuery)
             ->where('invoice_sent', false)
+            ->orderByRaw('invoice_planned_date is null')
+            ->orderBy('invoice_planned_date')
             ->orderByDesc('work_date')
             ->limit(100)
             ->get()
+            ->reject(function (DailySchedule $schedule) {
+                $report = $schedule->dailyReport;
+
+                if (! $report || $report->invoice_sent) {
+                    return false;
+                }
+
+                return (bool) $report->needs_invoice_and_mail || (bool) $report->needs_receipt_and_mail;
+            })
+            ->values()
             ->map(fn (DailySchedule $schedule) => $this->scheduleMailPayload($schedule));
 
         $sentThisMonthSchedules = (clone $scheduleQuery)
@@ -310,7 +323,8 @@ class MaintenanceRecordController extends Controller
             ->where(function ($builder) {
                 $builder
                     ->where('needs_mail', true)
-                    ->orWhere('needs_invoice', true);
+                    ->orWhere('needs_invoice', true)
+                    ->orWhere('needs_receipt', true);
             });
 
         $this->applyMailHistoryFilters($scheduleQuery, $taxId, $title, $phone);
@@ -351,7 +365,7 @@ class MaintenanceRecordController extends Controller
 
     public function updateScheduleMailTracking(Request $request, DailySchedule $schedule): JsonResponse
     {
-        if (! $schedule->needs_mail && ! $schedule->needs_invoice) {
+        if (! $schedule->needs_mail && ! $schedule->needs_invoice && ! $schedule->needs_receipt) {
             return $this->error('此班表不需寄件追蹤', 422);
         }
 
@@ -484,14 +498,20 @@ class MaintenanceRecordController extends Controller
             'customer_name' => $schedule->customer_name,
             'customer_phone' => $schedule->customer_phone,
             'customer_address' => $schedule->customer_address,
+            'customer_source' => $schedule->customer_source,
+            'fb_display_name' => $schedule->fb_display_name,
+            'line_display_name' => $schedule->line_display_name,
             'mail_recipient' => $schedule->mail_recipient,
             'mail_phone' => $schedule->mail_phone,
             'mail_address' => $schedule->mail_address,
             'invoice_tax_id' => $schedule->invoice_tax_id,
             'invoice_title' => $schedule->invoice_title,
+            'invoice_planned_date' => $schedule->invoice_planned_date?->format('Y-m-d'),
+            'invoice_charge_customer_tax' => (bool) $schedule->invoice_charge_customer_tax,
             'mail_tracking_number' => $schedule->mail_tracking_number,
             'needs_mail' => (bool) $schedule->needs_mail,
             'needs_invoice' => (bool) $schedule->needs_invoice,
+            'needs_receipt' => (bool) $schedule->needs_receipt,
             'invoice_sent' => (bool) $schedule->invoice_sent,
             'invoice_sent_at' => $schedule->invoice_sent_at?->toDateTimeString(),
             'user' => $schedule->user,

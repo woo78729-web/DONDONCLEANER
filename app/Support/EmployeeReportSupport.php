@@ -61,6 +61,30 @@ class EmployeeReportSupport
         return $report->fresh();
     }
 
+    public static function resyncFromSchedule(DailyReport $report): DailyReport
+    {
+        $report->loadMissing('dailySchedule');
+        $schedule = $report->dailySchedule;
+
+        if (! $schedule) {
+            return $report;
+        }
+
+        $payload = self::buildFromSchedule($schedule, [
+            'completed_units' => $report->completed_units,
+            'skip_reason' => $report->skip_reason,
+            'has_tax' => $report->has_tax,
+            'needs_invoice_and_mail' => $report->needs_invoice_and_mail,
+            'needs_receipt_and_mail' => $report->needs_receipt_and_mail,
+            'temporary_request' => $report->temporary_request,
+            'collected_amount' => $report->collected_amount,
+            'paid_to_company' => $report->paid_to_company,
+            'travel_allowance' => $report->travel_allowance,
+        ], $report);
+
+        return self::applyPayload($report, $payload);
+    }
+
     /**
      * @param  array<string, mixed>  $payload
      * @return array<string, mixed>
@@ -74,7 +98,7 @@ class EmployeeReportSupport
      * @param  array<string, mixed>  $input
      * @return array<string, mixed>
      */
-    public static function buildFromSchedule(DailySchedule $schedule, array $input): array
+    public static function buildFromSchedule(DailySchedule $schedule, array $input, ?DailyReport $existingReport = null): array
     {
         $plannedUnits = (int) $schedule->ac_units;
         $hasTax = (bool) ($input['has_tax'] ?? false);
@@ -132,8 +156,12 @@ class EmployeeReportSupport
             throw new \InvalidArgumentException('客戶匯款給公司時，實際收取金額請填 0');
         }
 
-        $temporaryPostage = $needsMail ? self::POSTAGE_AMOUNT : 0;
-        $reportInvoiceTaxCost = ($hasTax || $needsInvoiceAndMail)
+        $temporaryPostage = MailRecipientSupport::postageAmountFor(
+            $schedule,
+            $needsMail,
+            $existingReport?->id
+        );
+        $reportInvoiceTaxCost = ($hasTax || $needsInvoiceAndMail || (bool) $schedule->needs_invoice)
             ? (int) round($baseAmount * self::INVOICE_TAX_RATE)
             : 0;
 

@@ -1,8 +1,7 @@
-import { useLayoutEffect, useState } from 'react';
 import { GoogleMapsLink } from './GoogleMapsLink';
 import { PhoneLink } from './PhoneLink';
 import {
-  canModifyScheduleByMonth,
+  canEditSchedule,
   formatScheduleAcUnits,
   formatScheduleDateLabel,
   formatScheduleDisplayTimeRange,
@@ -11,48 +10,23 @@ import {
   getScheduleBlockColor,
 } from '../utils/scheduleCalendar';
 import { canManageSchedulePricing } from '../utils/permissions';
-import { computeSchedulePopoverStyle } from '../utils/schedulePopover';
 
 export function ScheduleSnapshotModal({
   open,
   schedule,
-  anchor = null,
   onClose,
   onEdit,
   onDelete,
   showActions = true,
   userRole = 'admin',
 }) {
-  const [popoverStyle, setPopoverStyle] = useState(null);
-
-  useLayoutEffect(() => {
-    if (!open || !schedule) {
-      setPopoverStyle(null);
-      return undefined;
-    }
-
-    function updatePosition() {
-      setPopoverStyle(computeSchedulePopoverStyle(anchor));
-    }
-
-    updatePosition();
-    window.addEventListener('resize', updatePosition);
-    window.addEventListener('scroll', updatePosition, true);
-
-    return () => {
-      window.removeEventListener('resize', updatePosition);
-      window.removeEventListener('scroll', updatePosition, true);
-    };
-  }, [open, schedule, anchor]);
-
   if (!open || !schedule) {
     return null;
   }
 
   const blockColor = getScheduleBlockColor(schedule);
-  const canModify = showActions && !schedule.daily_report && canModifyScheduleByMonth(schedule, userRole);
+  const canModify = showActions && canEditSchedule(schedule, userRole);
   const canManagePricing = canManageSchedulePricing(userRole);
-  const isAnchored = Boolean(anchor && popoverStyle);
   const dateTimeLabel = [
     formatScheduleDateLabel(schedule.work_date),
     formatScheduleDisplayTimeRange(schedule),
@@ -60,13 +34,12 @@ export function ScheduleSnapshotModal({
 
   return (
     <div
-      className={`modal-overlay schedule-popover-overlay${isAnchored ? ' schedule-popover-overlay--anchored' : ''}`}
+      className="modal-overlay schedule-popover-overlay"
       role="presentation"
       onClick={onClose}
     >
       <div
-        className={`schedule-popover${isAnchored ? ' schedule-popover--anchored' : ''}`}
-        style={isAnchored ? popoverStyle : undefined}
+        className="schedule-popover"
         role="dialog"
         aria-modal="true"
         onClick={(event) => event.stopPropagation()}

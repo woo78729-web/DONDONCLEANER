@@ -19,7 +19,6 @@ import { useAuth } from '../context/AuthContext';
 import { canAccess, canManageSchedulePricing } from '../utils/permissions';
 import { loadCalendarSettings, saveCalendarSettings } from '../utils/calendarSettings';
 import { loadAvailabilityDays } from '../utils/taitungAreas';
-import { resolveScheduleEventAnchor } from '../utils/schedulePopover';
 import {
   buildSchedulePayload,
   buildSchedulePayloads,
@@ -27,7 +26,8 @@ import {
   buildScheduleTimePatch,
   calendarInteractionToScheduleUpdate,
   canDragScheduleEvent,
-  canModifyScheduleByMonth,
+  canEditSchedule,
+  canDeleteSchedule,
   canMutateScheduleWorkDate,
   CUSTOMER_SOURCE_OPTIONS,
   emptyScheduleForm,
@@ -36,6 +36,7 @@ import {
   getAdminCalendarFetchRange,
   getAvailabilityLoadRange,
   getCalendarLoadRange,
+  hasScheduleReport,
   isSlotInPast,
   scheduleToForm,
   slotToForm,
@@ -76,7 +77,6 @@ export default function AdminSchedulesPage() {
   const [lookaheadDays, setLookaheadDays] = useState(() => loadAvailabilityDays(14));
   const [leaves, setLeaves] = useState([]);
   const [snapshotSchedule, setSnapshotSchedule] = useState(null);
-  const [snapshotAnchor, setSnapshotAnchor] = useState(null);
   const [successSummary, setSuccessSummary] = useState(null);
   const [mobileFilterOpen, setMobileFilterOpen] = useState(false);
 
@@ -167,11 +167,10 @@ export default function AdminSchedulesPage() {
     }
   }
 
-  function openSnapshot(schedule, clickEvent) {
+  function openSnapshot(schedule) {
     if (schedule?.type === 'leave') {
       return;
     }
-    setSnapshotAnchor(resolveScheduleEventAnchor(schedule, clickEvent));
     setSnapshotSchedule(schedule);
     setMessage('');
     setError('');
@@ -179,7 +178,6 @@ export default function AdminSchedulesPage() {
 
   function closeSnapshot() {
     setSnapshotSchedule(null);
-    setSnapshotAnchor(null);
   }
 
   function openEditFromSnapshot(schedule) {
@@ -188,8 +186,8 @@ export default function AdminSchedulesPage() {
   }
 
   function openEdit(schedule) {
-    if (schedule.daily_report) {
-      setError('此班表已有回報紀錄，無法編輯');
+    if (!canEditSchedule(schedule, userRole)) {
+      setError(hasScheduleReport(schedule) ? '此班表已有回報紀錄，無法編輯' : '無法編輯此班表');
       return;
     }
     const monthError = canMutateScheduleWorkDate(formatDateOnly(schedule.work_date), { userRole });
@@ -307,6 +305,10 @@ export default function AdminSchedulesPage() {
           await api.createSchedule(item);
         }
         closeModal();
+        if (payloads.some((item) => item.needs_mail)) {
+          navigate('/admin/mail-tracking');
+          return;
+        }
       }
       setSuccessSummary(summaryPayload);
       loadSchedules(currentDate, selectedEmployeeId).catch((err) => setError(err.message));
@@ -330,7 +332,16 @@ export default function AdminSchedulesPage() {
   }
 
   async function handleDeleteFromSnapshot(schedule) {
-    if (!window.confirm('確定刪除此行程？')) {
+    if (!canDeleteSchedule(schedule, userRole)) {
+      setError('此班表已有回報紀錄，無法刪除');
+      return;
+    }
+
+    const confirmMessage = hasScheduleReport(schedule)
+      ? '確定刪除此工單？相關回報、郵資、匯款紀錄將一併刪除。'
+      : '確定刪除此行程？';
+
+    if (!window.confirm(confirmMessage)) {
       return;
     }
     setError('');
@@ -630,7 +641,7 @@ export default function AdminSchedulesPage() {
                   currentDate={currentDate}
                   displayDays={displayDays}
                   onNavigate={handleNavigate}
-                  onSelectEvent={(event, clickEvent) => openSnapshot(event.resource, clickEvent)}
+                  onSelectEvent={(event) => openSnapshot(event.resource)}
                   onSelectSlot={openCreate}
                   onDrillDown={(date) => navigate(`/admin/schedules/day/${formatDateOnly(date)}`)}
                   onEventDrop={handleEventDrop}
@@ -687,7 +698,6 @@ export default function AdminSchedulesPage() {
         <ScheduleSnapshotModal
           open={Boolean(snapshotSchedule)}
           schedule={snapshotSchedule}
-          anchor={snapshotAnchor}
           onClose={closeSnapshot}
           onEdit={openEditFromSnapshot}
           onDelete={handleDeleteFromSnapshot}
@@ -700,7 +710,7 @@ export default function AdminSchedulesPage() {
           form={form}
           employees={getFormEmployees()}
           editId={editId}
-          canDelete={Boolean(editId) && canModifyScheduleByMonth(editingSchedule, userRole)}
+          canDelete={Boolean(editId) && canDeleteSchedule(editingSchedule, userRole)}
           userRole={userRole}
           originalSchedule={editId ? editingSchedule : null}
           allSchedules={allSchedules}

@@ -269,7 +269,7 @@ class AdminEnhancementApiTest extends TestCase
         $this->assertDatabaseCount('personal_access_tokens', 0);
     }
 
-    public function test_admin_cannot_update_schedule_with_existing_report(): void
+    public function test_admin_can_update_schedule_with_existing_report_and_resync_financials(): void
     {
         Sanctum::actingAs($this->admin);
 
@@ -277,18 +277,37 @@ class AdminEnhancementApiTest extends TestCase
             'user_id' => $this->employee->id,
             'work_date' => now()->toDateString(),
             'customer_address' => '原始地址',
+            'ac_units' => 2,
+            'pricing_lines' => [
+                ['ac_units' => 2, 'unit_price' => 1000],
+            ],
+            'cleaning_price' => 2000,
+            'task_details' => '2台1000=2000',
+            'needs_invoice' => false,
         ]));
 
         DailyReport::query()->create([
             'schedule_id' => $schedule->id,
-            'completed_units' => 1,
-            'collected_amount' => 11000,
+            'planned_units' => 2,
+            'completed_units' => 2,
+            'skipped_units' => 0,
+            'unit_mismatch' => false,
+            'has_tax' => false,
+            'collected_amount' => 2000,
+            'paid_to_company' => false,
         ]);
 
         $this->patchJson('/api/admin/schedules/'.$schedule->id, [
             'customer_address' => '更新後地址',
-        ])->assertStatus(400)
-            ->assertJsonPath('message', '此班表已有回報紀錄，無法編輯');
+            'needs_invoice' => true,
+        ])->assertOk()
+            ->assertJsonPath('data.customer_address', '更新後地址')
+            ->assertJsonPath('data.needs_invoice', true);
+
+        $report = DailyReport::query()->where('schedule_id', $schedule->id)->first();
+
+        $this->assertSame(2, $report->planned_units);
+        $this->assertTrue($schedule->fresh()->needs_invoice);
     }
 
     public function test_admin_can_export_reports_csv(): void

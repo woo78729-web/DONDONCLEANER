@@ -6,9 +6,15 @@ import {
   DEFAULT_FIRST_SHIFT_START,
   DEFAULT_SECOND_SHIFT_START,
   formatScheduleValidationAlert,
+  getFormContactId,
   getMinScheduleWorkDate,
+  hasScheduleReport,
   hasTaxablePricingLine,
+  isTriplicateInvoice,
+  resolveMailContactFields,
+  patchFormContactId,
   patchScheduleForm,
+  syncInvoiceTaxFlags,
   validateScheduleForm,
   CUSTOMER_SOURCE_OPTIONS,
   SCHEDULE_TIME_OPTIONS,
@@ -108,22 +114,24 @@ export function ScheduleFormModal({
       return;
     }
 
+    const contact = resolveMailContactFields(form);
+
     onChange(patchScheduleForm(form, {
       needs_mail: true,
       mail_same_as_customer: true,
-      mail_recipient: form.customer_name,
-      mail_phone: form.customer_phone,
-      mail_address: form.customer_address,
+      mail_phone: contact.phone,
+      mail_address: contact.address,
     }));
   }
 
   function toggleMailSameAsCustomer(checked) {
     if (checked) {
+      const contact = resolveMailContactFields(form);
+
       onChange(patchScheduleForm(form, {
         mail_same_as_customer: true,
-        mail_recipient: form.customer_name,
-        mail_phone: form.customer_phone,
-        mail_address: form.customer_address,
+        mail_phone: contact.phone,
+        mail_address: contact.address,
       }));
       return;
     }
@@ -137,23 +145,52 @@ export function ScheduleFormModal({
 
   function toggleNeedsInvoice(checked) {
     const patch = checked
-      ? { needs_invoice: true }
+      ? { needs_invoice: true, needs_receipt: false }
       : {
         needs_invoice: false,
         invoice_tax_id: '',
         invoice_title: '',
+        invoice_charge_customer_tax: false,
+        invoice_pre_issue: false,
+        invoice_planned_date: '',
         pricing_lines: (form.pricing_lines || [createPricingLine()]).map((line) => ({
           ...line,
           is_taxable: false,
         })),
       };
 
+    const next = syncInvoiceTaxFlags(patchScheduleForm(form, patch));
+
     if (canManagePricing) {
-      onChange(applyPriceCalculation(patchScheduleForm(form, patch)));
+      onChange(applyPriceCalculation(next));
       return;
     }
 
-    onChange(patchScheduleForm(form, patch));
+    onChange(next);
+  }
+
+  function toggleNeedsReceipt(checked) {
+    onChange(patchScheduleForm(form, {
+      needs_receipt: checked,
+      ...(checked ? {
+        needs_invoice: false,
+        invoice_tax_id: '',
+        invoice_title: '',
+        invoice_charge_customer_tax: false,
+        invoice_pre_issue: false,
+        invoice_planned_date: '',
+      } : {}),
+    }));
+  }
+
+  function toggleInvoiceChargeCustomerTax(checked) {
+    const next = syncInvoiceTaxFlags(patchScheduleForm(form, { invoice_charge_customer_tax: checked }));
+    onChange(canManagePricing ? applyPriceCalculation(next) : next);
+  }
+
+  function handleInvoiceFieldChange(partial) {
+    const next = syncInvoiceTaxFlags(patchScheduleForm(form, partial));
+    onChange(canManagePricing ? applyPriceCalculation(next) : next);
   }
 
   const serviceAddresses = form.service_addresses?.length
@@ -165,6 +202,12 @@ export function ScheduleFormModal({
     })];
   const hasMultipleAddresses = serviceAddresses.length > 1;
   const invoiceAutoEnabled = hasTaxablePricingLine(form.pricing_lines);
+  const triplicateInvoice = isTriplicateInvoice(form);
+  const contactIdLabel = form.customer_source === 'line'
+    ? 'LINE ID'
+    : form.customer_source === 'fb'
+      ? 'FB ID'
+      : '聯絡人 ID';
 
   function updateServiceAddress(rowId, partial) {
     const nextRows = serviceAddresses.map((row) => (
@@ -386,12 +429,13 @@ export function ScheduleFormModal({
           )}
 
           <label className="field">
-            <span className="field-label">清洗聯絡人</span>
+            <span className="field-label">{contactIdLabel}</span>
             <input
               className="field-control"
-              value={form.customer_name}
-              onChange={(e) => handleChange({ customer_name: e.target.value })}
+              value={getFormContactId(form)}
+              onChange={(e) => handleChange(patchFormContactId(form, e.target.value))}
               required
+              placeholder={form.customer_source === 'phone' ? '客戶姓名或代稱' : '請填寫社群 ID'}
             />
           </label>
 
@@ -525,7 +569,7 @@ export function ScheduleFormModal({
                 checked={Boolean(form.needs_mail)}
                 onChange={(e) => toggleNeedsMail(e.target.checked)}
               />
-              <span>如需寄信</span>
+              <span>郵寄</span>
             </label>
 
             {showInvoiceOption && (
@@ -533,16 +577,26 @@ export function ScheduleFormModal({
               <input
                 type="checkbox"
                 checked={Boolean(form.needs_invoice)}
-                disabled={invoiceAutoEnabled}
+                disabled={invoiceAutoEnabled || Boolean(form.needs_receipt)}
                 onChange={(e) => toggleNeedsInvoice(e.target.checked)}
               />
               <span>
-                {canManagePricing
-                  ? (invoiceAutoEnabled ? '是否開發票（已由品項含稅自動開啟）' : '是否開發票')
-                  : '是否開發票'}
+                {canManagePricing && invoiceAutoEnabled
+                  ? '發票（二聯／三聯，已由品項含稅自動開啟）'
+                  : '發票（二聯／三聯）'}
               </span>
             </label>
             )}
+
+            <label className="field field-checkbox">
+              <input
+                type="checkbox"
+                checked={Boolean(form.needs_receipt)}
+                disabled={Boolean(form.needs_invoice)}
+                onChange={(e) => toggleNeedsReceipt(e.target.checked)}
+              />
+              <span>收據</span>
+            </label>
           </div>
 
           {form.needs_invoice && (
@@ -551,8 +605,46 @@ export function ScheduleFormModal({
                 <InvoiceTaxIdFields
                   invoiceTitle={form.invoice_title}
                   invoiceTaxId={form.invoice_tax_id}
-                  onChange={handleChange}
+                  onChange={handleInvoiceFieldChange}
                 />
+                {!triplicateInvoice && canManagePricing && (
+                  <label className="field field-checkbox" style={{ marginTop: 12 }}>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(form.invoice_charge_customer_tax)}
+                      onChange={(e) => toggleInvoiceChargeCustomerTax(e.target.checked)}
+                    />
+                    <span>向客戶加收 5% 稅金（二聯）</span>
+                  </label>
+                )}
+                {triplicateInvoice && canManagePricing && (
+                  <p className="hint" style={{ marginTop: 12 }}>三聯發票已自動向客戶加收 5% 稅金。</p>
+                )}
+                <div className="form-grid cols-2" style={{ marginTop: 12 }}>
+                  <label className="field field-checkbox">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(form.invoice_pre_issue)}
+                      onChange={(e) => handleChange({
+                        invoice_pre_issue: e.target.checked,
+                        invoice_planned_date: e.target.checked ? form.invoice_planned_date : '',
+                      })}
+                    />
+                    <span>預開／延後發票</span>
+                  </label>
+                  {form.invoice_pre_issue && (
+                    <label className="field">
+                      <span className="field-label">預計開發票日期</span>
+                      <input
+                        className="field-control"
+                        type="date"
+                        value={form.invoice_planned_date || ''}
+                        onChange={(e) => handleChange({ invoice_planned_date: e.target.value })}
+                        required
+                      />
+                    </label>
+                  )}
+                </div>
               </div>
             </div>
           )}
@@ -566,7 +658,7 @@ export function ScheduleFormModal({
                     checked={Boolean(form.mail_same_as_customer)}
                     onChange={(e) => toggleMailSameAsCustomer(e.target.checked)}
                   />
-                  <span>同清洗聯絡人、電話、地址</span>
+                  <span>同清洗電話、地址</span>
                 </label>
 
                 <div className="form-grid cols-2">
@@ -575,8 +667,7 @@ export function ScheduleFormModal({
                     <input
                       className="field-control"
                       value={form.mail_recipient}
-                      onChange={(e) => handleChange({ mail_recipient: e.target.value, mail_same_as_customer: false })}
-                      disabled={form.mail_same_as_customer}
+                      onChange={(e) => handleChange({ mail_recipient: e.target.value })}
                       placeholder="收件人姓名"
                     />
                   </label>
@@ -625,7 +716,11 @@ export function ScheduleFormModal({
                 type="button"
                 className="btn btn-danger btn-pill"
                 onClick={() => {
-                  if (window.confirm('確定要刪除此班表行程嗎？')) {
+                  const confirmMessage = hasScheduleReport(originalSchedule)
+                    ? '確定刪除此工單？相關回報、郵資、匯款紀錄將一併刪除。'
+                    : '確定要刪除此班表行程嗎？';
+
+                  if (window.confirm(confirmMessage)) {
                     onDelete();
                   }
                 }}
