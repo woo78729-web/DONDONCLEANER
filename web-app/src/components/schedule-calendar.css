@@ -2127,9 +2127,27 @@
   flex: none;
   width: 100%;
   max-width: 100%;
+  min-width: 0;
   display: flex;
   box-sizing: border-box;
   overflow: hidden;
+}
+
+@media (min-width: 769px) {
+  .option-chip-group--price-inline {
+    grid-template-columns: repeat(3, minmax(96px, 1fr));
+  }
+
+  .option-chip-group--price-inline .option-chip--price {
+    min-width: 96px;
+    overflow: visible;
+  }
+
+  .option-chip-group--price-inline .option-chip__amount {
+    font-size: 16px;
+    overflow: visible;
+    text-overflow: clip;
+  }
 }
 
 .option-chip__dot {
@@ -3357,8 +3375,8 @@
 
 .pricing-line {
   display: grid;
-  grid-template-columns: auto minmax(72px, 96px) minmax(0, 1fr) auto;
-  gap: 12px;
+  grid-template-columns: auto minmax(72px, 96px) 1fr auto;
+  gap: 10px 12px;
   align-items: center;
   padding: 12px 14px;
   border-radius: 12px;
@@ -3367,9 +3385,24 @@
 }
 
 .pricing-line__label {
+  grid-column: 1;
+  grid-row: 1;
   font-size: 13px;
   font-weight: 800;
   color: var(--brand-800);
+  white-space: nowrap;
+}
+
+.pricing-line__units {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.pricing-line__remove {
+  grid-column: 4;
+  grid-row: 1;
+  justify-self: end;
+  align-self: center;
   white-space: nowrap;
 }
 
@@ -3378,8 +3411,10 @@
 }
 
 .pricing-line__price {
+  grid-column: 1 / -1;
+  grid-row: 2;
   min-width: 0;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .employee-report-pricing {
@@ -3405,15 +3440,20 @@
   margin-top: 0;
 }
 
-.pricing-line__remove {
-  align-self: center;
-  white-space: nowrap;
-}
-
 .pricing-line__tax {
-  align-self: center;
+  grid-column: 1 / -1;
+  grid-row: 3;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  align-self: start;
   white-space: nowrap;
   margin: 0;
+}
+
+.pricing-line__tax.field {
+  display: flex;
 }
 
 .service-addresses__header {
