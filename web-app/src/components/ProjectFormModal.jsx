@@ -10,6 +10,7 @@ import {
   UNIT_PRICE_OPTIONS,
 } from '../utils/scheduleCalendar';
 import { TAITUNG_SERVICE_AREAS } from '../utils/taitungAreas';
+import { AddressAutocompleteInput } from './AddressAutocompleteInput';
 import { GoogleMapsLink } from './GoogleMapsLink';
 import './schedule-calendar.css';
 
@@ -180,7 +181,13 @@ export function ProjectFormModal({
           <label className="field" style={{ gridColumn: '1 / -1' }}>
             <span className="field-label">清洗地址</span>
             <div className="field-action-row">
-              <input className="field-control" value={form.customer_address} onChange={(event) => handleChange({ customer_address: event.target.value })} required />
+              <AddressAutocompleteInput
+                value={form.customer_address}
+                onChange={(address) => handleChange({ customer_address: address })}
+                placeholder="請輸入完整地址"
+                required
+                showFallbackHint={false}
+              />
               <GoogleMapsLink address={form.customer_address} />
             </div>
           </label>
