@@ -84,6 +84,8 @@ Route::middleware(['auth:sanctum', 'role:admin'])->prefix('admin')->group(functi
     Route::post('/legacy-ledgers/import-bulk', [AdminLegacyLedgerController::class, 'importBulk']);
     Route::delete('/legacy-ledgers/month', [AdminLegacyLedgerController::class, 'destroy']);
     Route::patch('/reports/{report}', [AdminReportController::class, 'update']);
+    Route::get('/reports/unit-change-alerts', [AdminReportController::class, 'unitChangeAlerts']);
+    Route::post('/reports/unit-change-alerts/dismiss', [AdminReportController::class, 'dismissUnitChangeAlerts']);
 });
 
 Route::middleware(['auth:sanctum', 'role:admin|finance|customer_service'])->prefix('admin')->group(function () {

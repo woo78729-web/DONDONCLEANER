@@ -5,6 +5,7 @@ import { assetUrl } from '../utils/assetUrl';
 import { getMobileTabItems, getNavStructure } from '../utils/navItems';
 import { canAccess, getRoleLabel } from '../utils/permissions';
 import { RemittanceAlertModal } from './RemittanceAlertModal';
+import { UnitChangeAlertModal } from './UnitChangeAlertModal';
 import { api } from '../api/client';
 
 function NavItemLink({ item, onNavigate, className = 'nav-link' }) {
@@ -125,10 +126,14 @@ export function Layout({ title, children }) {
   const [openNavGroup, setOpenNavGroup] = useState(null);
   const [remittanceAlerts, setRemittanceAlerts] = useState([]);
   const [remittanceAlertOpen, setRemittanceAlertOpen] = useState(false);
+  const [unitChangeAlerts, setUnitChangeAlerts] = useState([]);
+  const [unitChangeAlertOpen, setUnitChangeAlertOpen] = useState(false);
+  const [dismissingUnitAlerts, setDismissingUnitAlerts] = useState(false);
 
   const navStructure = user ? getNavStructure(user) : [];
   const mobileTabItems = user ? getMobileTabItems(user) : [];
   const canTrackRemittance = user ? canAccess(user, 'remittance.track') : false;
+  const isAdmin = user?.role === 'admin';
 
   useEffect(() => {
     if (!user || !canTrackRemittance) {
@@ -148,6 +153,44 @@ export function Layout({ title, children }) {
         setRemittanceAlertOpen(false);
       });
   }, [user, canTrackRemittance]);
+
+  useEffect(() => {
+    if (!user || !isAdmin) {
+      setUnitChangeAlerts([]);
+      setUnitChangeAlertOpen(false);
+      return;
+    }
+
+    api.getUnitChangeAlerts()
+      .then((result) => {
+        const items = result.data?.items || [];
+        setUnitChangeAlerts(items);
+        setUnitChangeAlertOpen(items.length > 0);
+      })
+      .catch(() => {
+        setUnitChangeAlerts([]);
+        setUnitChangeAlertOpen(false);
+      });
+  }, [user, isAdmin]);
+
+  async function closeUnitChangeAlerts() {
+    if (!unitChangeAlerts.length) {
+      setUnitChangeAlertOpen(false);
+      return;
+    }
+
+    setDismissingUnitAlerts(true);
+
+    try {
+      await api.dismissUnitChangeAlerts(unitChangeAlerts.map((item) => item.id));
+      setUnitChangeAlerts([]);
+      setUnitChangeAlertOpen(false);
+    } catch {
+      setUnitChangeAlertOpen(false);
+    } finally {
+      setDismissingUnitAlerts(false);
+    }
+  }
 
   useEffect(() => {
     setMenuOpen(false);
@@ -224,6 +267,13 @@ export function Layout({ title, children }) {
           open={remittanceAlertOpen}
           items={remittanceAlerts}
           onClose={() => setRemittanceAlertOpen(false)}
+        />
+
+        <UnitChangeAlertModal
+          open={unitChangeAlertOpen}
+          items={unitChangeAlerts}
+          onClose={closeUnitChangeAlerts}
+          dismissing={dismissingUnitAlerts}
         />
 
         {user && (

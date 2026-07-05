@@ -1230,7 +1230,8 @@
     grid-template-areas:
       "label remove"
       "units units"
-      "price price";
+      "price price"
+      "tax tax";
     align-items: start;
   }
 
@@ -1252,20 +1253,29 @@
     align-self: start;
   }
 
+  .pricing-line__tax {
+    grid-area: tax;
+  }
+
   .option-chip-group--price-inline {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(76px, 1fr));
     gap: 6px;
   }
 
   .option-chip--price {
+    flex: none;
+    width: 100%;
+    max-width: 100%;
+    display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
     gap: 2px;
-    aspect-ratio: 1;
-    min-height: 0;
+    min-height: 48px;
     padding: 6px 4px;
     border-radius: 10px;
+    box-sizing: border-box;
+    overflow: hidden;
   }
 
   .option-chip__amount {
@@ -2087,7 +2097,6 @@
 
 .option-chip--price {
   min-width: 0;
-  flex: 1 1 0;
   flex-direction: column;
   gap: 2px;
   padding: 8px 10px;
@@ -2096,13 +2105,18 @@
 
 .option-chip-group--price-inline {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(76px, 1fr));
   gap: 8px;
   width: 100%;
 }
 
 .option-chip-group--price-inline .option-chip--price {
-  min-width: 0;
+  flex: none;
+  width: 100%;
+  max-width: 100%;
+  display: flex;
+  box-sizing: border-box;
+  overflow: hidden;
 }
 
 .option-chip__dot {
@@ -2114,8 +2128,12 @@
 }
 
 .option-chip__amount {
-  font-size: 18px;
-  line-height: 1;
+  font-size: clamp(13px, 2.8vw, 18px);
+  line-height: 1.1;
+  white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .option-chip__unit {
@@ -3322,7 +3340,7 @@
 
 .pricing-line {
   display: grid;
-  grid-template-columns: auto minmax(88px, 108px) minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(72px, 96px) minmax(228px, 1fr) auto;
   gap: 12px;
   align-items: center;
   padding: 12px 14px;
@@ -3344,6 +3362,15 @@
 
 .pricing-line__price {
   min-width: 0;
+  overflow: hidden;
+}
+
+.employee-report-pricing {
+  grid-column: 1 / -1;
+}
+
+.employee-report-pricing .pricing-lines {
+  margin-top: 8px;
 }
 
 .pricing-line__price .field-label {

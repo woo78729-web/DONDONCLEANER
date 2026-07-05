@@ -43,6 +43,52 @@ class ReportController extends Controller
         ], '回報資料查詢成功');
     }
 
+    public function unitChangeAlerts(Request $request): JsonResponse
+    {
+        $reports = DailyReport::query()
+            ->with(['dailySchedule.user:id,name'])
+            ->where('unit_mismatch', true)
+            ->whereNull('admin_unit_alert_dismissed_at')
+            ->orderByDesc('created_at')
+            ->limit(20)
+            ->get()
+            ->map(function (DailyReport $report) {
+                $schedule = $report->dailySchedule;
+
+                return [
+                    'id' => $report->id,
+                    'work_date' => $schedule?->work_date?->toDateString(),
+                    'employee_name' => $schedule?->user?->name,
+                    'customer_name' => $schedule?->customer_name,
+                    'customer_address' => $schedule?->customer_address,
+                    'planned_units' => $report->planned_units,
+                    'completed_units' => $report->completed_units,
+                    'skip_reason' => $report->skip_reason,
+                    'created_at' => $report->created_at?->toDateTimeString(),
+                ];
+            })
+            ->values()
+            ->all();
+
+        return $this->success(['items' => $reports], '台數異動通知查詢成功');
+    }
+
+    public function dismissUnitChangeAlerts(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'report_ids' => ['required', 'array', 'min:1'],
+            'report_ids.*' => ['integer', 'exists:daily_reports,id'],
+        ]);
+
+        DailyReport::query()
+            ->whereIn('id', $validated['report_ids'])
+            ->where('unit_mismatch', true)
+            ->whereNull('admin_unit_alert_dismissed_at')
+            ->update(['admin_unit_alert_dismissed_at' => now()]);
+
+        return $this->success(null, '台數異動通知已標記為已讀');
+    }
+
     public function update(Request $request, DailyReport $report): JsonResponse
     {
         $report->loadMissing('dailySchedule');

@@ -1,48 +1,38 @@
-import { EMPLOYEE_POSTAGE_AMOUNT } from './scheduleCalendar';
+import {
+  createPricingLine,
+  EMPLOYEE_POSTAGE_AMOUNT,
+} from './scheduleCalendar';
+
 export const EMPLOYEE_INVOICE_TAX_RATE = 0.08;
 
-export function calculateEmployeeReportDraft(schedule, draft) {
-  const plannedUnits = Number(schedule?.ac_units || 0);
-  const completedUnits = Math.max(0, Number(draft.completed_units || 0));
-  const skippedUnits = Math.max(0, plannedUnits - completedUnits);
-  const hasTax = Boolean(draft.has_tax);
-  const needsInvoiceAndMail = Boolean(draft.needs_invoice_and_mail);
-  const needsReceiptAndMail = Boolean(draft.needs_receipt_and_mail);
-  const needsInvoice = hasTax || needsInvoiceAndMail || Boolean(schedule?.needs_invoice);
-  const needsMail = needsInvoiceAndMail || needsReceiptAndMail || Boolean(schedule?.needs_mail);
+export function cloneSchedulePricingLines(schedule) {
+  const lines = schedule?.pricing_lines;
 
-  const scaledLines = scalePricingLinesForCompleted(schedule?.pricing_lines, completedUnits, plannedUnits);
-  const baseAmount = scaledLines.reduce(
-    (total, line) => total + Number(line.ac_units) * Number(line.unit_price),
-    0,
-  );
-  const collectedAmount = needsInvoice ? Math.round(baseAmount * 1.05) : baseAmount;
-  const temporaryPostage = needsMail ? EMPLOYEE_POSTAGE_AMOUNT : 0;
-  const reportInvoiceTaxCost = (hasTax || needsInvoiceAndMail)
-    ? Math.round(baseAmount * EMPLOYEE_INVOICE_TAX_RATE)
-    : 0;
-
-  return {
-    plannedUnits,
-    completedUnits,
-    skippedUnits,
-    unitMismatch: skippedUnits > 0,
-    needsInvoice,
-    needsMail,
-    collectedAmount,
-    temporaryPostage,
-    reportInvoiceTaxCost,
-  };
-}
-
-function scalePricingLinesForCompleted(lines, completedUnits, plannedUnits) {
-  const normalized = Array.isArray(lines) && lines.length > 0
-    ? lines.map((line, index) => ({
+  if (Array.isArray(lines) && lines.length > 0) {
+    return lines.map((line, index) => createPricingLine({
       id: `line-${index}`,
       ac_units: String(line.ac_units ?? 1),
       unit_price: String(line.unit_price ?? 1500),
+      is_taxable: Boolean(line.is_taxable),
+    }));
+  }
+
+  return [createPricingLine({
+    ac_units: String(schedule?.ac_units ?? 1),
+    unit_price: String(schedule?.unit_price ?? 1500),
+    is_taxable: Boolean(schedule?.needs_invoice),
+  })];
+}
+
+export function scalePricingLinesForCompleted(lines, completedUnits, plannedUnits) {
+  const normalized = Array.isArray(lines) && lines.length > 0
+    ? lines.map((line, index) => ({
+      id: line.id || `line-${index}`,
+      ac_units: String(line.ac_units ?? 1),
+      unit_price: String(line.unit_price ?? 1500),
+      is_taxable: Boolean(line.is_taxable),
     }))
-    : [{ id: 'line-0', ac_units: String(completedUnits || 1), unit_price: '1500' }];
+    : [{ id: 'line-0', ac_units: String(completedUnits || 1), unit_price: '1500', is_taxable: false }];
 
   if (plannedUnits < 1 || completedUnits === plannedUnits) {
     return normalized;
@@ -62,15 +52,80 @@ function scalePricingLinesForCompleted(lines, completedUnits, plannedUnits) {
 
     return {
       ...line,
-      ac_units: String(units),
+      ac_units: String(Math.max(0, units)),
     };
   }).filter((line) => Number(line.ac_units) > 0);
+}
+
+function summarizePricingLineTotals(lines, needsInvoice) {
+  let untaxedBase = 0;
+  let collectedAmount = 0;
+
+  for (const line of lines) {
+    const units = Number(line.ac_units || 0);
+    const unitPrice = Number(line.unit_price || 0);
+    const lineBase = units * unitPrice;
+    const taxable = Boolean(line.is_taxable);
+
+    untaxedBase += lineBase;
+    collectedAmount += taxable ? Math.round(lineBase * 1.05) : lineBase;
+  }
+
+  if (needsInvoice && !lines.some((line) => Boolean(line.is_taxable))) {
+    collectedAmount = Math.round(untaxedBase * 1.05);
+  }
+
+  return { untaxedBase, collectedAmount };
+}
+
+function getEffectivePricingLines(schedule, draft, completedUnits, plannedUnits) {
+  if (Array.isArray(draft.pricing_lines) && draft.pricing_lines.length > 0) {
+    return draft.pricing_lines;
+  }
+
+  return scalePricingLinesForCompleted(
+    cloneSchedulePricingLines(schedule),
+    completedUnits,
+    plannedUnits,
+  );
+}
+
+export function calculateEmployeeReportDraft(schedule, draft) {
+  const plannedUnits = Number(schedule?.ac_units || 0);
+  const completedUnits = Math.max(0, Number(draft.completed_units || 0));
+  const skippedUnits = Math.max(0, plannedUnits - completedUnits);
+  const unitMismatch = completedUnits !== plannedUnits;
+  const hasTax = Boolean(draft.has_tax);
+  const needsInvoiceAndMail = Boolean(draft.needs_invoice_and_mail);
+  const needsReceiptAndMail = Boolean(draft.needs_receipt_and_mail);
+  const needsInvoice = hasTax || needsInvoiceAndMail || Boolean(schedule?.needs_invoice);
+  const needsMail = needsInvoiceAndMail || needsReceiptAndMail || Boolean(schedule?.needs_mail);
+
+  const pricingLines = getEffectivePricingLines(schedule, draft, completedUnits, plannedUnits);
+  const { untaxedBase, collectedAmount } = summarizePricingLineTotals(pricingLines, needsInvoice);
+  const temporaryPostage = needsMail ? EMPLOYEE_POSTAGE_AMOUNT : 0;
+  const reportInvoiceTaxCost = (hasTax || needsInvoiceAndMail)
+    ? Math.round(untaxedBase * EMPLOYEE_INVOICE_TAX_RATE)
+    : 0;
+
+  return {
+    plannedUnits,
+    completedUnits,
+    skippedUnits,
+    unitMismatch,
+    pricingLines,
+    needsInvoice,
+    needsMail,
+    collectedAmount,
+    temporaryPostage,
+    reportInvoiceTaxCost,
+  };
 }
 
 export function buildReportPayload(schedule, draft) {
   const calculated = calculateEmployeeReportDraft(schedule, draft);
 
-  return {
+  const payload = {
     schedule_id: schedule.id,
     completed_units: calculated.completedUnits,
     skip_reason: calculated.unitMismatch ? draft.skip_reason?.trim() || null : null,
@@ -82,6 +137,16 @@ export function buildReportPayload(schedule, draft) {
     paid_to_company: Boolean(draft.paid_to_company),
     travel_allowance: Number(draft.travel_allowance ?? 0),
   };
+
+  if (calculated.unitMismatch && Array.isArray(draft.pricing_lines) && draft.pricing_lines.length > 0) {
+    payload.pricing_lines = draft.pricing_lines.map((line) => ({
+      ac_units: Number(line.ac_units || 0),
+      unit_price: Number(line.unit_price || 0),
+      is_taxable: Boolean(line.is_taxable),
+    }));
+  }
+
+  return payload;
 }
 
 export function buildDefaultReportDraft(schedule) {
@@ -103,4 +168,37 @@ export function buildDefaultReportDraft(schedule) {
     collected_amount: String(calculated.collectedAmount),
     paid_to_company: false,
   };
+}
+
+export function ensureMismatchPricingLines(schedule, draft) {
+  const plannedUnits = Number(schedule?.ac_units || 0);
+  const completedUnits = Math.max(0, Number(draft.completed_units || 0));
+
+  if (completedUnits === plannedUnits) {
+    const next = { ...draft };
+    delete next.pricing_lines;
+    return next;
+  }
+
+  return {
+    ...draft,
+    pricing_lines: scalePricingLinesForCompleted(
+      draft.pricing_lines?.length ? draft.pricing_lines : cloneSchedulePricingLines(schedule),
+      completedUnits,
+      plannedUnits,
+    ),
+  };
+}
+
+export function syncDraftFromPricingLines(schedule, draft, pricingLines) {
+  const completedUnits = pricingLines.reduce(
+    (total, line) => total + Number(line.ac_units || 0),
+    0,
+  );
+
+  return ensureMismatchPricingLines(schedule, {
+    ...draft,
+    pricing_lines: pricingLines,
+    completed_units: String(completedUnits),
+  });
 }

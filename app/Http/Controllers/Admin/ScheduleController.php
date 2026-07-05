@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\DailySchedule;
 use App\Models\User;
 use App\Support\CustomerSource;
+use App\Support\ScheduleBackfillSupport;
 use App\Support\ScheduleCustomerServicePolicy;
 use App\Support\ScheduleMutationPolicy;
 use App\Support\SchedulePricing;
@@ -117,9 +118,10 @@ class ScheduleController extends Controller
         $validated = ScheduleCustomerServicePolicy::finalizePayload($validated, $request->user());
 
         $schedule = DailySchedule::query()->create($validated);
+        ScheduleBackfillSupport::createReportIfPastBackfill($schedule);
 
         return $this->success(
-            $schedule->load([
+            $schedule->fresh()->load([
                 'user:id,name,account,role,is_active,avatar_path',
                 'dailyReport:id,schedule_id,completed_units,collected_amount,paid_to_company',
             ]),

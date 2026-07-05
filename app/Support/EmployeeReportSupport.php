@@ -19,9 +19,6 @@ class EmployeeReportSupport
     public static function buildFromSchedule(DailySchedule $schedule, array $input): array
     {
         $plannedUnits = (int) $schedule->ac_units;
-        $completedUnits = max(0, (int) ($input['completed_units'] ?? 0));
-        $skippedUnits = max(0, $plannedUnits - $completedUnits);
-
         $hasTax = (bool) ($input['has_tax'] ?? false);
         $needsInvoiceAndMail = (bool) ($input['needs_invoice_and_mail'] ?? false);
         $needsReceiptAndMail = (bool) ($input['needs_receipt_and_mail'] ?? false);
@@ -32,33 +29,46 @@ class EmployeeReportSupport
         }
 
         $skipReason = trim((string) ($input['skip_reason'] ?? ''));
-        if ($skippedUnits > 0 && $skipReason === '') {
-            throw new \InvalidArgumentException('未完成台數需填寫原因');
+
+        if (! empty($input['pricing_lines']) && is_array($input['pricing_lines'])) {
+            $lines = SchedulePricing::normalizeLines($input['pricing_lines']);
+            $completedUnits = array_sum(array_column($lines, 'ac_units'));
+        } else {
+            $completedUnits = max(0, (int) ($input['completed_units'] ?? 0));
+            $lines = SchedulePricing::normalizeLines(
+                $schedule->pricing_lines,
+                $schedule->ac_units,
+                $schedule->unit_price
+            );
+            $lines = EmployeeRemittance::scaleLines($lines, $completedUnits, $plannedUnits);
         }
 
-        if ($skippedUnits === 0) {
+        $skippedUnits = max(0, $plannedUnits - $completedUnits);
+        $unitMismatch = $completedUnits !== $plannedUnits;
+
+        if ($unitMismatch && $skipReason === '') {
+            throw new \InvalidArgumentException('台數異動需填寫原因');
+        }
+
+        if (! $unitMismatch) {
             $skipReason = null;
-        }
-
-        $lines = SchedulePricing::normalizeLines(
-            $schedule->pricing_lines,
-            $schedule->ac_units,
-            $schedule->unit_price
-        );
-
-        $scaledLines = EmployeeRemittance::scaleLines($lines, $completedUnits, $plannedUnits);
-        $baseAmount = 0;
-
-        foreach ($scaledLines as $line) {
-            $baseAmount += (int) $line['ac_units'] * (int) $line['unit_price'];
         }
 
         $needsInvoice = $hasTax || $needsInvoiceAndMail || (bool) $schedule->needs_invoice;
         $needsMail = $needsInvoiceAndMail || $needsReceiptAndMail || (bool) $schedule->needs_mail;
 
+        $untaxedBase = 0;
+
+        foreach ($lines as $line) {
+            $untaxedBase += (int) $line['ac_units'] * (int) $line['unit_price'];
+        }
+
+        $summary = SchedulePricing::summarizeLines($lines, $needsInvoice);
+        $baseAmount = $untaxedBase;
+
         $collectedAmount = array_key_exists('collected_amount', $input)
             ? max(0, (int) $input['collected_amount'])
-            : ($needsInvoice ? (int) round($baseAmount * (1 + self::INVOICE_SURCHARGE_RATE)) : $baseAmount);
+            : $summary['cleaning_price'];
 
         if ($paidToCompany && $collectedAmount > 0) {
             throw new \InvalidArgumentException('客戶匯款給公司時，實際收取金額請填 0');
@@ -74,7 +84,7 @@ class EmployeeReportSupport
             'completed_units' => $completedUnits,
             'skipped_units' => $skippedUnits,
             'skip_reason' => $skipReason,
-            'unit_mismatch' => $skippedUnits > 0,
+            'unit_mismatch' => $unitMismatch,
             'has_tax' => $hasTax,
             'needs_invoice_and_mail' => $needsInvoiceAndMail,
             'needs_receipt_and_mail' => $needsReceiptAndMail,

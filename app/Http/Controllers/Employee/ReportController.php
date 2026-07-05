@@ -113,6 +113,10 @@ class ReportController extends Controller
             'temporary_request' => ['nullable', 'string', 'max:1000'],
             'collected_amount' => ['sometimes', 'integer', 'min:0'],
             'paid_to_company' => ['sometimes', 'boolean'],
+            'pricing_lines' => ['sometimes', 'array'],
+            'pricing_lines.*.ac_units' => ['required_with:pricing_lines', 'integer', 'min:1'],
+            'pricing_lines.*.unit_price' => ['required_with:pricing_lines', 'integer', 'in:1500,1300,1000'],
+            'pricing_lines.*.is_taxable' => ['sometimes', 'boolean'],
         ]);
 
         $schedule = DailySchedule::query()

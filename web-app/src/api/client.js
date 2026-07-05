@@ -402,6 +402,16 @@ class AcCleaningApi {
     return this.request('GET', '/admin/remittance-tracking/alerts');
   }
 
+  getUnitChangeAlerts() {
+    return this.request('GET', '/admin/reports/unit-change-alerts');
+  }
+
+  dismissUnitChangeAlerts(reportIds) {
+    return this.request('POST', '/admin/reports/unit-change-alerts/dismiss', {
+      body: { report_ids: reportIds },
+    });
+  }
+
   remindRemittance(remittanceId) {
     return this.request('PATCH', `/admin/remittance-tracking/${remittanceId}/remind`);
   }

@@ -148,7 +148,7 @@ class CleaningProjectSupport
                 $scheduleLines = self::linesForUnits($lines, $units);
                 $summary = SchedulePricing::summarizeLines($scheduleLines, $needsInvoice);
 
-                DailySchedule::query()->create([
+                $schedule = DailySchedule::query()->create([
                     'cleaning_project_id' => $project->id,
                     'schedule_kind' => $scheduleKind,
                     'user_id' => (int) $employeeId,
@@ -177,6 +177,8 @@ class CleaningProjectSupport
                     'invoice_title' => $project->invoice_title,
                     'notes' => $project->notes,
                 ]);
+
+                ScheduleBackfillSupport::createReportIfPastBackfill($schedule);
             }
         }
     }
@@ -238,6 +240,8 @@ class CleaningProjectSupport
                 'invoice_title' => $project->invoice_title,
                 'notes' => $payload['notes'] ?? '補台數',
             ]);
+
+            ScheduleBackfillSupport::createReportIfPastBackfill($schedule);
 
             self::recalculateProjectTotals($project);
 

@@ -1,3 +1,4 @@
+import { PricingLineEditor } from './PricingLineEditor';
 import {
   applyPriceCalculation,
   createPricingLine,
@@ -7,7 +8,6 @@ import {
   getMinScheduleWorkDate,
   patchScheduleForm,
   PROJECT_STATUS_LABELS,
-  UNIT_PRICE_OPTIONS,
 } from '../utils/scheduleCalendar';
 import { TAITUNG_SERVICE_AREAS } from '../utils/taitungAreas';
 import { AddressAutocompleteInput } from './AddressAutocompleteInput';
@@ -209,52 +209,12 @@ export function ProjectFormModal({
           </div>
 
           <div className="field" style={{ gridColumn: '1 / -1' }}>
-            <span className="field-label">清洗項目（專案總台數）</span>
-            <div className="pricing-lines">
-              {(form.pricing_lines || [createPricingLine()]).map((line, index) => (
-                <div key={line.id} className="pricing-line">
-                  <span className="pricing-line__label">項目 {index + 1}</span>
-                  <label className="field pricing-line__units">
-                    <span className="field-label">台數</span>
-                    <input
-                      className="field-control"
-                      type="number"
-                      min="1"
-                      max="999"
-                      value={line.ac_units}
-                      onChange={(event) => {
-                        const pricingLines = form.pricing_lines.map((item) => (
-                          item.id === line.id ? { ...item, ac_units: event.target.value } : item
-                        ));
-                        handleChange({ pricing_lines: pricingLines });
-                      }}
-                      required
-                    />
-                  </label>
-                  <div className="field pricing-line__price">
-                    <span className="field-label">單價</span>
-                    <div className="option-chip-group option-chip-group--price option-chip-group--price-inline">
-                      {UNIT_PRICE_OPTIONS.map((price) => (
-                        <button
-                          key={price}
-                          type="button"
-                          className={`option-chip option-chip--price${String(line.unit_price) === String(price) ? ' is-active' : ''}`}
-                          onClick={() => {
-                            const pricingLines = form.pricing_lines.map((item) => (
-                              item.id === line.id ? { ...item, unit_price: String(price) } : item
-                            ));
-                            handleChange({ pricing_lines: pricingLines });
-                          }}
-                        >
-                          <span className="option-chip__amount">{price}</span>
-                          <span className="option-chip__unit">元/台</span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
+            <PricingLineEditor
+              lines={form.pricing_lines || [createPricingLine()]}
+              onChange={(pricing_lines) => handleChange({ pricing_lines })}
+              showTax={false}
+              showRemove={false}
+            />
           </div>
 
           <div className="field" style={{ gridColumn: '1 / -1' }}>

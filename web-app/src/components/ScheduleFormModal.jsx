@@ -1,3 +1,4 @@
+import { PricingLineEditor } from './PricingLineEditor';
 import {
   applyPriceCalculation,
   createPricingLine,
@@ -11,7 +12,6 @@ import {
   validateScheduleForm,
   CUSTOMER_SOURCE_OPTIONS,
   SCHEDULE_TIME_OPTIONS,
-  UNIT_PRICE_OPTIONS,
 } from '../utils/scheduleCalendar';
 import { TAITUNG_SERVICE_AREAS } from '../utils/taitungAreas';
 import { canManageSchedulePricing } from '../utils/permissions';
@@ -26,14 +26,6 @@ import './schedule-calendar.css';
 
 function updateForm(onChange, form, partial) {
   onChange(applyPriceCalculation(patchScheduleForm(form, partial)));
-}
-
-function updatePricingLine(onChange, form, lineId, partial) {
-  const pricingLines = (form.pricing_lines || [createPricingLine()]).map((line) => (
-    line.id === lineId ? { ...line, ...partial } : line
-  ));
-
-  updateForm(onChange, form, { pricing_lines: pricingLines });
 }
 
 export function ScheduleFormModal({
@@ -355,73 +347,12 @@ export function ScheduleFormModal({
 
           {canManagePricing ? (
           <div className="field schedule-form-modal__pricing-section" style={{ gridColumn: '1 / -1' }}>
-            <div className="pricing-lines__header">
-              <span className="field-label">清洗項目（可分段加總台數與單價）</span>
-              <button
-                type="button"
-                className="btn btn-secondary btn-sm btn-pill"
-                onClick={() => updateForm(onChange, form, {
-                  pricing_lines: [...form.pricing_lines, createPricingLine()],
-                })}
-              >
-                ＋ 新增項目
-              </button>
-            </div>
-
-            <div className="pricing-lines">
-              {(form.pricing_lines || [createPricingLine()]).map((line, index) => (
-                <div key={line.id} className="pricing-line">
-                  <span className="pricing-line__label">項目 {index + 1}</span>
-                  <label className="field pricing-line__units">
-                    <span className="field-label">台數</span>
-                    <input
-                      className="field-control"
-                      type="number"
-                      min="1"
-                      max="99"
-                      value={line.ac_units}
-                      onChange={(e) => updatePricingLine(onChange, form, line.id, { ac_units: e.target.value })}
-                      required
-                    />
-                  </label>
-                  <div className="field pricing-line__price">
-                    <span className="field-label">單價</span>
-                    <div className="option-chip-group option-chip-group--price option-chip-group--price-inline">
-                      {UNIT_PRICE_OPTIONS.map((price) => (
-                        <button
-                          key={price}
-                          type="button"
-                          className={`option-chip option-chip--price${String(line.unit_price) === String(price) ? ' is-active' : ''}`}
-                          onClick={() => updatePricingLine(onChange, form, line.id, { unit_price: String(price) })}
-                        >
-                          <span className="option-chip__amount">{price}</span>
-                          <span className="option-chip__unit">元/台</span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  <label className="field field-checkbox pricing-line__tax">
-                    <input
-                      type="checkbox"
-                      checked={Boolean(line.is_taxable)}
-                      onChange={(e) => updatePricingLine(onChange, form, line.id, { is_taxable: e.target.checked })}
-                    />
-                    <span>含稅 +5%</span>
-                  </label>
-                  {form.pricing_lines.length > 1 && (
-                    <button
-                      type="button"
-                      className="btn btn-secondary btn-sm btn-pill pricing-line__remove"
-                      onClick={() => updateForm(onChange, form, {
-                        pricing_lines: form.pricing_lines.filter((item) => item.id !== line.id),
-                      })}
-                    >
-                      移除
-                    </button>
-                  )}
-                </div>
-              ))}
-            </div>
+            <PricingLineEditor
+              lines={form.pricing_lines || [createPricingLine()]}
+              onChange={(pricing_lines) => updateForm(onChange, form, { pricing_lines })}
+              showTax
+              showAdd
+            />
           </div>
           ) : (
           <label className="field" style={{ gridColumn: '1 / -1' }}>

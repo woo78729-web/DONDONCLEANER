@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Layout } from '../components/Layout';
 import { PageAlert } from '../components/PageAlert';
+import { PricingLineEditor } from '../components/PricingLineEditor';
 import { ReportConfirmModal } from '../components/ReportConfirmModal';
 import { GoogleMapsLink } from '../components/GoogleMapsLink';
 import { api } from '../api/client';
@@ -8,6 +9,8 @@ import {
   buildDefaultReportDraft,
   buildReportPayload,
   calculateEmployeeReportDraft,
+  ensureMismatchPricingLines,
+  syncDraftFromPricingLines,
 } from '../utils/employeeReport';
 import { formatDateOnly, formatTimeValue } from '../utils/scheduleCalendar';
 
@@ -29,10 +32,16 @@ function EmployeeReportForm({
   );
 
   function updateDraft(changes) {
-    const nextDraft = { ...draft, ...changes };
+    let nextDraft = { ...draft, ...changes };
+
+    if ('completed_units' in changes) {
+      nextDraft = ensureMismatchPricingLines(schedule, nextDraft);
+    }
+
     const nextCalculated = calculateEmployeeReportDraft(schedule, nextDraft);
 
     if ('completed_units' in changes
+      || 'pricing_lines' in changes
       || 'has_tax' in changes
       || 'needs_invoice_and_mail' in changes
       || 'needs_receipt_and_mail' in changes
@@ -43,6 +52,18 @@ function EmployeeReportForm({
     }
 
     onDraftChange(nextDraft);
+  }
+
+  function updatePricingLines(pricingLines) {
+    const nextDraft = syncDraftFromPricingLines(schedule, draft, pricingLines);
+    const nextCalculated = calculateEmployeeReportDraft(schedule, nextDraft);
+
+    onDraftChange({
+      ...nextDraft,
+      collected_amount: nextDraft.paid_to_company
+        ? '0'
+        : String(nextCalculated.collectedAmount),
+    });
   }
 
   return (
@@ -64,7 +85,6 @@ function EmployeeReportForm({
             className="field-control"
             type="number"
             min="0"
-            max={calculated.plannedUnits}
             value={draft.completed_units}
             onChange={(event) => updateDraft({ completed_units: event.target.value })}
             required
@@ -76,18 +96,30 @@ function EmployeeReportForm({
         </label>
       </div>
 
-      {calculated.skippedUnits > 0 && (
-        <label className="field">
-          <span className="field-label">未洗原因</span>
-          <textarea
-            className="field-control"
-            rows={2}
-            value={draft.skip_reason}
-            onChange={(event) => updateDraft({ skip_reason: event.target.value })}
-            placeholder="請說明未完成的台數原因"
-            required
-          />
-        </label>
+      {calculated.unitMismatch && (
+        <>
+          <div className="field employee-report-pricing">
+            <span className="field-label">台數異動 — 請確認各項目台數與單價（金額會依此重新計算）</span>
+            <PricingLineEditor
+              lines={draft.pricing_lines || calculated.pricingLines}
+              onChange={updatePricingLines}
+              showTax
+              showRemove={false}
+            />
+          </div>
+
+          <label className="field">
+            <span className="field-label">台數異動原因</span>
+            <textarea
+              className="field-control"
+              rows={2}
+              value={draft.skip_reason}
+              onChange={(event) => updateDraft({ skip_reason: event.target.value })}
+              placeholder="請說明完成台數與排班不同的原因"
+              required
+            />
+          </label>
+        </>
       )}
 
       <label className="field field-checkbox">
@@ -217,8 +249,8 @@ export default function EmployeeDailyReportPage() {
     const draft = drafts[schedule.id];
     const calculated = calculateEmployeeReportDraft(schedule, draft);
 
-    if (calculated.skippedUnits > 0 && !draft.skip_reason?.trim()) {
-      setError('未完成台數需填寫原因');
+    if (calculated.unitMismatch && !draft.skip_reason?.trim()) {
+      setError('台數異動需填寫原因');
       return;
     }
 

@@ -28,14 +28,16 @@ export function ReportConfirmModal({
             <dt>完成台數</dt>
             <dd>{summary.completedUnits}</dd>
           </div>
-          {summary.skippedUnits > 0 && (
+          {summary.unitMismatch && (
             <>
+              {summary.skippedUnits > 0 && (
+                <div>
+                  <dt>未洗台數</dt>
+                  <dd>{summary.skippedUnits}</dd>
+                </div>
+              )}
               <div>
-                <dt>未洗台數</dt>
-                <dd>{summary.skippedUnits}</dd>
-              </div>
-              <div>
-                <dt>未洗原因</dt>
+                <dt>台數異動原因</dt>
                 <dd>{summary.skipReason || '-'}</dd>
               </div>
             </>
