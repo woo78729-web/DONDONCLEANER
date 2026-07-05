@@ -41,6 +41,8 @@ class MailTrackingApiTest extends TestCase
             'name' => '師傅甲',
             'role' => 'employee',
             'is_active' => true,
+            'rules_accepted_at' => now(),
+            'must_change_password' => false,
         ]);
 
         DailySchedule::query()->create($this->scheduleAttributes([
@@ -72,6 +74,8 @@ class MailTrackingApiTest extends TestCase
             'name' => '師傅乙',
             'role' => 'employee',
             'is_active' => true,
+            'rules_accepted_at' => now(),
+            'must_change_password' => false,
         ]);
 
         $schedule = DailySchedule::query()->create($this->scheduleAttributes([
@@ -119,6 +123,8 @@ class MailTrackingApiTest extends TestCase
             'name' => '師傅丙',
             'role' => 'employee',
             'is_active' => true,
+            'rules_accepted_at' => now(),
+            'must_change_password' => false,
         ]);
 
         $schedule = DailySchedule::query()->create($this->scheduleAttributes([
@@ -162,6 +168,8 @@ class MailTrackingApiTest extends TestCase
             'name' => '師傅丁',
             'role' => 'employee',
             'is_active' => true,
+            'rules_accepted_at' => now(),
+            'must_change_password' => false,
         ]);
 
         $schedule = DailySchedule::query()->create($this->scheduleAttributes([
@@ -205,6 +213,8 @@ class MailTrackingApiTest extends TestCase
             'name' => '師傅戊',
             'role' => 'employee',
             'is_active' => true,
+            'rules_accepted_at' => now(),
+            'must_change_password' => false,
         ]);
 
         $schedule = DailySchedule::query()->create($this->scheduleAttributes([

@@ -6,7 +6,6 @@ use App\Http\Controllers\Controller;
 use App\Models\DailyReport;
 use App\Models\DailySchedule;
 use App\Support\EmployeeMonthlySummary;
-use App\Support\CompanyRemittanceSupport;
 use App\Support\EmployeeReportSupport;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -133,31 +132,10 @@ class ReportController extends Controller
         }
 
         try {
-            $payload = EmployeeReportSupport::buildFromSchedule($schedule, $validated);
+            $report = EmployeeReportSupport::createFromSchedule($schedule, $validated);
         } catch (\InvalidArgumentException $exception) {
             return $this->error($exception->getMessage(), 422);
         }
-
-        $report = DailyReport::query()->create([
-            'schedule_id' => $schedule->id,
-            ...collect($payload)->only([
-                'planned_units',
-                'completed_units',
-                'skipped_units',
-                'skip_reason',
-                'unit_mismatch',
-                'has_tax',
-                'needs_invoice_and_mail',
-                'needs_receipt_and_mail',
-                'temporary_request',
-                'temporary_postage',
-                'report_invoice_tax_cost',
-                'collected_amount',
-                'paid_to_company',
-            ])->all(),
-        ]);
-
-        CompanyRemittanceSupport::syncForReport($report);
 
         return $this->success(
             EmployeeReportSupport::reportPayload($report->fresh()),

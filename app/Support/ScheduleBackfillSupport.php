@@ -45,33 +45,9 @@ class ScheduleBackfillSupport
             return null;
         }
 
-        $payload = EmployeeReportSupport::buildFromSchedule(
+        return EmployeeReportSupport::createFromSchedule(
             $schedule,
             self::buildAutoReportInput($schedule)
         );
-
-        $report = DailyReport::query()->create([
-            'schedule_id' => $schedule->id,
-            ...collect($payload)->only([
-                'planned_units',
-                'completed_units',
-                'skipped_units',
-                'skip_reason',
-                'unit_mismatch',
-                'has_tax',
-                'needs_invoice_and_mail',
-                'needs_receipt_and_mail',
-                'temporary_request',
-                'temporary_postage',
-                'travel_allowance',
-                'report_invoice_tax_cost',
-                'collected_amount',
-                'paid_to_company',
-            ])->all(),
-        ]);
-
-        CompanyRemittanceSupport::syncForReport($report);
-
-        return $report;
     }
 }

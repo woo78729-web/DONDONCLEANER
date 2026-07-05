@@ -29,7 +29,17 @@ class UserFactory extends Factory
             'password' => static::$password ??= Hash::make('password'),
             'role' => 'employee',
             'is_active' => true,
+            'rules_accepted_at' => now(),
+            'must_change_password' => false,
         ];
+    }
+
+    public function pendingOnboarding(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'rules_accepted_at' => null,
+            'must_change_password' => true,
+        ]);
     }
 
     public function admin(): static

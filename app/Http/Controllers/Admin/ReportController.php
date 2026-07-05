@@ -159,27 +159,10 @@ class ReportController extends Controller
             return $this->error($exception->getMessage(), 422);
         }
 
-        $report->fill(collect($payload)->only([
-            'planned_units',
-            'completed_units',
-            'skipped_units',
-            'skip_reason',
-            'unit_mismatch',
-            'has_tax',
-            'needs_invoice_and_mail',
-            'needs_receipt_and_mail',
-            'temporary_request',
-            'temporary_postage',
-            'travel_allowance',
-            'report_invoice_tax_cost',
-            'collected_amount',
-            'paid_to_company',
-        ])->all());
-        $report->save();
-        CompanyRemittanceSupport::syncForReport($report->fresh());
+        $report = EmployeeReportSupport::applyPayload($report, $payload);
 
         return $this->success(
-            EmployeeReportSupport::reportPayload($report->fresh()),
+            EmployeeReportSupport::reportPayload($report),
             '回報資料已更新'
         );
     }

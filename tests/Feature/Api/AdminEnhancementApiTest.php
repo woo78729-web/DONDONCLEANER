@@ -41,6 +41,8 @@ class AdminEnhancementApiTest extends TestCase
             'name' => '員工',
             'role' => 'employee',
             'is_active' => true,
+            'rules_accepted_at' => now(),
+            'must_change_password' => false,
         ]);
     }
 

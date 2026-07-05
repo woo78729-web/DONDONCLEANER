@@ -32,6 +32,8 @@ class ReportFilterApiTest extends TestCase
             'name' => '員工A',
             'role' => 'employee',
             'is_active' => true,
+            'rules_accepted_at' => now(),
+            'must_change_password' => false,
         ]);
 
         $employeeB = User::query()->create([
@@ -40,6 +42,8 @@ class ReportFilterApiTest extends TestCase
             'name' => '員工B',
             'role' => 'employee',
             'is_active' => true,
+            'rules_accepted_at' => now(),
+            'must_change_password' => false,
         ]);
 
         $this->createReport($employeeA, '2026-06-29', 2, 22000);

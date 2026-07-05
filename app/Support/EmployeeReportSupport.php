@@ -2,6 +2,7 @@
 
 namespace App\Support;
 
+use App\Models\DailyReport;
 use App\Models\DailySchedule;
 
 class EmployeeReportSupport
@@ -11,6 +12,63 @@ class EmployeeReportSupport
     public const INVOICE_SURCHARGE_RATE = 0.05;
 
     public const INVOICE_TAX_RATE = 0.08;
+
+    /** @var list<string> */
+    private const PERSIST_KEYS = [
+        'planned_units',
+        'completed_units',
+        'skipped_units',
+        'skip_reason',
+        'unit_mismatch',
+        'has_tax',
+        'needs_invoice_and_mail',
+        'needs_receipt_and_mail',
+        'temporary_request',
+        'temporary_postage',
+        'travel_allowance',
+        'report_invoice_tax_cost',
+        'collected_amount',
+        'paid_to_company',
+    ];
+
+    /**
+     * @param  array<string, mixed>  $input
+     */
+    public static function createFromSchedule(DailySchedule $schedule, array $input): DailyReport
+    {
+        $payload = self::buildFromSchedule($schedule, $input);
+
+        $report = DailyReport::query()->create([
+            'schedule_id' => $schedule->id,
+            ...self::persistAttributes($payload),
+        ]);
+
+        CompanyRemittanceSupport::syncForReport($report);
+
+        return $report;
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    public static function applyPayload(DailyReport $report, array $payload): DailyReport
+    {
+        $report->fill(self::persistAttributes($payload));
+        $report->save();
+
+        CompanyRemittanceSupport::syncForReport($report->fresh());
+
+        return $report->fresh();
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
+    private static function persistAttributes(array $payload): array
+    {
+        return collect($payload)->only(self::PERSIST_KEYS)->all();
+    }
 
     /**
      * @param  array<string, mixed>  $input
@@ -106,7 +164,7 @@ class EmployeeReportSupport
     public static function reportPayload(\App\Models\DailyReport $report): array
     {
         $report->loadMissing(['dailySchedule.user:id,name,account', 'companyRemittance']);
-        $financial = self::financialBreakdown($report);
+        $financial = CompanyRemittanceSupport::financialBreakdown($report);
 
         return [
             'id' => $report->id,
@@ -132,19 +190,5 @@ class EmployeeReportSupport
             'created_at' => $report->created_at?->toDateTimeString(),
             'daily_schedule' => $report->dailySchedule,
         ];
-    }
-
-    /**
-     * @return array{
-     *     total_amount:int,
-     *     employee_received:int,
-     *     company_inbound_amount:int|null,
-     *     collect_from_employee:int,
-     *     advance_to_employee:int
-     * }
-     */
-    public static function financialBreakdown(\App\Models\DailyReport $report): array
-    {
-        return CompanyRemittanceSupport::financialBreakdown($report);
     }
 }

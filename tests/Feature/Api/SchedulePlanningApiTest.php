@@ -40,6 +40,8 @@ class SchedulePlanningApiTest extends TestCase
             'name' => '員工',
             'role' => 'employee',
             'is_active' => true,
+            'rules_accepted_at' => now(),
+            'must_change_password' => false,
         ]);
     }
 
@@ -207,6 +209,8 @@ class SchedulePlanningApiTest extends TestCase
             'name' => '新人',
             'role' => 'employee',
             'is_active' => true,
+            'rules_accepted_at' => now(),
+            'must_change_password' => false,
             'created_at' => Carbon::create(2026, 6, 10, 9, 0, 0),
         ]);
 
@@ -234,6 +238,8 @@ class SchedulePlanningApiTest extends TestCase
             'name' => '晚到新人',
             'role' => 'employee',
             'is_active' => true,
+            'rules_accepted_at' => now(),
+            'must_change_password' => false,
             'created_at' => Carbon::create(2026, 6, 27, 9, 0, 0),
         ]);
 

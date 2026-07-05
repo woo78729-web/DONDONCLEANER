@@ -89,6 +89,8 @@ class RolePermissionApiTest extends TestCase
             'name' => '師傅甲',
             'role' => 'employee',
             'is_active' => true,
+            'rules_accepted_at' => now(),
+            'must_change_password' => false,
         ]);
 
         Sanctum::actingAs($customerService);
