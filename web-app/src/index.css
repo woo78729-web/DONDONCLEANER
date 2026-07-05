@@ -145,7 +145,7 @@ a {
   inset: 0;
   opacity: 0.35;
   background:
-    url('../../public/images/login-bg-room.png') center 18% / cover no-repeat;
+    url('/spa/images/login-bg-room.png') center 18% / cover no-repeat;
   filter: saturate(1.05) contrast(1.04) brightness(0.42);
   mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.85) 0%, rgba(0, 0, 0, 0.25) 55%, transparent 100%);
 }
@@ -1071,6 +1071,12 @@ select option {
   border-color: rgba(255, 140, 0, 0.35);
 }
 
+.status-danger {
+  color: #fca5a5;
+  background: rgba(239, 68, 68, 0.14);
+  border-color: rgba(248, 113, 113, 0.35);
+}
+
 .status-muted {
   color: #a1a1aa;
   background: rgba(255, 255, 255, 0.06);
@@ -1520,6 +1526,17 @@ select option {
 
 .employee-report-card {
   margin-bottom: 14px;
+}
+
+.employee-report-card--overdue {
+  box-shadow: inset 0 0 0 2px rgba(248, 113, 113, 0.55);
+}
+
+.employee-report-card__title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .employee-report-card__toggle {
@@ -2018,6 +2035,25 @@ select option {
   padding: 0 16px 16px;
 }
 
+.employee-schedule-overdue-hint {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  color: #fca5a5;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(248, 113, 113, 0.28);
+}
+
+.employee-schedule-section-divider {
+  margin: 4px 0 12px;
+  font-weight: 700;
+  color: var(--brand-300);
+}
+
+.schedule-day-block--overdue .schedule-day-block__button {
+  box-shadow: inset 0 0 0 2px rgba(248, 113, 113, 0.85);
+}
+
 .employee-schedule-nav-hint a {
   color: var(--brand-500);
   font-weight: 700;
@@ -2345,6 +2381,19 @@ select option {
 
 .mail-tracking-delete-btn {
   min-width: 56px;
+}
+
+.mail-tracking-manual-postage {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+  padding: 0 16px 16px;
+}
+
+.mail-tracking-manual-postage__field {
+  flex: 1 1 280px;
+  min-width: 0;
 }
 
 .mail-tracking-search {

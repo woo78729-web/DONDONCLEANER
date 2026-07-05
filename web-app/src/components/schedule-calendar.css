@@ -1226,7 +1226,7 @@
   }
 
   .pricing-line {
-    grid-template-columns: 1fr;
+    grid-template-columns: 1fr auto;
     grid-template-areas:
       "label remove"
       "units units"

@@ -5,7 +5,7 @@ import { PageAlert } from '../components/PageAlert';
 import { EmployeeScheduleList, EmployeeScheduleNavHint } from '../components/EmployeeScheduleList';
 import { ScheduleSnapshotModal } from '../components/ScheduleSnapshotModal';
 import { api } from '../api/client';
-import { formatDateOnly, formatScheduleDateLabel, hasScheduleReport } from '../utils/scheduleCalendar';
+import { formatDateOnly, formatScheduleDateLabel, hasScheduleReport, isScheduleOverdueUnreported } from '../utils/scheduleCalendar';
 
 function todayDateString() {
   const now = new Date();
@@ -18,6 +18,8 @@ export default function EmployeeTodayTasksPage() {
   const [snapshotSchedule, setSnapshotSchedule] = useState(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  const [overdueCount, setOverdueCount] = useState(0);
 
   const pendingCount = useMemo(
     () => schedules.filter((schedule) => !hasScheduleReport(schedule)).length,
@@ -32,6 +34,8 @@ export default function EmployeeTodayTasksPage() {
       const result = await api.getEmployeeTodaySchedules();
       setSchedules(result.data.schedules || []);
       setWorkDate(result.data.work_date || todayDateString());
+      setOverdueCount(result.data.overdue_unreported_count
+        ?? (result.data.schedules || []).filter((schedule) => isScheduleOverdueUnreported(schedule)).length);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -51,7 +55,8 @@ export default function EmployeeTodayTasksPage() {
             <h2 className="card-title">當日須完成案件</h2>
             <p className="hint">
               {workDate ? `${formatScheduleDateLabel(workDate)}，` : ''}
-              共 {schedules.length} 件，待回報 {pendingCount} 件。
+              共 {schedules.length} 件，待回報 {pendingCount} 件
+              {overdueCount > 0 ? `（逾時未回報 ${overdueCount} 件已置頂）` : ''}。
             </p>
           </div>
           <div className="button-row">
@@ -75,6 +80,7 @@ export default function EmployeeTodayTasksPage() {
           <EmployeeScheduleList
             schedules={schedules}
             onSelect={setSnapshotSchedule}
+            referenceDate={workDate || todayDateString()}
             emptyMessage={`${formatScheduleDateLabel(workDate || todayDateString())} 目前沒有派工。`}
           />
         </div>

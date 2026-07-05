@@ -17,6 +17,7 @@ import {
   buildSchedulePayload,
   buildSchedulePayloads,
   buildScheduleSuccessSummary,
+  scheduleHasMailTrackingItem,
   canEditSchedule,
   canDeleteSchedule,
   emptyScheduleForm,
@@ -46,6 +47,7 @@ export default function AdminRegionalSchedulingPage() {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [successSummary, setSuccessSummary] = useState(null);
+  const [pendingMailRedirect, setPendingMailRedirect] = useState(false);
 
   const loadEmployees = useCallback(async () => {
     const result = await api.getEmployees();
@@ -164,15 +166,13 @@ export default function AdminRegionalSchedulingPage() {
       if (editId) {
         await api.updateSchedule(editId, payloads[0]);
         closeModal();
+        setPendingMailRedirect(false);
       } else {
         for (const item of payloads) {
           await api.createSchedule(item);
         }
         closeModal();
-        if (payloads.some((item) => item.needs_mail)) {
-          navigate('/admin/mail-tracking');
-          return;
-        }
+        setPendingMailRedirect(payloads.some((item) => scheduleHasMailTrackingItem(item)));
       }
 
       setSuccessSummary(summaryPayload);
@@ -198,7 +198,13 @@ export default function AdminRegionalSchedulingPage() {
   }
 
   function handleSuccessConfirm() {
+    const shouldRedirectToMail = pendingMailRedirect;
     setSuccessSummary(null);
+    setPendingMailRedirect(false);
+
+    if (shouldRedirectToMail) {
+      navigate('/admin/mail-tracking');
+    }
   }
 
   return (

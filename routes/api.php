@@ -77,6 +77,8 @@ Route::middleware(['auth:sanctum', 'role:admin'])->prefix('admin')->group(functi
     Route::post('/accounting/advances', [AdminAccountingController::class, 'storeAdvance']);
     Route::patch('/accounting/advances/{advance}', [AdminAccountingController::class, 'updateAdvance']);
     Route::delete('/accounting/advances/{advance}', [AdminAccountingController::class, 'destroyAdvance']);
+    Route::post('/accounting/manual-postage', [AdminAccountingController::class, 'storeManualPostage']);
+    Route::delete('/accounting/manual-postage/{manualPostage}', [AdminAccountingController::class, 'destroyManualPostage']);
     Route::get('/legacy-ledgers/trends', [AdminLegacyLedgerController::class, 'trends']);
     Route::get('/legacy-ledgers/months', [AdminLegacyLedgerController::class, 'months']);
     Route::get('/legacy-ledgers/month', [AdminLegacyLedgerController::class, 'show']);

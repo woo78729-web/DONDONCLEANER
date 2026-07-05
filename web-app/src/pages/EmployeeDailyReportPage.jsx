@@ -5,6 +5,7 @@ import { PricingLineEditor } from '../components/PricingLineEditor';
 import { ReportConfirmModal } from '../components/ReportConfirmModal';
 import { GoogleMapsLink } from '../components/GoogleMapsLink';
 import { PhoneLink } from '../components/PhoneLink';
+import { StatusBadge } from '../components/StatusBadge';
 import { api } from '../api/client';
 import {
   buildDefaultReportDraft,
@@ -13,7 +14,7 @@ import {
   ensureMismatchPricingLines,
   syncDraftFromPricingLines,
 } from '../utils/employeeReport';
-import { formatDateOnly, formatTimeValue } from '../utils/scheduleCalendar';
+import { formatDateOnly, formatTimeValue, isScheduleOverdueUnreported } from '../utils/scheduleCalendar';
 
 function todayDateString() {
   const now = new Date();
@@ -340,14 +341,17 @@ export default function EmployeeDailyReportPage() {
         const draft = drafts[schedule.id] || buildDefaultReportDraft(schedule);
 
         return (
-          <section className="card employee-report-card" key={schedule.id}>
+          <section className={`card employee-report-card${isScheduleOverdueUnreported(schedule) ? ' employee-report-card--overdue' : ''}`} key={schedule.id}>
             <button
               type="button"
               className="employee-report-card__toggle"
               onClick={() => setExpandedId(expanded ? null : schedule.id)}
             >
               <div>
-                <strong>{schedule.customer_name || '客戶'}</strong>
+                <div className="employee-report-card__title-row">
+                  <strong>{schedule.customer_name || '客戶'}</strong>
+                  {isScheduleOverdueUnreported(schedule) && <StatusBadge status="overdue" />}
+                </div>
                 <p className="hint">
                   {formatDateOnly(schedule.work_date)} {formatTimeValue(schedule.start_time)} – {formatTimeValue(schedule.end_time)}
                 </p>

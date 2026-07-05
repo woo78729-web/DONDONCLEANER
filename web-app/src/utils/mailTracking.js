@@ -160,9 +160,35 @@ export function mapReportRows(reports) {
 }
 
 export function mergeHistoryRows(schedules, reports) {
+  const scheduleRows = mapScheduleRows(schedules);
+  const reportRows = mapReportRows(reports);
+  const reportScheduleIds = new Set(
+    reportRows
+      .map((row) => row.source?.daily_schedule?.id)
+      .filter(Boolean),
+  );
+
+  const filteredSchedules = scheduleRows.filter((row) => {
+    if (row.kind !== 'schedule') {
+      return true;
+    }
+
+    const report = row.source?.daily_report ?? row.source?.dailyReport;
+
+    if (report && (report.needs_invoice_and_mail || report.needs_receipt_and_mail)) {
+      return false;
+    }
+
+    if (reportScheduleIds.has(row.source.id)) {
+      return false;
+    }
+
+    return true;
+  });
+
   return [
-    ...mapScheduleRows(schedules),
-    ...mapReportRows(reports),
+    ...filteredSchedules,
+    ...reportRows,
   ].sort((left, right) => String(right.sentAt || '').localeCompare(String(left.sentAt || '')));
 }
 

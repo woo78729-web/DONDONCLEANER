@@ -25,14 +25,14 @@
 }
 
 .login-screen__photo--left {
-  background-image: url('../../public/images/login-bg-room.png');
+  background-image: url('/spa/images/login-bg-room.png');
   background-position: center 12%;
   clip-path: polygon(0 0, 58% 0, 48% 100%, 0 100%);
   filter: saturate(1.12) contrast(1.06) brightness(0.88);
 }
 
 .login-screen__photo--right {
-  background-image: url('../../public/images/login-bg.png');
+  background-image: url('/spa/images/login-bg.png');
   background-position: 78% center;
   clip-path: polygon(42% 0, 100% 0, 100% 100%, 52% 100%);
   filter: saturate(1.15) contrast(1.08) brightness(0.84);

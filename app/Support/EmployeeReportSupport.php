@@ -137,7 +137,11 @@ class EmployeeReportSupport
         }
 
         $needsInvoice = $hasTax || $needsInvoiceAndMail || (bool) $schedule->needs_invoice;
-        $needsMail = $needsInvoiceAndMail || $needsReceiptAndMail || (bool) $schedule->needs_mail;
+        $needsMail = $needsInvoiceAndMail
+            || $needsReceiptAndMail
+            || (bool) $schedule->needs_mail
+            || (bool) $schedule->needs_invoice
+            || (bool) $schedule->needs_receipt;
 
         $untaxedBase = 0;
 

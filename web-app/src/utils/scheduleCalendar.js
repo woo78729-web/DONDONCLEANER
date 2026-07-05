@@ -603,6 +603,71 @@ export function hasScheduleReport(schedule) {
   return Boolean(schedule?.daily_report || schedule?.dailyReport);
 }
 
+export function isScheduleOverdueUnreported(schedule, now = new Date()) {
+  if (hasScheduleReport(schedule)) {
+    return false;
+  }
+
+  if (schedule?.is_overdue_unreported != null) {
+    return Boolean(schedule.is_overdue_unreported);
+  }
+
+  const workDate = formatDateOnly(schedule?.work_date);
+
+  if (!workDate) {
+    return false;
+  }
+
+  const todayKey = formatDateOnly(now);
+
+  if (workDate < todayKey) {
+    return true;
+  }
+
+  if (workDate === todayKey) {
+    const endTime = formatTimeValue(schedule?.end_time);
+    const slotEnd = new Date(`${workDate}T${endTime}:00`);
+
+    return now > slotEnd;
+  }
+
+  return false;
+}
+
+export function sortSchedulesWithOverduePinned(schedules, now = new Date()) {
+  const overdue = [];
+  const rest = [];
+
+  (schedules || []).forEach((schedule) => {
+    if (isScheduleOverdueUnreported(schedule, now)) {
+      overdue.push(schedule);
+    } else {
+      rest.push(schedule);
+    }
+  });
+
+  const compareByDateTime = (left, right) => {
+    const dateCompare = formatDateOnly(left.work_date).localeCompare(formatDateOnly(right.work_date));
+
+    if (dateCompare !== 0) {
+      return dateCompare;
+    }
+
+    const startCompare = formatTimeValue(left.start_time).localeCompare(formatTimeValue(right.start_time));
+
+    if (startCompare !== 0) {
+      return startCompare;
+    }
+
+    return Number(left.id || 0) - Number(right.id || 0);
+  };
+
+  overdue.sort(compareByDateTime);
+  rest.sort(compareByDateTime);
+
+  return [...overdue, ...rest];
+}
+
 export function buildScheduleEventTitle(schedule, options = {}) {
   return buildScheduleCardLine(schedule, options);
 }
@@ -658,6 +723,35 @@ export function getScheduleDisplayPrice(schedule) {
   return parseTaskDetails(schedule?.task_details).cleaning_price;
 }
 
+export function getScheduleSegmentTotal(schedule) {
+  const units = Number(getScheduleDisplayUnits(schedule)) || 0;
+
+  if (units <= 0) {
+    return 0;
+  }
+
+  const collected = Number(schedule?.cleaning_price);
+
+  if (Number.isFinite(collected) && collected > 0) {
+    return collected;
+  }
+
+  const unitPrice = Number(schedule?.unit_price);
+
+  if (Number.isFinite(unitPrice) && unitPrice > 0) {
+    return units * unitPrice;
+  }
+
+  const parsed = parseTaskDetails(schedule?.task_details);
+  const parsedUnitPrice = Number(parsed.cleaning_price);
+
+  if (Number.isFinite(parsedUnitPrice) && parsedUnitPrice > 0) {
+    return units * parsedUnitPrice;
+  }
+
+  return 0;
+}
+
 export function buildScheduleUnitsPriceTag(schedule, { hidePrice = false } = {}) {
   const units = getScheduleDisplayUnits(schedule);
   const multi = parseMultiAddressNote(schedule?.notes);
@@ -668,8 +762,15 @@ export function buildScheduleUnitsPriceTag(schedule, { hidePrice = false } = {})
     }
 
     const localTag = `[${units || '-'}離]`;
+
     if (multi.index === 1 && multi.groupUnits && multi.groupPrice != null) {
       return `${localTag}[共${multi.groupUnits}離${multi.groupPrice}]`;
+    }
+
+    const segmentTotal = getScheduleSegmentTotal(schedule);
+
+    if (segmentTotal > 0) {
+      return `[${units || '-'}離${segmentTotal}]`;
     }
 
     return localTag;
@@ -1219,7 +1320,7 @@ export function scheduleToForm(schedule) {
       phone: schedule.customer_phone ?? '',
       same_as_customer: true,
     })],
-    needs_mail: Boolean(schedule.needs_mail || schedule.mail_recipient || schedule.mail_phone || schedule.mail_address),
+    needs_mail: Boolean(schedule.needs_mail),
     needs_receipt: Boolean(schedule.needs_receipt),
     mail_recipient: schedule.mail_recipient ?? '',
     mail_phone: schedule.mail_phone ?? '',

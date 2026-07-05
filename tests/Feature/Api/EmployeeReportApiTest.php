@@ -192,6 +192,70 @@ class EmployeeReportApiTest extends TestCase
             ->assertJsonCount(1, 'data.schedules');
     }
 
+    public function test_today_schedules_pin_overdue_unreported_from_past_dates(): void
+    {
+        \Carbon\Carbon::setTestNow(\Carbon\Carbon::parse('2026-07-06 09:00:00'));
+
+        $pastDate = '2026-07-05';
+
+        DailySchedule::query()->create($this->scheduleAttributes([
+            'user_id' => $this->employee->id,
+            'work_date' => $pastDate,
+            'start_time' => '14:00',
+            'end_time' => '15:00',
+            'customer_name' => '過期客戶',
+        ]));
+
+        DailySchedule::query()->create($this->scheduleAttributes([
+            'user_id' => $this->employee->id,
+            'work_date' => '2026-07-06',
+            'start_time' => '10:00',
+            'end_time' => '11:00',
+            'customer_name' => '今日客戶',
+        ]));
+
+        Sanctum::actingAs($this->employee);
+
+        $this->getJson('/api/employee/schedules?view=today')
+            ->assertOk()
+            ->assertJsonCount(2, 'data.schedules')
+            ->assertJsonPath('data.overdue_unreported_count', 1)
+            ->assertJsonPath('data.schedules.0.customer_name', '過期客戶')
+            ->assertJsonPath('data.schedules.0.is_overdue_unreported', true)
+            ->assertJsonPath('data.schedules.1.customer_name', '今日客戶')
+            ->assertJsonPath('data.schedules.1.is_overdue_unreported', false);
+    }
+
+    public function test_pending_reports_pin_overdue_unreported_from_other_dates(): void
+    {
+        \Carbon\Carbon::setTestNow(\Carbon\Carbon::parse('2026-07-06 09:00:00'));
+
+        DailySchedule::query()->create($this->scheduleAttributes([
+            'user_id' => $this->employee->id,
+            'work_date' => '2026-07-05',
+            'start_time' => '09:00',
+            'end_time' => '10:00',
+            'customer_name' => '過期客戶',
+        ]));
+
+        DailySchedule::query()->create($this->scheduleAttributes([
+            'user_id' => $this->employee->id,
+            'work_date' => '2026-07-06',
+            'start_time' => '14:00',
+            'end_time' => '15:00',
+            'customer_name' => '今日客戶',
+        ]));
+
+        Sanctum::actingAs($this->employee);
+
+        $this->getJson('/api/employee/reports/pending?work_date=2026-07-06')
+            ->assertOk()
+            ->assertJsonCount(2, 'data.schedules')
+            ->assertJsonPath('data.overdue_unreported_count', 1)
+            ->assertJsonPath('data.schedules.0.customer_name', '過期客戶')
+            ->assertJsonPath('data.schedules.1.customer_name', '今日客戶');
+    }
+
     public function test_employee_schedule_range_is_capped_at_tomorrow(): void
     {
         $tomorrow = now()->addDay()->toDateString();

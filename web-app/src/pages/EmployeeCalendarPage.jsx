@@ -16,6 +16,7 @@ import {
   expandLeavesToEvents,
   formatDateOnly,
   formatScheduleDateLabel,
+  sortSchedulesWithOverduePinned,
 } from '../utils/scheduleCalendar';
 import '../components/schedule-calendar.css';
 
@@ -79,8 +80,10 @@ export default function EmployeeCalendarPage() {
   );
 
   const selectedDaySchedules = useMemo(
-    () => monthSchedules.filter(
-      (schedule) => formatDateOnly(schedule.work_date) === selectedDate,
+    () => sortSchedulesWithOverduePinned(
+      monthSchedules.filter(
+        (schedule) => formatDateOnly(schedule.work_date) === selectedDate,
+      ),
     ),
     [monthSchedules, selectedDate],
   );
@@ -270,6 +273,7 @@ export default function EmployeeCalendarPage() {
               <EmployeeScheduleList
                 schedules={selectedDaySchedules}
                 onSelect={setSnapshotSchedule}
+                referenceDate={selectedDate}
                 emptyMessage={`${dateLabel} 沒有派工。`}
               />
             </div>

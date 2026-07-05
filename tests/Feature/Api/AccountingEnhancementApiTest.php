@@ -92,6 +92,88 @@ class AccountingEnhancementApiTest extends TestCase
         $this->assertSame(80, $invoiceTaxEntry['amount']);
     }
 
+    public function test_accounting_postage_counts_invoice_schedules_without_report_postage(): void
+    {
+        Sanctum::actingAs($this->admin);
+
+        $yearMonth = now()->format('Y-m');
+        $workDate = now()->addDay()->toDateString();
+
+        DailySchedule::query()->create($this->scheduleAttributes([
+            'user_id' => $this->employee->id,
+            'work_date' => $workDate,
+            'needs_invoice' => true,
+            'invoice_title' => '測試公司',
+            'customer_name' => '潘媽',
+            'customer_phone' => '0911111111',
+            'customer_address' => '950臺東市測試路1號',
+        ]));
+
+        $this->getJson('/api/admin/accounting?year_month='.$yearMonth)
+            ->assertOk()
+            ->assertJsonPath('data.auto_charges.0.key', 'postage')
+            ->assertJsonPath('data.auto_charges.0.mail_report_count', 1)
+            ->assertJsonPath('data.auto_charges.0.amount', 28)
+            ->assertJsonPath('data.totals.auto_postage', 28);
+    }
+
+    public function test_accounting_counts_multi_address_same_customer_as_one_postage(): void
+    {
+        Sanctum::actingAs($this->admin);
+
+        $yearMonth = now()->format('Y-m');
+        $workDate = now()->addDay()->toDateString();
+
+        DailySchedule::query()->create($this->scheduleAttributes([
+            'user_id' => $this->employee->id,
+            'work_date' => $workDate,
+            'needs_invoice' => true,
+            'customer_name' => 'Ching Chem',
+            'customer_phone' => '0979518775',
+            'customer_address' => '950臺東市地址一號',
+        ]));
+
+        DailySchedule::query()->create($this->scheduleAttributes([
+            'user_id' => $this->employee->id,
+            'work_date' => $workDate,
+            'needs_invoice' => true,
+            'customer_name' => 'Ching Chem',
+            'customer_phone' => '0979518775',
+            'customer_address' => '950臺東市地址二號',
+        ]));
+
+        $this->getJson('/api/admin/accounting?year_month='.$yearMonth)
+            ->assertOk()
+            ->assertJsonPath('data.auto_charges.0.mail_report_count', 1)
+            ->assertJsonPath('data.auto_charges.0.amount', 28);
+    }
+
+    public function test_admin_can_create_manual_postage_entry(): void
+    {
+        Sanctum::actingAs($this->admin);
+
+        $yearMonth = now()->format('Y-m');
+
+        $this->postJson('/api/admin/accounting/manual-postage', [
+            'year_month' => $yearMonth,
+            'mail_recipient' => '王小姐',
+            'mail_phone' => '0912345678',
+            'mail_address' => '台北市信義區信義路一段1號',
+            'notes' => '發票抬頭更正補寄',
+        ])
+            ->assertCreated()
+            ->assertJsonPath('data.entry.amount', 28)
+            ->assertJsonPath('data.entry.mail_recipient', '王小姐')
+            ->assertJsonPath('data.entry.mail_phone', '0912345678')
+            ->assertJsonPath('data.entry.notes', '發票抬頭更正補寄');
+
+        $this->getJson('/api/admin/accounting?year_month='.$yearMonth)
+            ->assertOk()
+            ->assertJsonPath('data.manual_postage_entries.0.notes', '發票抬頭更正補寄')
+            ->assertJsonPath('data.auto_charges.0.manual_postage_count', 1)
+            ->assertJsonPath('data.auto_charges.0.amount', 28);
+    }
+
     public function test_unit_performance_endpoint_returns_yearly_totals(): void
     {
         Sanctum::actingAs($this->admin);

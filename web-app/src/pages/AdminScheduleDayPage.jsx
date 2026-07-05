@@ -17,6 +17,7 @@ import {
   buildSchedulePayloads,
   buildScheduleCardLine,
   buildScheduleSuccessSummary,
+  scheduleHasMailTrackingItem,
   canModifyScheduleByMonth,
   canEditSchedule,
   canDeleteSchedule,
@@ -69,6 +70,7 @@ export default function AdminScheduleDayPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [successSummary, setSuccessSummary] = useState(null);
+  const [pendingMailRedirect, setPendingMailRedirect] = useState(false);
 
   const sortedSchedules = useMemo(
     () => [...schedules].sort((left, right) => (
@@ -215,8 +217,13 @@ export default function AdminScheduleDayPage() {
   }
 
   function handleSuccessConfirm() {
-    closeModal();
+    const shouldRedirectToMail = pendingMailRedirect;
     setSuccessSummary(null);
+    setPendingMailRedirect(false);
+
+    if (shouldRedirectToMail) {
+      navigate('/admin/mail-tracking');
+    }
   }
 
   function getFormEmployees() {
@@ -261,15 +268,13 @@ export default function AdminScheduleDayPage() {
       if (editId) {
         await api.updateSchedule(editId, payloads[0]);
         closeModal();
+        setPendingMailRedirect(false);
       } else {
         for (const item of payloads) {
           await api.createSchedule(item);
         }
         closeModal();
-        if (payloads.some((item) => item.needs_mail)) {
-          navigate('/admin/mail-tracking');
-          return;
-        }
+        setPendingMailRedirect(payloads.some((item) => scheduleHasMailTrackingItem(item)));
       }
 
       setSuccessSummary(summaryPayload);

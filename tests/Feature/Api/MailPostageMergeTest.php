@@ -208,4 +208,63 @@ class MailPostageMergeTest extends TestCase
         $this->assertCount(0, $response->json('data.pending.schedules'));
         $this->assertCount(1, $response->json('data.pending.reports'));
     }
+
+    public function test_same_customer_different_addresses_on_same_day_only_charge_postage_once(): void
+    {
+        $employee = User::query()->create([
+            'account' => 'emp-multi',
+            'password' => Hash::make('password123'),
+            'name' => '師傅',
+            'role' => 'employee',
+            'is_active' => true,
+            'rules_accepted_at' => now(),
+            'must_change_password' => false,
+        ]);
+
+        $workDate = now()->toDateString();
+
+        $firstSchedule = DailySchedule::query()->create($this->scheduleAttributes([
+            'user_id' => $employee->id,
+            'work_date' => $workDate,
+            'ac_units' => 3,
+            'pricing_lines' => [['ac_units' => 3, 'unit_price' => 1000]],
+            'cleaning_price' => 3000,
+            'task_details' => '3台1000=3000',
+            'customer_name' => 'Ching Chem',
+            'customer_phone' => '0979518775',
+            'customer_address' => '950臺東市地址一號',
+            'needs_invoice' => true,
+        ]));
+
+        $secondSchedule = DailySchedule::query()->create($this->scheduleAttributes([
+            'user_id' => $employee->id,
+            'work_date' => $workDate,
+            'ac_units' => 4,
+            'pricing_lines' => [['ac_units' => 4, 'unit_price' => 1000]],
+            'cleaning_price' => 4000,
+            'task_details' => '4台1000=4000',
+            'customer_name' => 'Ching Chem',
+            'customer_phone' => '0979518775',
+            'customer_address' => '950臺東市地址二號',
+            'needs_invoice' => true,
+        ]));
+
+        $firstPayload = EmployeeReportSupport::buildFromSchedule($firstSchedule, [
+            'completed_units' => 3,
+            'collected_amount' => 3000,
+        ]);
+
+        EmployeeReportSupport::createFromSchedule($firstSchedule, [
+            'completed_units' => 3,
+            'collected_amount' => 3000,
+        ]);
+
+        $secondPayload = EmployeeReportSupport::buildFromSchedule($secondSchedule, [
+            'completed_units' => 4,
+            'collected_amount' => 4000,
+        ]);
+
+        $this->assertSame(28, $firstPayload['temporary_postage']);
+        $this->assertSame(0, $secondPayload['temporary_postage']);
+    }
 }

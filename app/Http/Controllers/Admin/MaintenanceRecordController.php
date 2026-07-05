@@ -259,6 +259,16 @@ class MaintenanceRecordController extends Controller
             ->orderByDesc('invoice_sent_at')
             ->limit(100)
             ->get()
+            ->reject(function (DailySchedule $schedule) {
+                $report = $schedule->dailyReport;
+
+                if (! $report || ! $report->invoice_sent) {
+                    return false;
+                }
+
+                return (bool) $report->needs_invoice_and_mail || (bool) $report->needs_receipt_and_mail;
+            })
+            ->values()
             ->map(fn (DailySchedule $schedule) => $this->scheduleMailPayload($schedule));
 
         $reportQuery = DailyReport::query()
@@ -549,6 +559,9 @@ class MaintenanceRecordController extends Controller
                 'mail_tracking_number' => $schedule->mail_tracking_number,
                 'needs_mail' => (bool) $schedule->needs_mail,
                 'needs_invoice' => (bool) $schedule->needs_invoice,
+                'needs_receipt' => (bool) $schedule->needs_receipt,
+                'invoice_planned_date' => $schedule->invoice_planned_date?->format('Y-m-d'),
+                'invoice_charge_customer_tax' => (bool) $schedule->invoice_charge_customer_tax,
                 'user' => $schedule->user,
             ] : null,
         ];

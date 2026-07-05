@@ -7,6 +7,14 @@ use App\Models\DailySchedule;
 
 class MailRecipientSupport
 {
+    public static function customerPostageKey(DailySchedule $schedule): string
+    {
+        $date = $schedule->work_date?->format('Y-m-d') ?? '';
+        $phone = self::normalizePhone($schedule->mail_phone ?: $schedule->customer_phone);
+
+        return implode('|', [$date, $phone]);
+    }
+
     public static function recipientKey(DailySchedule $schedule): string
     {
         $date = $schedule->work_date?->format('Y-m-d') ?? '';
@@ -31,7 +39,7 @@ class MailRecipientSupport
 
     public static function hasPostageChargedForRecipient(DailySchedule $schedule, ?int $excludeReportId = null): bool
     {
-        $targetKey = self::recipientKey($schedule);
+        $targetKey = self::customerPostageKey($schedule);
         $workDate = $schedule->work_date?->format('Y-m-d');
 
         if (! $workDate) {
@@ -48,7 +56,7 @@ class MailRecipientSupport
         foreach ($reports as $report) {
             $relatedSchedule = $report->dailySchedule;
 
-            if ($relatedSchedule && self::recipientKey($relatedSchedule) === $targetKey) {
+            if ($relatedSchedule && self::customerPostageKey($relatedSchedule) === $targetKey) {
                 return true;
             }
         }

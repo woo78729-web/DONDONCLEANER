@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\AccountingSetting;
+use App\Models\ManualPostageEntry;
 use App\Models\MonthlyAdvanceEntry;
 use App\Support\MonthlyAccounting;
 use App\Support\UnitPerformanceReport;
@@ -118,6 +119,53 @@ class AccountingController extends Controller
         return $this->success(
             MonthlyAccounting::buildSummary($yearMonth),
             '代墊款已刪除'
+        );
+    }
+
+    public function storeManualPostage(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'year_month' => ['required', 'regex:/^\d{4}-\d{2}$/'],
+            'amount' => ['nullable', 'integer', 'min:1', 'max:9999'],
+            'mail_recipient' => ['required', 'string', 'max:255'],
+            'mail_phone' => ['required', 'string', 'max:50'],
+            'mail_address' => ['required', 'string', 'max:255'],
+            'notes' => ['required', 'string', 'max:255'],
+        ]);
+
+        $entry = ManualPostageEntry::query()->create([
+            'year_month' => $validated['year_month'],
+            'amount' => $validated['amount'] ?? MonthlyAccounting::POSTAGE_UNIT,
+            'mail_recipient' => trim($validated['mail_recipient']),
+            'mail_phone' => trim($validated['mail_phone']),
+            'mail_address' => trim($validated['mail_address']),
+            'notes' => trim($validated['notes']),
+            'created_by' => $request->user()->id,
+        ]);
+
+        return $this->success([
+            'entry' => [
+                'id' => $entry->id,
+                'year_month' => $entry->year_month,
+                'amount' => (int) $entry->amount,
+                'mail_recipient' => $entry->mail_recipient,
+                'mail_phone' => $entry->mail_phone,
+                'mail_address' => $entry->mail_address,
+                'notes' => $entry->notes,
+                'created_at' => $entry->created_at?->toDateTimeString(),
+            ],
+            'summary' => MonthlyAccounting::buildSummary($validated['year_month']),
+        ], '補寄郵資已新增', 201);
+    }
+
+    public function destroyManualPostage(ManualPostageEntry $manualPostage): JsonResponse
+    {
+        $yearMonth = $manualPostage->year_month;
+        $manualPostage->delete();
+
+        return $this->success(
+            MonthlyAccounting::buildSummary($yearMonth),
+            '補寄郵資已刪除'
         );
     }
 

@@ -313,6 +313,14 @@ class AcCleaningApi {
     return this.request('DELETE', `/admin/accounting/advances/${entryId}`);
   }
 
+  createManualPostage(payload) {
+    return this.request('POST', '/admin/accounting/manual-postage', { body: payload });
+  }
+
+  deleteManualPostage(entryId) {
+    return this.request('DELETE', `/admin/accounting/manual-postage/${entryId}`);
+  }
+
   createSchedule(payload) {
     return this.request('POST', '/admin/schedules', { body: payload });
   }

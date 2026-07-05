@@ -10,6 +10,8 @@ use App\Http\Controllers\Controller;
 
 use App\Models\DailySchedule;
 
+use App\Support\EmployeeScheduleSupport;
+
 use Illuminate\Http\JsonResponse;
 
 use Illuminate\Http\Request;
@@ -54,15 +56,22 @@ class ScheduleController extends Controller
 
         if (($validated['view'] ?? 'range') === 'today') {
 
-            $schedules = $this->scheduleQuery($request->user()->id, $today, $today);
+            $todaySchedules = $this->scheduleQuery($request->user()->id, $today, $today);
+            $overduePast = EmployeeScheduleSupport::overduePastUnreportedSchedules($request->user()->id);
 
-
+            $schedules = EmployeeScheduleSupport::annotateOverdueUnreported(
+                EmployeeScheduleSupport::pinOverdueUnreported(
+                    $overduePast->concat($todaySchedules)->unique('id'),
+                ),
+            );
 
             return $this->success([
 
                 'work_date' => $today,
 
                 'schedules' => $schedules,
+
+                'overdue_unreported_count' => EmployeeScheduleSupport::countOverdueUnreported($schedules),
 
             ], '今日班表查詢成功');
 
@@ -139,11 +148,7 @@ class ScheduleController extends Controller
     {
 
         return DailySchedule::query()
-            ->with([
-                'user:id,name,account,role,is_active,avatar_path',
-                'dailyReport',
-                'cleaningProject:id,project_code,title,status,planned_start_date,planned_end_date,total_ac_units',
-            ])
+            ->with(EmployeeScheduleSupport::scheduleRelations())
 
             ->where('user_id', $userId)
 

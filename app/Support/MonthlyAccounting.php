@@ -4,6 +4,8 @@ namespace App\Support;
 
 use App\Models\AccountingSetting;
 use App\Models\DailyReport;
+use App\Models\DailySchedule;
+use App\Models\ManualPostageEntry;
 use App\Models\MonthlyAdvanceEntry;
 use App\Models\User;
 use Illuminate\Support\Collection;
@@ -70,8 +72,17 @@ class MonthlyAccounting
 
         $employeeSummaries = self::summarizeEmployees($reports, $yearMonth);
         $fixedExpenses = self::fixedExpensePayload();
-        $mailReportCount = self::countMailReports($reports);
-        $autoPostage = (int) $reports->sum('temporary_postage');
+        $mailRecipientCount = self::countMailRecipientsForMonth((int) $year, (int) $month);
+        $manualPostageEntries = ManualPostageEntry::query()
+            ->where('year_month', $yearMonth)
+            ->orderByDesc('id')
+            ->get()
+            ->map(fn (ManualPostageEntry $entry) => self::manualPostagePayload($entry))
+            ->values();
+        $manualPostageAmount = (int) $manualPostageEntries->sum('amount');
+        $manualPostageCount = $manualPostageEntries->count();
+        $schedulePostageAmount = $mailRecipientCount * self::POSTAGE_UNIT;
+        $autoPostage = $schedulePostageAmount + $manualPostageAmount;
         $autoInvoiceTax = (int) $reports->sum('report_invoice_tax_cost');
         $travelAllowanceTotal = (int) $reports->sum('travel_allowance');
         $compensationDueToCompany = (int) array_sum(array_column($employeeSummaries, 'compensation_due_to_company'));
@@ -88,7 +99,7 @@ class MonthlyAccounting
             self::fixedExpenseAdvanceEntries($fixedExpenses),
             self::autoAdvanceEntries($autoInvoiceTax, $travelAllowanceTotal),
         );
-        $autoCharges = self::autoCharges($mailReportCount, $autoPostage);
+        $autoCharges = self::autoCharges($mailRecipientCount, $manualPostageCount, $autoPostage);
 
         $totals = self::calculateTotals(
             $employeeSummaries,
@@ -122,6 +133,7 @@ class MonthlyAccounting
             'company_transfers' => $companyTransfers,
             'fixed_expenses' => $fixedExpenses,
             'auto_charges' => $autoCharges,
+            'manual_postage_entries' => $manualPostageEntries,
             'auto_advance_entries' => $autoAdvanceEntries,
             'advance_entries' => $manualAdvanceEntries,
             'totals' => $totals,
@@ -149,23 +161,40 @@ class MonthlyAccounting
     /**
      * @param  Collection<int, DailyReport>  $reports
      */
-    private static function countMailReports(Collection $reports): int
+    private static function countMailRecipientsForMonth(int $year, int $month): int
     {
         $keys = [];
 
-        foreach ($reports as $report) {
-            if ((int) $report->temporary_postage <= 0) {
-                continue;
-            }
+        DailySchedule::query()
+            ->whereYear('work_date', $year)
+            ->whereMonth('work_date', $month)
+            ->where(function ($builder) {
+                $builder
+                    ->where('needs_mail', true)
+                    ->orWhere('needs_invoice', true)
+                    ->orWhere('needs_receipt', true);
+            })
+            ->each(function (DailySchedule $schedule) use (&$keys) {
+                $keys[MailRecipientSupport::customerPostageKey($schedule)] = true;
+            });
 
-            $schedule = $report->dailySchedule;
+        DailyReport::query()
+            ->with('dailySchedule')
+            ->where(function ($builder) {
+                $builder
+                    ->where('needs_invoice_and_mail', true)
+                    ->orWhere('needs_receipt_and_mail', true);
+            })
+            ->whereHas('dailySchedule', function ($query) use ($year, $month) {
+                $query->whereYear('work_date', $year)->whereMonth('work_date', $month);
+            })
+            ->each(function (DailyReport $report) use (&$keys) {
+                $schedule = $report->dailySchedule;
 
-            if (! $schedule) {
-                continue;
-            }
-
-            $keys[MailRecipientSupport::recipientKey($schedule)] = true;
-        }
+                if ($schedule) {
+                    $keys[MailRecipientSupport::customerPostageKey($schedule)] = true;
+                }
+            });
 
         return count($keys);
     }
@@ -173,18 +202,31 @@ class MonthlyAccounting
     /**
      * @return list<array<string, mixed>>
      */
-    private static function autoCharges(int $mailReportCount, int $autoPostage): array
+    private static function autoCharges(int $scheduleMailCount, int $manualPostageCount, int $autoPostage): array
     {
         if ($autoPostage <= 0) {
             return [];
+        }
+
+        $descriptionParts = [];
+
+        if ($scheduleMailCount > 0) {
+            $descriptionParts[] = "{$scheduleMailCount} 筆派工寄信";
+        }
+
+        if ($manualPostageCount > 0) {
+            $descriptionParts[] = "{$manualPostageCount} 筆補寄郵資";
         }
 
         return [[
             'key' => 'postage',
             'label' => self::AUTO_POSTAGE_LABEL,
             'amount' => $autoPostage,
-            'mail_report_count' => $mailReportCount,
+            'mail_report_count' => $scheduleMailCount + $manualPostageCount,
+            'schedule_mail_count' => $scheduleMailCount,
+            'manual_postage_count' => $manualPostageCount,
             'unit_amount' => self::POSTAGE_UNIT,
+            'description' => implode('＋', $descriptionParts),
             'auto' => true,
         ]];
     }
@@ -503,6 +545,23 @@ class MonthlyAccounting
             'amount' => $entry->amount,
             'notes' => $entry->notes,
             'auto' => false,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private static function manualPostagePayload(ManualPostageEntry $entry): array
+    {
+        return [
+            'id' => $entry->id,
+            'year_month' => $entry->year_month,
+            'amount' => (int) $entry->amount,
+            'mail_recipient' => $entry->mail_recipient,
+            'mail_phone' => $entry->mail_phone,
+            'mail_address' => $entry->mail_address,
+            'notes' => $entry->notes,
+            'created_at' => $entry->created_at?->toDateTimeString(),
         ];
     }
 

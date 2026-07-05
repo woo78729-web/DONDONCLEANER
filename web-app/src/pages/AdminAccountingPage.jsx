@@ -210,7 +210,9 @@ export default function AdminAccountingPage() {
                         <td>{charge.label}</td>
                         <td className="hint">
                           {charge.key === 'postage'
-                            ? `${charge.mail_report_count} 筆寄信 × ${charge.unit_amount} 元`
+                            ? (charge.description
+                              ? `${charge.description}，合計 ${charge.amount} 元`
+                              : `${charge.mail_report_count} 筆寄信 × ${charge.unit_amount} 元`)
                             : '自動帶入'}
                         </td>
                         <td className="num">{formatMoney(charge.amount)}</td>

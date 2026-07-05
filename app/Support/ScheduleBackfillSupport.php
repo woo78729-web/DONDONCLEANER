@@ -29,11 +29,15 @@ class ScheduleBackfillSupport
      */
     public static function buildAutoReportInput(DailySchedule $schedule): array
     {
+        $needsInvoice = (bool) $schedule->needs_invoice;
+        $needsReceipt = (bool) $schedule->needs_receipt;
+        $needsMail = (bool) $schedule->needs_mail;
+
         return [
             'completed_units' => (int) $schedule->ac_units,
-            'has_tax' => (bool) $schedule->needs_invoice,
-            'needs_invoice_and_mail' => false,
-            'needs_receipt_and_mail' => (bool) $schedule->needs_mail,
+            'has_tax' => $needsInvoice,
+            'needs_invoice_and_mail' => $needsInvoice,
+            'needs_receipt_and_mail' => $needsReceipt || ($needsMail && ! $needsInvoice),
             'paid_to_company' => false,
             'travel_allowance' => 0,
         ];

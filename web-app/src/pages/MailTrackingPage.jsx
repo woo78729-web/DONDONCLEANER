@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Layout } from '../components/Layout';
 import { PageAlert } from '../components/PageAlert';
 import { api } from '../api/client';
-import { formatDateOnly } from '../utils/scheduleCalendar';
+import { formatDateOnly, resolveScheduleDocumentType } from '../utils/scheduleCalendar';
 import {
   collectScheduleIdsFromMailRow,
   mergeHistoryRows,
@@ -19,19 +19,7 @@ function formatSentAt(value) {
 }
 
 function scheduleTypeLabel(schedule) {
-  if (schedule?.needs_invoice && schedule?.needs_mail) {
-    return '發票＋收據';
-  }
-
-  if (schedule?.needs_invoice) {
-    return '發票';
-  }
-
-  if (schedule?.needs_mail) {
-    return '收據／郵寄';
-  }
-
-  return '寄件';
+  return resolveScheduleDocumentType(schedule) || '寄件';
 }
 
 function reportTypeLabel(report) {
@@ -46,6 +34,103 @@ function reportTypeLabel(report) {
   }
 
   return labels.join('、') || '寄件';
+}
+
+const emptyManualPostageDraft = () => ({
+  mail_recipient: '',
+  mail_phone: '',
+  mail_address: '',
+  notes: '',
+});
+
+function ManualPostageModal({ open, onClose, onSave, saving }) {
+  const [draft, setDraft] = useState(emptyManualPostageDraft);
+
+  useEffect(() => {
+    if (open) {
+      setDraft(emptyManualPostageDraft());
+    }
+  }, [open]);
+
+  if (!open) {
+    return null;
+  }
+
+  return (
+    <div className="modal-overlay schedule-form-overlay" role="presentation" onClick={onClose}>
+      <div className="modal-panel mail-tracking-modal" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
+        <div className="modal-header">
+          <div>
+            <h2 className="modal-title">新增補寄郵資</h2>
+            <p className="hint">填寫收件資料與原因，確認後計入本月 28 元郵資。</p>
+          </div>
+          <button type="button" className="modal-close" onClick={onClose} aria-label="關閉">×</button>
+        </div>
+
+        <form
+          className="form-grid cols-1"
+          onSubmit={(event) => {
+            event.preventDefault();
+            onSave(draft);
+          }}
+        >
+          <label className="field">
+            <span className="field-label">聯絡人／收件人</span>
+            <input
+              className="field-control"
+              value={draft.mail_recipient}
+              onChange={(event) => setDraft((previous) => ({ ...previous, mail_recipient: event.target.value }))}
+              placeholder="請輸入聯絡人或店名"
+              required
+            />
+          </label>
+
+          <label className="field">
+            <span className="field-label">電話</span>
+            <input
+              className="field-control"
+              value={draft.mail_phone}
+              onChange={(event) => setDraft((previous) => ({ ...previous, mail_phone: event.target.value }))}
+              placeholder="請輸入聯絡電話"
+              required
+            />
+          </label>
+
+          <label className="field">
+            <span className="field-label">地址</span>
+            <input
+              className="field-control"
+              value={draft.mail_address}
+              onChange={(event) => setDraft((previous) => ({ ...previous, mail_address: event.target.value }))}
+              placeholder="請輸入寄送地址"
+              required
+            />
+          </label>
+
+          <label className="field">
+            <span className="field-label">原因說明</span>
+            <input
+              className="field-control"
+              value={draft.notes}
+              onChange={(event) => setDraft((previous) => ({ ...previous, notes: event.target.value }))}
+              placeholder="例：發票抬頭更正補寄"
+              maxLength={255}
+              required
+            />
+          </label>
+
+          <div className="modal-actions">
+            <button type="button" className="btn btn-secondary btn-pill" onClick={onClose} disabled={saving}>
+              取消
+            </button>
+            <button type="submit" className="btn btn-primary btn-pill" disabled={saving}>
+              {saving ? '新增中…' : '確認新增 28 元'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
 }
 
 function buildScheduleDraft(schedule) {
@@ -309,14 +394,34 @@ export default function MailTrackingPage() {
   const [historySearched, setHistorySearched] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState('');
+  const [manualPostageEntries, setManualPostageEntries] = useState([]);
+  const [manualPostageOpen, setManualPostageOpen] = useState(false);
+  const [manualPostageSaving, setManualPostageSaving] = useState(false);
+
+  const currentYearMonth = useMemo(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  }, []);
+
+  async function loadManualPostage() {
+    try {
+      const result = await api.getAccounting(currentYearMonth);
+      setManualPostageEntries(result.data?.manual_postage_entries || []);
+    } catch {
+      setManualPostageEntries([]);
+    }
+  }
 
   async function loadTracking() {
     setLoading(true);
     setError('');
 
     try {
-      const result = await api.getMailTracking();
-      setData(result.data);
+      const [trackingResult] = await Promise.all([
+        api.getMailTracking(),
+        loadManualPostage(),
+      ]);
+      setData(trackingResult.data);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -434,6 +539,56 @@ export default function MailTrackingPage() {
     });
   }
 
+  async function handleAddManualPostage(draft) {
+    const mail_recipient = draft.mail_recipient?.trim();
+    const mail_phone = draft.mail_phone?.trim();
+    const mail_address = draft.mail_address?.trim();
+    const notes = draft.notes?.trim();
+
+    if (!mail_recipient || !mail_phone || !mail_address || !notes) {
+      setError('請填寫聯絡人、電話、地址與原因說明');
+      return;
+    }
+
+    setManualPostageSaving(true);
+    setError('');
+    setMessage('');
+
+    try {
+      await api.createManualPostage({
+        year_month: currentYearMonth,
+        mail_recipient,
+        mail_phone,
+        mail_address,
+        notes,
+      });
+      setManualPostageOpen(false);
+      setMessage('補寄郵資已新增');
+      await loadManualPostage();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setManualPostageSaving(false);
+    }
+  }
+
+  async function handleDeleteManualPostage(entryId) {
+    if (!window.confirm('確定刪除此筆補寄郵資？')) {
+      return;
+    }
+
+    setError('');
+    setMessage('');
+
+    try {
+      await api.deleteManualPostage(entryId);
+      setMessage('補寄郵資已刪除');
+      await loadManualPostage();
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
   async function handleDeleteRow(row) {
     const scheduleIds = collectScheduleIdsFromMailRow(row);
 
@@ -479,7 +634,7 @@ export default function MailTrackingPage() {
         <div className="card-header">
           <div>
             <h2 className="card-title">發票／收據寄信追蹤</h2>
-            <p className="hint">郵寄、發票、收據項目會出現在此；同天同地址郵資仍只計 28 元。預開／延後發票會置頂顯示。</p>
+            <p className="hint">郵寄、發票、收據項目會出現在此；同天同客戶（同電話）多址仍只計 28 元郵資。預開／延後發票會置頂顯示。</p>
           </div>
           <button type="button" className="btn btn-secondary btn-sm" onClick={loadTracking} disabled={loading}>
             重新整理
@@ -491,6 +646,58 @@ export default function MailTrackingPage() {
       <PageAlert type="error" message={error} />
 
       {loading && !data && <p className="hint" style={{ padding: '0 4px' }}>載入中…</p>}
+
+      <section className="card">
+        <h3 className="section-label mail-tracking-section-title">補寄郵資（發票更正等）</h3>
+        <p className="hint">不需重新派工時，可在此新增 28 元補寄郵資，會計入本月自動開支。</p>
+        <div className="mail-tracking-manual-postage">
+          <button
+            type="button"
+            className="btn btn-primary btn-sm btn-pill"
+            onClick={() => setManualPostageOpen(true)}
+          >
+            ＋ 新增 28 元
+          </button>
+        </div>
+        {manualPostageEntries.length > 0 && (
+          <div className="table-wrap" style={{ marginTop: 12 }}>
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>收件人</th>
+                  <th>電話</th>
+                  <th>地址</th>
+                  <th>說明</th>
+                  <th>金額</th>
+                  <th>建立時間</th>
+                  <th aria-label="操作" />
+                </tr>
+              </thead>
+              <tbody>
+                {manualPostageEntries.map((entry) => (
+                  <tr key={entry.id}>
+                    <td>{entry.mail_recipient || '-'}</td>
+                    <td>{entry.mail_phone || '-'}</td>
+                    <td className="mail-tracking-address">{entry.mail_address || '-'}</td>
+                    <td>{entry.notes}</td>
+                    <td className="num">{entry.amount} 元</td>
+                    <td>{formatSentAt(entry.created_at)}</td>
+                    <td>
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm mail-tracking-delete-btn"
+                        onClick={() => handleDeleteManualPostage(entry.id)}
+                      >
+                        刪除
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
 
       {data && (
         <>
@@ -581,6 +788,13 @@ export default function MailTrackingPage() {
         onSave={handleSaveDraft}
         saving={saving}
         mergedCount={editTarget?.members?.length || 1}
+      />
+
+      <ManualPostageModal
+        open={manualPostageOpen}
+        onClose={() => setManualPostageOpen(false)}
+        onSave={handleAddManualPostage}
+        saving={manualPostageSaving}
       />
     </Layout>
   );

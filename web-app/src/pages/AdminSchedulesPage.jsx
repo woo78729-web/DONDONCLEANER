@@ -23,6 +23,7 @@ import {
   buildSchedulePayload,
   buildSchedulePayloads,
   buildScheduleSuccessSummary,
+  scheduleHasMailTrackingItem,
   buildScheduleTimePatch,
   calendarInteractionToScheduleUpdate,
   canDragScheduleEvent,
@@ -78,6 +79,7 @@ export default function AdminSchedulesPage() {
   const [leaves, setLeaves] = useState([]);
   const [snapshotSchedule, setSnapshotSchedule] = useState(null);
   const [successSummary, setSuccessSummary] = useState(null);
+  const [pendingMailRedirect, setPendingMailRedirect] = useState(false);
   const [mobileFilterOpen, setMobileFilterOpen] = useState(false);
 
   const schedules = useMemo(() => {
@@ -300,15 +302,13 @@ export default function AdminSchedulesPage() {
       if (editId) {
         await api.updateSchedule(editId, payloads[0]);
         closeModal();
+        setPendingMailRedirect(false);
       } else {
         for (const item of payloads) {
           await api.createSchedule(item);
         }
         closeModal();
-        if (payloads.some((item) => item.needs_mail)) {
-          navigate('/admin/mail-tracking');
-          return;
-        }
+        setPendingMailRedirect(payloads.some((item) => scheduleHasMailTrackingItem(item)));
       }
       setSuccessSummary(summaryPayload);
       loadSchedules(currentDate, selectedEmployeeId).catch((err) => setError(err.message));
@@ -409,7 +409,14 @@ export default function AdminSchedulesPage() {
 
   function handleSuccessConfirm() {
     const summary = successSummary;
+    const shouldRedirectToMail = pendingMailRedirect;
     setSuccessSummary(null);
+    setPendingMailRedirect(false);
+
+    if (shouldRedirectToMail) {
+      navigate('/admin/mail-tracking');
+      return;
+    }
 
     if (summary?.work_date) {
       const workDate = new Date(`${formatDateOnly(summary.work_date)}T12:00:00`);

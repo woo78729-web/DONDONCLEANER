@@ -7,6 +7,7 @@ use App\Models\DailyReport;
 use App\Models\DailySchedule;
 use App\Support\EmployeeMonthlySummary;
 use App\Support\EmployeeReportSupport;
+use App\Support\EmployeeScheduleSupport;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -84,9 +85,7 @@ class ReportController extends Controller
         ])['work_date'] ?? now()->toDateString();
 
         $schedules = DailySchedule::query()
-            ->with([
-                'dailyReport',
-            ])
+            ->with(EmployeeScheduleSupport::scheduleRelations())
             ->where('user_id', $request->user()->id)
             ->whereDate('work_date', $workDate)
             ->whereDoesntHave('dailyReport')
@@ -94,9 +93,21 @@ class ReportController extends Controller
             ->orderBy('id')
             ->get();
 
+        $overdue = EmployeeScheduleSupport::overdueUnreportedSchedules($request->user()->id);
+        $overdueIds = $overdue->pluck('id');
+
+        $schedules = EmployeeScheduleSupport::annotateOverdueUnreported(
+            EmployeeScheduleSupport::pinOverdueUnreported(
+                $overdue->concat(
+                    $schedules->reject(fn (DailySchedule $schedule) => $overdueIds->contains($schedule->id)),
+                )->unique('id'),
+            ),
+        );
+
         return $this->success([
             'work_date' => $workDate,
             'schedules' => $schedules,
+            'overdue_unreported_count' => EmployeeScheduleSupport::countOverdueUnreported($schedules),
         ], '待回報班表查詢成功');
     }
 
