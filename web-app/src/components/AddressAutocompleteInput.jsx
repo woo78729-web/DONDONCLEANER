@@ -1,42 +1,13 @@
-import { useEffect, useRef, useState } from 'react';
+import { importLibrary } from '@googlemaps/js-api-loader';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { useGooglePlacesLoader } from '../hooks/useGooglePlacesLoader';
-import { extractFormattedAddress } from '../utils/googlePlaces';
+import {
+  fetchTaiwanAddressSuggestions,
+  getPlacePredictionLabel,
+  resolvePlacePredictionAddress,
+} from '../utils/googlePlaces';
 
-function findAutocompleteInput(element) {
-  if (!element) {
-    return null;
-  }
-
-  if (element.matches?.('input')) {
-    return element;
-  }
-
-  return element.querySelector?.('input') || element.shadowRoot?.querySelector('input') || null;
-}
-
-function PlainAddressInput({
-  value,
-  onChange,
-  className,
-  placeholder,
-  required,
-  disabled,
-  hint = '',
-}) {
-  return (
-    <>
-      <input
-        className={className}
-        value={value || ''}
-        onChange={(event) => onChange(event.target.value)}
-        placeholder={placeholder}
-        required={required}
-        disabled={disabled}
-      />
-      {hint && <p className="hint" style={{ marginTop: 8 }}>{hint}</p>}
-    </>
-  );
-}
+const SUGGESTION_DEBOUNCE_MS = 280;
 
 export function AddressAutocompleteInput({
   value,
@@ -47,171 +18,171 @@ export function AddressAutocompleteInput({
   disabled = false,
   showFallbackHint = true,
 }) {
-  const widgetRef = useRef(null);
-  const onChangeRef = useRef(onChange);
-  const valueRef = useRef(value || '');
-  const [usePlainInput, setUsePlainInput] = useState(false);
-  const [widgetError, setWidgetError] = useState('');
-  const { isLoaded, loadError, apiKeyConfigured } = useGooglePlacesLoader(!usePlainInput);
+  const listboxId = useId();
+  const containerRef = useRef(null);
+  const debounceRef = useRef(null);
+  const requestIdRef = useRef(0);
+  const sessionTokenRef = useRef(null);
+  const [suggestions, setSuggestions] = useState([]);
+  const [open, setOpen] = useState(false);
+  const [loadingSuggestions, setLoadingSuggestions] = useState(false);
+  const { isLoaded, loadError, apiKeyConfigured } = useGooglePlacesLoader(true);
 
-  onChangeRef.current = onChange;
-  valueRef.current = value || '';
+  const autocompleteEnabled = apiKeyConfigured && isLoaded && !loadError && !disabled;
 
-  useEffect(() => {
-    if (!isLoaded || usePlainInput || disabled || !widgetRef.current) {
-      return undefined;
+  useEffect(() => () => {
+    if (debounceRef.current) {
+      window.clearTimeout(debounceRef.current);
+    }
+  }, []);
+
+  const ensureSessionToken = useCallback(async () => {
+    if (sessionTokenRef.current) {
+      return sessionTokenRef.current;
     }
 
-    const widget = widgetRef.current;
-    let inputListener = null;
+    const { AutocompleteSessionToken } = await importLibrary('places');
+    sessionTokenRef.current = new AutocompleteSessionToken();
+    return sessionTokenRef.current;
+  }, []);
 
-    const handleSelect = async (event) => {
-      try {
-        const place = event.placePrediction.toPlace();
-        await place.fetchFields({ fields: ['formattedAddress', 'addressComponents'] });
-        const address = place.formattedAddress || extractFormattedAddress({
-          formatted_address: place.formattedAddress,
-          address_components: place.addressComponents,
-        });
+  const loadSuggestions = useCallback(async (input) => {
+    const query = String(input || '').trim();
 
-        if (address) {
-          onChangeRef.current(address);
-          const input = findAutocompleteInput(widget);
-          if (input) {
-            input.value = address;
-          }
-        }
-
-        setWidgetError('');
-      } catch {
-        setWidgetError('地址詳細資料取得失敗，請再試一次或改用手動輸入。');
-      }
-    };
-
-    const handleError = () => {
-      setWidgetError('Google 地址建議無法使用，請確認已啟用 Places API (New)。');
-    };
-
-    widget.includedRegionCodes = ['tw'];
-    widget.placeholder = placeholder;
-
-    widget.addEventListener('gmp-select', handleSelect);
-    widget.addEventListener('gmp-error', handleError);
-
-    const attachInputListener = () => {
-      const input = findAutocompleteInput(widget);
-      if (!input) {
-        return false;
-      }
-
-      input.classList.add(...className.split(' ').filter(Boolean));
-      input.value = valueRef.current;
-      input.disabled = disabled;
-      input.placeholder = placeholder;
-
-      inputListener = (event) => {
-        onChangeRef.current(event.target.value);
-        setWidgetError('');
-      };
-      input.addEventListener('input', inputListener);
-      return true;
-    };
-
-    if (!attachInputListener()) {
-      window.setTimeout(attachInputListener, 0);
-    }
-
-    return () => {
-      widget.removeEventListener('gmp-select', handleSelect);
-      widget.removeEventListener('gmp-error', handleError);
-
-      const input = findAutocompleteInput(widget);
-      if (input && inputListener) {
-        input.removeEventListener('input', inputListener);
-      }
-    };
-  }, [isLoaded, usePlainInput, className, placeholder, disabled]);
-
-  useEffect(() => {
-    if (usePlainInput || !isLoaded) {
+    if (!autocompleteEnabled || query.length < 2) {
+      setSuggestions([]);
+      setOpen(false);
+      setLoadingSuggestions(false);
       return;
     }
 
-    const input = findAutocompleteInput(widgetRef.current);
-    if (input && input.value !== (value || '')) {
-      input.value = value || '';
+    const requestId = requestIdRef.current + 1;
+    requestIdRef.current = requestId;
+    setLoadingSuggestions(true);
+
+    try {
+      const sessionToken = await ensureSessionToken();
+      const nextSuggestions = await fetchTaiwanAddressSuggestions(query, sessionToken);
+
+      if (requestId !== requestIdRef.current) {
+        return;
+      }
+
+      setSuggestions(nextSuggestions);
+      setOpen(nextSuggestions.length > 0);
+    } catch {
+      if (requestId === requestIdRef.current) {
+        setSuggestions([]);
+        setOpen(false);
+      }
+    } finally {
+      if (requestId === requestIdRef.current) {
+        setLoadingSuggestions(false);
+      }
     }
-  }, [value, usePlainInput, isLoaded]);
+  }, [autocompleteEnabled, ensureSessionToken]);
 
-  if (!apiKeyConfigured || usePlainInput) {
-    return (
-      <PlainAddressInput
-        value={value}
-        onChange={onChange}
-        className={className}
-        placeholder={placeholder}
-        required={required}
-        disabled={disabled}
-        hint={!apiKeyConfigured && showFallbackHint ? '未設定 VITE_GOOGLE_MAPS_API_KEY，地址自動完成已停用。' : ''}
-      />
-    );
-  }
+  const queueSuggestions = useCallback((input) => {
+    if (debounceRef.current) {
+      window.clearTimeout(debounceRef.current);
+    }
 
-  if (loadError) {
-    return (
-      <PlainAddressInput
-        value={value}
-        onChange={onChange}
-        className={className}
-        placeholder={placeholder}
-        required={required}
-        disabled={disabled}
-        hint="Google 地址建議載入失敗，仍可手動輸入地址。"
-      />
-    );
-  }
+    debounceRef.current = window.setTimeout(() => {
+      loadSuggestions(input);
+    }, SUGGESTION_DEBOUNCE_MS);
+  }, [loadSuggestions]);
 
-  if (!isLoaded) {
-    return (
-      <PlainAddressInput
-        value={value}
-        onChange={onChange}
-        className={className}
-        placeholder="載入地址建議中..."
-        required={required}
-        disabled
-      />
-    );
+  const handleInputChange = (event) => {
+    const nextValue = event.target.value;
+    onChange(nextValue);
+    queueSuggestions(nextValue);
+  };
+
+  const handleSelectSuggestion = async (prediction) => {
+    const address = await resolvePlacePredictionAddress(prediction);
+    onChange(address || getPlacePredictionLabel(prediction));
+    setSuggestions([]);
+    setOpen(false);
+    sessionTokenRef.current = null;
+  };
+
+  const handleBlur = () => {
+    window.setTimeout(() => {
+      if (!containerRef.current?.contains(document.activeElement)) {
+        setOpen(false);
+      }
+    }, 120);
+  };
+
+  let hint = '';
+
+  if (!apiKeyConfigured && showFallbackHint) {
+    hint = '未設定 VITE_GOOGLE_MAPS_API_KEY，地址自動完成已停用，可直接手動輸入。';
+  } else if (loadError) {
+    hint = 'Google 地址建議載入失敗，可直接手動輸入完整地址。';
+  } else if (autocompleteEnabled) {
+    hint = '可直接輸入完整地址；有建議時可點選，非必選。';
   }
 
   return (
-    <>
-      <gmp-place-autocomplete
-        ref={widgetRef}
-        className={`address-autocomplete-widget ${className}`}
-        placeholder={placeholder}
-      />
+    <div
+      className={`address-autocomplete-field${open ? ' address-autocomplete-field--open' : ''}`}
+      ref={containerRef}
+    >
       <input
-        tabIndex={-1}
-        aria-hidden="true"
-        className="address-autocomplete-hidden-input"
+        className={className}
         value={value || ''}
-        readOnly
-        onChange={() => {}}
+        onChange={handleInputChange}
+        onFocus={() => {
+          if (suggestions.length > 0) {
+            setOpen(true);
+          }
+        }}
+        onBlur={handleBlur}
+        placeholder={placeholder}
+        required={required}
+        disabled={disabled}
+        autoComplete="street-address"
+        role="combobox"
+        aria-expanded={open}
+        aria-controls={open ? listboxId : undefined}
+        aria-autocomplete="list"
       />
-      {widgetError && (
-        <p className="hint" style={{ marginTop: 8 }}>
-          {widgetError}
-          {' '}
-          <button
-            type="button"
-            className="btn btn-secondary btn-sm"
-            onClick={() => setUsePlainInput(true)}
-          >
-            改用手動輸入
-          </button>
-        </p>
+
+      {open && suggestions.length > 0 && (
+        <ul
+          id={listboxId}
+          className="address-autocomplete-suggestions"
+          role="listbox"
+        >
+          {suggestions.map((prediction, index) => {
+            const label = getPlacePredictionLabel(prediction);
+            const key = `${prediction.placeId || label}-${index}`;
+
+            return (
+              <li key={key} role="presentation">
+                <button
+                  type="button"
+                  className="address-autocomplete-suggestions__item"
+                  role="option"
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => handleSelectSuggestion(prediction)}
+                >
+                  {label}
+                </button>
+              </li>
+            );
+          })}
+        </ul>
       )}
-    </>
+
+      {loadingSuggestions && autocompleteEnabled && (
+        <p className="hint address-autocomplete-field__status">搜尋地址建議中...</p>
+      )}
+
+      {hint && !loadingSuggestions && (
+        <p className="hint address-autocomplete-field__hint">{hint}</p>
+      )}
+    </div>
   );
 }

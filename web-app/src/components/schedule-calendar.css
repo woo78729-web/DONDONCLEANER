@@ -1864,27 +1864,75 @@
   min-width: 0;
 }
 
-.address-autocomplete-widget {
-  display: block;
-  width: 100%;
-  color-scheme: dark;
-}
-
-.schedule-form-modal gmp-place-autocomplete.address-autocomplete-widget {
+.address-autocomplete-field {
+  position: relative;
   flex: 1;
   min-width: 0;
 }
 
-.address-autocomplete-hidden-input {
-  position: absolute;
-  width: 0;
-  height: 0;
-  opacity: 0;
-  pointer-events: none;
+.address-autocomplete-field--open,
+.address-autocomplete-field:focus-within {
+  z-index: 120;
 }
 
-.schedule-form-modal .address-autocomplete-host input,
-.schedule-form-modal .address-autocomplete-widget input {
+.field:has(.address-autocomplete-field--open),
+.field:has(.address-autocomplete-field:focus-within),
+.service-address-row:has(.address-autocomplete-field--open),
+.service-address-row:has(.address-autocomplete-field:focus-within) {
+  position: relative;
+  z-index: 40;
+}
+
+.field-action-row:has(.address-autocomplete-field--open),
+.field-action-row:has(.address-autocomplete-field:focus-within) {
+  position: relative;
+  z-index: 120;
+}
+
+.address-autocomplete-field__hint,
+.address-autocomplete-field__status {
+  margin-top: 8px;
+}
+
+.address-autocomplete-suggestions {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 130;
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 140, 0, 0.28);
+  background: rgba(12, 12, 14, 0.98);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+  max-height: 220px;
+  overflow: auto;
+}
+
+.address-autocomplete-suggestions__item {
+  width: 100%;
+  margin: 0;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  font: inherit;
+  line-height: 1.4;
+  cursor: pointer;
+}
+
+.address-autocomplete-suggestions__item:hover,
+.address-autocomplete-suggestions__item:focus-visible {
+  background: rgba(255, 140, 0, 0.14);
+  outline: none;
+}
+
+.schedule-form-modal .address-autocomplete-field input,
+.schedule-form-modal .address-autocomplete-host input {
   width: 100%;
   box-sizing: border-box;
 }
@@ -3336,6 +3384,7 @@
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.02);
+  overflow: visible;
 }
 
 .service-address-row__heading {
@@ -3356,6 +3405,7 @@
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 12px;
+  overflow: visible;
 }
 
 .service-address-row__grid--multi {

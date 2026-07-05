@@ -1390,14 +1390,8 @@ export function validateScheduleForm(form, { userRole = 'admin', original = null
   }
 
   if (needsInvoice) {
-    if (!String(form.invoice_title || '').trim()) {
-      messages.push('請填寫發票抬頭');
-    }
-
     const taxId = String(form.invoice_tax_id || '').trim();
-    if (!taxId) {
-      messages.push('請填寫統一編號');
-    } else if (!/^\d{8}$/.test(taxId)) {
+    if (taxId && !/^\d{8}$/.test(taxId)) {
       messages.push('統一編號須為 8 碼數字');
     }
   }

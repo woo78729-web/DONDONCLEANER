@@ -607,8 +607,8 @@ export function ScheduleFormModal({
               />
               <span>
                 {canManagePricing
-                  ? (invoiceAutoEnabled ? '是否開發票（已由品項含稅自動開啟）' : '是否開發票（統編）')
-                  : '是否開發票（需填抬頭、統編）'}
+                  ? (invoiceAutoEnabled ? '是否開發票（已由品項含稅自動開啟）' : '是否開發票')
+                  : '是否開發票'}
               </span>
             </label>
             )}

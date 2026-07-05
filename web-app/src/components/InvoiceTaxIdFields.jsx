@@ -63,24 +63,27 @@ export function InvoiceTaxIdFields({ invoiceTitle, invoiceTaxId, onChange }) {
 
   return (
     <>
+      <p className="hint" style={{ marginBottom: 10 }}>
+        二聯式可不填；三聯式請填統編，抬頭會自動帶入或手動輸入。
+      </p>
       <div className="form-grid cols-2">
         <label className="field">
-          <span className="field-label">發票抬頭</span>
+          <span className="field-label">發票抬頭（選填）</span>
           <input
             className="field-control"
             value={invoiceTitle || ''}
             onChange={(event) => onChange({ invoice_title: event.target.value })}
-            placeholder="請輸入發票抬頭"
+            placeholder="三聯式才需填寫"
           />
         </label>
 
         <label className="field">
-          <span className="field-label">統一編號</span>
+          <span className="field-label">統一編號（選填）</span>
           <input
             className="field-control"
             value={invoiceTaxId || ''}
             onChange={handleTaxIdChange}
-            placeholder="請輸入統一編號"
+            placeholder="三聯式才需填寫"
             inputMode="numeric"
             maxLength={8}
           />

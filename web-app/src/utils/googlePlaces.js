@@ -1,14 +1,16 @@
+import { importLibrary } from '@googlemaps/js-api-loader';
+
 export function extractFormattedAddress(place) {
   if (!place) {
     return '';
   }
 
-  const formatted = String(place.formatted_address || '').trim();
+  const formatted = String(place.formattedAddress || place.formatted_address || '').trim();
   if (formatted) {
     return formatted;
   }
 
-  const components = place.address_components;
+  const components = place.addressComponents || place.address_components;
   if (!Array.isArray(components) || components.length === 0) {
     return '';
   }
@@ -26,4 +28,46 @@ export function extractFormattedAddress(place) {
   const parts = [postalCode, adminArea, locality, sublocality, street].filter(Boolean);
 
   return parts.join('');
+}
+
+export function getPlacePredictionLabel(prediction) {
+  return String(prediction?.text?.text || prediction?.mainText?.text || '').trim();
+}
+
+export async function resolvePlacePredictionAddress(prediction) {
+  if (!prediction?.toPlace) {
+    return getPlacePredictionLabel(prediction);
+  }
+
+  try {
+    const place = prediction.toPlace();
+    await place.fetchFields({ fields: ['formattedAddress', 'addressComponents'] });
+
+    return extractFormattedAddress({
+      formattedAddress: place.formattedAddress,
+      addressComponents: place.addressComponents,
+    }) || getPlacePredictionLabel(prediction);
+  } catch {
+    return getPlacePredictionLabel(prediction);
+  }
+}
+
+export async function fetchTaiwanAddressSuggestions(input, sessionToken) {
+  const query = String(input || '').trim();
+  if (!query || query.length < 2) {
+    return [];
+  }
+
+  const { AutocompleteSuggestion } = await importLibrary('places');
+  const { suggestions } = await AutocompleteSuggestion.fetchAutocompleteSuggestions({
+    input: query,
+    sessionToken,
+    includedRegionCodes: ['tw'],
+    language: 'zh-TW',
+  });
+
+  return (suggestions || [])
+    .map((item) => item.placePrediction)
+    .filter(Boolean)
+    .slice(0, 6);
 }
