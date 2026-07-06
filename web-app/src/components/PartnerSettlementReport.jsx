@@ -143,8 +143,13 @@ export function PartnerSettlementReport({ settlement, employees = [] }) {
           <div className="card-header">
             <h2 className="card-title">合夥軋差（東東 ↔ 宏逸）</h2>
             <p className="hint">
-              每人分潤 {formatMoney(interPartner.profit_share_half)} 元，發票帳客戶匯款 {formatMoney(interPartner.customer_remittance_in_account)} 元。
-              {interPartner.formula_hint}
+              每人分潤 {formatMoney(interPartner.profit_share_half)} 元，發票帳客戶匯款 {formatMoney(interPartner.customer_remittance_in_account)} 元
+              {interPartner.invoice_tax_company_advance > 0 && (
+                <>
+                  ，阿泰代墊發票稅8% {formatMoney(interPartner.invoice_tax_company_advance)} 元（東東轉給宏逸）
+                </>
+              )}
+              。{interPartner.formula_hint}
             </p>
           </div>
           <TakeHomeHero
@@ -234,6 +239,13 @@ export function PartnerSettlementReport({ settlement, employees = [] }) {
                   : '在宏逸發票帳代管，結算時與分潤軋差'
               }
             />
+            {interPartner?.invoice_tax_company_advance > 0 && (
+              <SettlementLine
+                label="加：阿泰代墊發票稅8%（東東轉宏逸）"
+                amount={interPartner.invoice_tax_company_advance}
+                hint="發票稅由阿泰代墊，軋差時由東東公司帳轉給宏逸發票帳"
+              />
+            )}
           </div>
         </article>
       </section>

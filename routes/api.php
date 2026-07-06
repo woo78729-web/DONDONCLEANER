@@ -56,6 +56,8 @@ Route::middleware(['auth:sanctum', 'role:admin|customer_service'])->prefix('admi
     Route::post('/maintenance-records/{maintenanceRecord}/photos', [MaintenanceRecordController::class, 'uploadPhoto']);
     Route::get('/mail-tracking', [MaintenanceRecordController::class, 'mailTracking']);
     Route::get('/mail-tracking/history', [MaintenanceRecordController::class, 'searchMailHistory']);
+    Route::post('/mail-tracking/merge', [MaintenanceRecordController::class, 'mergeMailTracking']);
+    Route::post('/mail-tracking/unmerge', [MaintenanceRecordController::class, 'unmergeMailTracking']);
     Route::patch('/reports/{report}/mail-sent', [MaintenanceRecordController::class, 'markReportMailSent']);
     Route::patch('/reports/{report}/mail-tracking', [MaintenanceRecordController::class, 'updateReportMailTracking']);
 });

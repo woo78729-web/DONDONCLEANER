@@ -9,6 +9,7 @@ use App\Models\MaintenanceRecord;
 use App\Models\MaintenanceRecordPhoto;
 use App\Models\User;
 use App\Support\MaintenanceRecordSupport;
+use App\Support\MailMergeSupport;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -482,6 +483,43 @@ class MaintenanceRecordController extends Controller
         return $this->success($report->fresh()->load('dailySchedule.user:id,name,account'), '回報寄件狀態已更新');
     }
 
+    public function mergeMailTracking(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'schedule_ids' => ['required', 'array', 'min:2', 'max:50'],
+            'schedule_ids.*' => ['integer', 'exists:daily_schedules,id'],
+        ]);
+
+        try {
+            $groupId = MailMergeSupport::mergeSchedules($validated['schedule_ids']);
+        } catch (\InvalidArgumentException $exception) {
+            return $this->error($exception->getMessage(), 422);
+        }
+
+        return $this->success([
+            'mail_merge_group_id' => $groupId,
+            'schedule_ids' => $validated['schedule_ids'],
+        ], '已合併寄件，郵資僅計一次');
+    }
+
+    public function unmergeMailTracking(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'schedule_ids' => ['required', 'array', 'min:1', 'max:50'],
+            'schedule_ids.*' => ['integer', 'exists:daily_schedules,id'],
+        ]);
+
+        try {
+            MailMergeSupport::unmergeSchedules($validated['schedule_ids']);
+        } catch (\InvalidArgumentException $exception) {
+            return $this->error($exception->getMessage(), 422);
+        }
+
+        return $this->success([
+            'schedule_ids' => $validated['schedule_ids'],
+        ], '已取消合併寄件');
+    }
+
     private function validateEmployee(int $userId): ?JsonResponse
     {
         $employee = User::query()
@@ -520,6 +558,7 @@ class MaintenanceRecordController extends Controller
             'invoice_planned_date' => $schedule->invoice_planned_date?->format('Y-m-d'),
             'invoice_charge_customer_tax' => (bool) $schedule->invoice_charge_customer_tax,
             'mail_tracking_number' => $schedule->mail_tracking_number,
+            'mail_merge_group_id' => $schedule->mail_merge_group_id,
             'needs_mail' => (bool) $schedule->needs_mail,
             'needs_invoice' => (bool) $schedule->needs_invoice,
             'needs_receipt' => (bool) $schedule->needs_receipt,
@@ -559,6 +598,7 @@ class MaintenanceRecordController extends Controller
                 'invoice_tax_id' => $schedule->invoice_tax_id,
                 'invoice_title' => $schedule->invoice_title,
                 'mail_tracking_number' => $schedule->mail_tracking_number,
+                'mail_merge_group_id' => $schedule->mail_merge_group_id,
                 'needs_mail' => (bool) $schedule->needs_mail,
                 'needs_invoice' => (bool) $schedule->needs_invoice,
                 'needs_receipt' => (bool) $schedule->needs_receipt,

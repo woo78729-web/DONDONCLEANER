@@ -484,6 +484,14 @@ class AcCleaningApi {
     return this.request('GET', '/admin/mail-tracking/history', { params });
   }
 
+  mergeMailTracking(payload) {
+    return this.request('POST', '/admin/mail-tracking/merge', { body: payload });
+  }
+
+  unmergeMailTracking(payload) {
+    return this.request('POST', '/admin/mail-tracking/unmerge', { body: payload });
+  }
+
   updateScheduleMailTracking(scheduleId, payload) {
     return this.request('PATCH', `/admin/schedules/${scheduleId}/mail-tracking`, { body: payload });
   }

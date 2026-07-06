@@ -81,12 +81,13 @@ class PartnerSettlementTest extends TestCase
             'compensation_due_to_company_total' => 0,
             'monthly_expense_total' => 5000,
             'company_inbound_expected' => 20000,
-            'hongyi_payment' => 10000,
+            'invoice_tax_cost' => 500,
+            'hongyi_payment' => 10500,
             'atai_advance_total' => 0,
         ]);
 
         $this->assertSame('dongdong_to_hongyi', $settlement['inter_partner']['direction']);
-        $this->assertSame(10000, $settlement['inter_partner']['settlement_amount']);
+        $this->assertSame(10500, $settlement['inter_partner']['settlement_amount']);
 
         $refund = MonthlyAccounting::partnerSettlement([
             'gross_profit' => 60000,
@@ -96,11 +97,32 @@ class PartnerSettlementTest extends TestCase
             'compensation_due_to_company_total' => 0,
             'monthly_expense_total' => 25000,
             'company_inbound_expected' => 40000,
-            'hongyi_payment' => -10000,
+            'invoice_tax_cost' => 8000,
+            'hongyi_payment' => -2000,
             'atai_advance_total' => 0,
         ]);
 
         $this->assertSame('hongyi_to_dongdong', $refund['inter_partner']['direction']);
-        $this->assertSame(10000, $refund['inter_partner']['settlement_amount']);
+        $this->assertSame(2000, $refund['inter_partner']['settlement_amount']);
+        $this->assertSame(8000, $refund['inter_partner']['invoice_tax_company_advance']);
+    }
+
+    public function test_inter_partner_settlement_includes_invoice_tax_advance(): void
+    {
+        $settlement = MonthlyAccounting::partnerSettlement([
+            'gross_profit' => -10938,
+            'profit_share_half' => -5469,
+            'net_from_employees_jobs' => 0,
+            'net_from_employees' => 0,
+            'compensation_due_to_company_total' => 0,
+            'monthly_expense_total' => 10938,
+            'company_inbound_expected' => 0,
+            'invoice_tax_cost' => 8000,
+            'hongyi_payment' => 2531,
+            'atai_advance_total' => 8000,
+        ]);
+
+        $this->assertSame('dongdong_to_hongyi', $settlement['inter_partner']['direction']);
+        $this->assertSame(2531, $settlement['inter_partner']['settlement_amount']);
     }
 }

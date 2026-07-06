@@ -297,16 +297,23 @@ function MailTrackingTable({
   onEdit,
   onDelete,
   editButtonLabel = '填寫／處理',
+  selectable = false,
+  selectedKeys = [],
+  onToggleRow,
+  onUnmerge,
 }) {
   if (!rows.length) {
     return <p className="hint mail-tracking-empty">{emptyText}</p>;
   }
+
+  const selectedKeySet = new Set(selectedKeys);
 
   return (
     <div className="table-wrap">
       <table className="data-table mail-tracking-table">
         <thead>
           <tr>
+            {selectable && <th aria-label="選取" />}
             {onDelete && <th>刪除</th>}
             <th aria-label="來源" />
             <th>日期</th>
@@ -325,6 +332,17 @@ function MailTrackingTable({
         <tbody>
           {rows.map((row) => (
             <tr key={row.key} className={row.plannedDate ? 'mail-tracking-row--planned' : ''}>
+              {selectable && (
+                <td>
+                  <input
+                    type="checkbox"
+                    checked={selectedKeySet.has(row.key)}
+                    disabled={Boolean(row.cleaningProjectId)}
+                    onChange={() => onToggleRow?.(row)}
+                    aria-label={`選取 ${formatDateOnly(row.date)} 寄件`}
+                  />
+                </td>
+              )}
               {onDelete && (
                 <td>
                   <button
@@ -354,6 +372,9 @@ function MailTrackingTable({
                 {row.cleaningProjectId && (
                   <div className="hint">專案合併</div>
                 )}
+                {row.mailMergeGroupId && (
+                  <div className="hint">合併寄件（28 元）</div>
+                )}
               </td>
               <td>{row.contactId || '-'}</td>
               <td>{row.recipient || '-'}</td>
@@ -371,13 +392,24 @@ function MailTrackingTable({
               {showSentAt && <td>{formatSentAt(row.sentAt)}</td>}
               {onEdit && (
                 <td>
-                  <button
-                    type="button"
-                    className="btn btn-secondary btn-sm"
-                    onClick={() => onEdit(row)}
-                  >
-                    {editButtonLabel}
-                  </button>
+                  <div className="button-row">
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      onClick={() => onEdit(row)}
+                    >
+                      {editButtonLabel}
+                    </button>
+                    {onUnmerge && row.mailMergeGroupId && (
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        onClick={() => onUnmerge(row)}
+                      >
+                        取消合併
+                      </button>
+                    )}
+                  </div>
                 </td>
               )}
             </tr>
@@ -403,6 +435,8 @@ export default function MailTrackingPage() {
   const [manualPostageEntries, setManualPostageEntries] = useState([]);
   const [manualPostageOpen, setManualPostageOpen] = useState(false);
   const [manualPostageSaving, setManualPostageSaving] = useState(false);
+  const [selectedRowKeys, setSelectedRowKeys] = useState([]);
+  const [mergeSaving, setMergeSaving] = useState(false);
 
   const currentYearMonth = useMemo(() => {
     const now = new Date();
@@ -630,6 +664,70 @@ export default function MailTrackingPage() {
     }
   }
 
+  function togglePendingRowSelection(row) {
+    if (row.cleaningProjectId) {
+      return;
+    }
+
+    setSelectedRowKeys((previous) => (
+      previous.includes(row.key)
+        ? previous.filter((key) => key !== row.key)
+        : [...previous, row.key]
+    ));
+  }
+
+  async function handleMergeMail() {
+    const scheduleIds = [...new Set(
+      selectedRowKeys.flatMap((rowKey) => {
+        const row = pendingRows.find((item) => item.key === rowKey);
+        return row ? collectScheduleIdsFromMailRow(row) : [];
+      }),
+    )];
+
+    if (scheduleIds.length < 2) {
+      setError('請至少勾選兩筆同一客戶的待寄項目');
+      return;
+    }
+
+    setMergeSaving(true);
+    setError('');
+    setMessage('');
+
+    try {
+      await api.mergeMailTracking({ schedule_ids: scheduleIds });
+      setSelectedRowKeys([]);
+      setMessage('已合併寄件，郵資僅計 28 元');
+      await loadTracking();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setMergeSaving(false);
+    }
+  }
+
+  async function handleUnmergeMail(row) {
+    const scheduleIds = collectScheduleIdsFromMailRow(row);
+
+    if (!scheduleIds.length) {
+      return;
+    }
+
+    setMergeSaving(true);
+    setError('');
+    setMessage('');
+
+    try {
+      await api.unmergeMailTracking({ schedule_ids: scheduleIds });
+      setSelectedRowKeys((previous) => previous.filter((key) => key !== row.key));
+      setMessage('已取消合併寄件');
+      await loadTracking();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setMergeSaving(false);
+    }
+  }
+
   const pendingRows = mergePendingMailRows(data?.pending?.schedules, data?.pending?.reports);
 
   const sentThisMonthRows = mergeHistoryRows(data?.sent_this_month?.schedules, data?.sent_this_month?.reports);
@@ -640,7 +738,7 @@ export default function MailTrackingPage() {
         <div className="card-header">
           <div>
             <h2 className="card-title">發票／收據寄信追蹤</h2>
-            <p className="hint">郵寄、發票、收據項目會出現在此；同天同客戶（同電話）多址仍只計 28 元郵資。預開／延後發票會置頂顯示。</p>
+            <p className="hint">郵寄、發票、收據項目會出現在此；同天同客戶（同電話）多址仍只計 28 元郵資。不同天同一客戶可勾選後「合併寄件」，也只計一次 28 元。</p>
           </div>
           <button type="button" className="btn btn-secondary btn-sm" onClick={loadTracking} disabled={loading}>
             重新整理
@@ -708,13 +806,30 @@ export default function MailTrackingPage() {
       {data && (
         <>
           <section className="card table-card">
-            <h3 className="section-label mail-tracking-section-title">待寄清單</h3>
+            <div className="card-header">
+              <div>
+                <h3 className="section-label mail-tracking-section-title">待寄清單</h3>
+                <p className="hint">勾選多筆同一客戶（同電話）後，可合併成一次寄出。</p>
+              </div>
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                disabled={mergeSaving || selectedRowKeys.length < 2}
+                onClick={handleMergeMail}
+              >
+                {mergeSaving ? '處理中…' : `合併寄件（已選 ${selectedRowKeys.length} 筆）`}
+              </button>
+            </div>
             <MailTrackingTable
               rows={pendingRows}
               emptyText="目前沒有待處理項目。開單時請勾選「郵寄」、「發票」或「收據」。"
               showTrackingNumber
+              selectable
+              selectedKeys={selectedRowKeys}
+              onToggleRow={togglePendingRowSelection}
               onEdit={(row) => openEdit(row, false)}
               onDelete={handleDeleteRow}
+              onUnmerge={handleUnmergeMail}
             />
           </section>
 

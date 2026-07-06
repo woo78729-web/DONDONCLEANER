@@ -175,7 +175,7 @@ class MonthlyAccounting
                     ->orWhere('needs_receipt', true);
             })
             ->each(function (DailySchedule $schedule) use (&$keys) {
-                $keys[MailRecipientSupport::customerPostageKey($schedule)] = true;
+                $keys[MailMergeSupport::accountingPostageKey($schedule)] = true;
             });
 
         DailyReport::query()
@@ -192,7 +192,7 @@ class MonthlyAccounting
                 $schedule = $report->dailySchedule;
 
                 if ($schedule) {
-                    $keys[MailRecipientSupport::customerPostageKey($schedule)] = true;
+                    $keys[MailMergeSupport::accountingPostageKey($schedule)] = true;
                 }
             });
 
@@ -601,7 +601,7 @@ class MonthlyAccounting
         $grossProfit = $netFromEmployees - $monthlyExpenseTotal;
         $profitShareHalf = (int) round($grossProfit / 2);
         $ataiShare = $profitShareHalf;
-        $hongyiShare = $profitShareHalf - $companyInboundExpected;
+        $hongyiShare = $profitShareHalf - $companyInboundExpected + $invoiceTaxCost;
         $ataiNetBalance = $ataiShare - $ataiAdvances;
 
         return [
@@ -660,12 +660,13 @@ class MonthlyAccounting
             'inter_partner' => [
                 'profit_share_half' => $profitShareHalf,
                 'customer_remittance_in_account' => $companyInboundExpected,
+                'invoice_tax_company_advance' => $invoiceTaxCost,
                 'settlement_amount' => abs($interPartnerSettlement),
                 'direction' => $interPartnerSettlement >= 0 ? 'dongdong_to_hongyi' : 'hongyi_to_dongdong',
                 'direction_label' => $interPartnerSettlement >= 0
                     ? '東東應補給宏逸'
                     : '宏逸應退東東',
-                'formula_hint' => '每人分潤 − 發票帳客戶匯款；正數表示東東補差額，負數表示宏逸退還東東',
+                'formula_hint' => '每人分潤 − 發票帳客戶匯款 + 阿泰代墊發票稅8%；正數表示東東補差額，負數表示宏逸退還東東',
             ],
             'atai' => [
                 'account_label' => '東東公司帳（阿泰代管）',

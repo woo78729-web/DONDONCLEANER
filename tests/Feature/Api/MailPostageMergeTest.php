@@ -267,4 +267,77 @@ class MailPostageMergeTest extends TestCase
         $this->assertSame(28, $firstPayload['temporary_postage']);
         $this->assertSame(0, $secondPayload['temporary_postage']);
     }
+
+    public function test_cross_day_mail_merge_only_charges_postage_once(): void
+    {
+        $admin = User::query()->create([
+            'account' => 'admin-merge',
+            'password' => Hash::make('password123'),
+            'name' => '管理員',
+            'role' => 'admin',
+            'is_active' => true,
+        ]);
+
+        $employee = User::query()->create([
+            'account' => 'emp-merge',
+            'password' => Hash::make('password123'),
+            'name' => '師傅',
+            'role' => 'employee',
+            'is_active' => true,
+            'rules_accepted_at' => now(),
+            'must_change_password' => false,
+        ]);
+
+        $firstSchedule = DailySchedule::query()->create($this->scheduleAttributes([
+            'user_id' => $employee->id,
+            'work_date' => now()->subDay()->toDateString(),
+            'customer_phone' => '0911222333',
+            'ac_units' => 2,
+            'pricing_lines' => [['ac_units' => 2, 'unit_price' => 1500]],
+            'cleaning_price' => 3000,
+            'task_details' => '2台1500=3000',
+            'needs_invoice' => true,
+        ]));
+
+        $secondSchedule = DailySchedule::query()->create($this->scheduleAttributes([
+            'user_id' => $employee->id,
+            'work_date' => now()->toDateString(),
+            'customer_phone' => '0911222333',
+            'ac_units' => 2,
+            'pricing_lines' => [['ac_units' => 2, 'unit_price' => 1500]],
+            'cleaning_price' => 3000,
+            'task_details' => '2台1500=3000',
+            'needs_invoice' => true,
+        ]));
+
+        EmployeeReportSupport::createFromSchedule($firstSchedule, [
+            'completed_units' => 2,
+            'needs_invoice_and_mail' => true,
+            'collected_amount' => 3000,
+        ]);
+
+        EmployeeReportSupport::createFromSchedule($secondSchedule, [
+            'completed_units' => 2,
+            'needs_invoice_and_mail' => true,
+            'collected_amount' => 3000,
+        ]);
+
+        Sanctum::actingAs($admin);
+
+        $this->postJson('/api/admin/mail-tracking/merge', [
+            'schedule_ids' => [$firstSchedule->id, $secondSchedule->id],
+        ])->assertOk();
+
+        $firstSchedule->refresh();
+        $secondSchedule->refresh();
+
+        $this->assertNotNull($firstSchedule->mail_merge_group_id);
+        $this->assertSame($firstSchedule->mail_merge_group_id, $secondSchedule->mail_merge_group_id);
+
+        $firstReport = $firstSchedule->dailyReport()->firstOrFail();
+        $secondReport = $secondSchedule->dailyReport()->firstOrFail();
+
+        $this->assertSame(28, (int) $firstReport->temporary_postage);
+        $this->assertSame(0, (int) $secondReport->temporary_postage);
+    }
 }

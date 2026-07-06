@@ -32,6 +32,10 @@ export function mailRecipientKeyFromRow(row) {
     return `project-${projectId}`;
   }
 
+  if (row.mailMergeGroupId || mailMergeGroupIdFromRow(row)) {
+    return `mail-merge-${row.mailMergeGroupId || mailMergeGroupIdFromRow(row)}`;
+  }
+
   if (row.kind === 'schedule') {
     return `schedule-${row.source.id}`;
   }
@@ -91,6 +95,91 @@ function mergeProjectMailRows(projectId, rows) {
     type: primary.type,
     status: sortedRows.every((row) => row.status === '已寄件完成') ? '已寄件完成' : '待處理',
   };
+}
+
+function mailMergeGroupIdFromRow(row) {
+  if (row.cleaningProjectId) {
+    return null;
+  }
+
+  if (row.kind === 'schedule') {
+    return row.source?.mail_merge_group_id || null;
+  }
+
+  return row.source?.daily_schedule?.mail_merge_group_id || null;
+}
+
+function mergeMailGroupRows(groupId, rows) {
+  const sortedRows = [...rows].sort(compareMailRows);
+  const primary = sortedRows[0];
+  const dates = sortedRows
+    .map((row) => formatDateOnly(row.date))
+    .filter(Boolean)
+    .sort();
+  const earliestDate = dates[0] || primary.date;
+  const latestDate = dates[dates.length - 1] || primary.date;
+
+  return {
+    ...primary,
+    key: `mail-merge-${groupId}`,
+    mailMergeGroupId: groupId,
+    members: sortedRows.map(memberFromRow),
+    date: earliestDate,
+    dateEnd: earliestDate !== latestDate ? latestDate : null,
+    employee: [...new Set(sortedRows.map((row) => row.employee).filter((name) => name && name !== '-'))].join('、') || primary.employee,
+    type: sortedRows.map((row) => row.type).filter(Boolean).join('、') || primary.type,
+    status: sortedRows.every((row) => row.status === '已寄件完成') ? '已寄件完成' : '待處理',
+  };
+}
+
+function groupRowsByMailMergeGroup(rows) {
+  const standalone = [];
+  const mergeGroups = new Map();
+
+  for (const row of rows) {
+    const groupId = row.mailMergeGroupId || mailMergeGroupIdFromRow(row);
+
+    if (!groupId) {
+      standalone.push(row.members ? row : { ...row, members: [memberFromRow(row)] });
+      continue;
+    }
+
+    if (!mergeGroups.has(groupId)) {
+      mergeGroups.set(groupId, []);
+    }
+
+    mergeGroups.get(groupId).push(row);
+  }
+
+  const merged = [...standalone];
+
+  for (const [groupId, groupRows] of mergeGroups) {
+    const expandedRows = groupRows.flatMap((row) => (
+      row.members?.length
+        ? row.members.map((member) => mapMemberToDisplayRow(row, member))
+        : [row]
+    ));
+
+    merged.push(
+      expandedRows.length === 1
+        ? { ...expandedRows[0], members: [memberFromRow(expandedRows[0])] }
+        : mergeMailGroupRows(groupId, expandedRows),
+    );
+  }
+
+  return merged.sort(compareMailRows);
+}
+
+function mapMemberToDisplayRow(parentRow, member) {
+  if (member.kind === 'schedule') {
+    return mapScheduleRow(member.source);
+  }
+
+  return mapReportRow(member.source);
+}
+
+function groupAllMailRows(rows) {
+  return groupRowsByMailMergeGroup(groupRowsByCleaningProject(rows));
 }
 
 function groupRowsByCleaningProject(rows) {
@@ -195,7 +284,7 @@ export function mergePendingMailRows(schedules, reports) {
     ...(reports || []).map((report) => mapReportRow(report)),
   ];
 
-  return groupRowsByCleaningProject(rows);
+  return groupAllMailRows(rows);
 }
 
 function scheduleTypeLabel(schedule) {
@@ -261,10 +350,14 @@ export function mergeHistoryRows(schedules, reports) {
     return true;
   });
 
-  return groupRowsByCleaningProject([
+  return groupAllMailRows([
     ...filteredSchedules,
     ...reportRows,
   ]).sort((left, right) => String(right.sentAt || '').localeCompare(String(left.sentAt || '')));
+}
+
+export function mailRowIsMerged(row) {
+  return Boolean(row.cleaningProjectId || row.mailMergeGroupId || (row.members?.length || 0) > 1);
 }
 
 export function collectScheduleIdsFromMailRow(row) {

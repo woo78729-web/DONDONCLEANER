@@ -36,6 +36,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
     'invoice_tax_id',
     'invoice_title',
     'mail_tracking_number',
+    'mail_merge_group_id',
     'pricing_lines',
     'task_details',
     'notes',

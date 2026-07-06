@@ -30,7 +30,7 @@ class MonthlyAccountingSettlementTest extends TestCase
         $this->assertSame(500, $totals['atai_advance_total']);
         $this->assertSame(9250, $totals['atai_net_balance']);
         $this->assertSame(19500, $totals['gross_profit']);
-        $this->assertSame(9750, $totals['hongyi_payment']);
+        $this->assertSame(10250, $totals['hongyi_payment']);
         $this->assertSame(9750, $totals['atai_retained']);
         $this->assertSame(9750, $totals['profit_share_half']);
     }

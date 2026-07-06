@@ -10,9 +10,14 @@ class MailRecipientSupport
     public static function customerPostageKey(DailySchedule $schedule): string
     {
         $date = $schedule->work_date?->format('Y-m-d') ?? '';
-        $phone = self::normalizePhone($schedule->mail_phone ?: $schedule->customer_phone);
+        $phone = self::normalizedCustomerPhone($schedule);
 
         return implode('|', [$date, $phone]);
+    }
+
+    public static function normalizedCustomerPhone(DailySchedule $schedule): string
+    {
+        return self::normalizePhone($schedule->mail_phone ?: $schedule->customer_phone);
     }
 
     public static function recipientKey(DailySchedule $schedule): string
@@ -39,6 +44,18 @@ class MailRecipientSupport
 
     public static function hasPostageChargedForRecipient(DailySchedule $schedule, ?int $excludeReportId = null): bool
     {
+        if ($schedule->mail_merge_group_id) {
+            $chargedInGroup = DailyReport::query()
+                ->where('temporary_postage', '>', 0)
+                ->when($excludeReportId, fn ($query) => $query->where('id', '!=', $excludeReportId))
+                ->whereHas('dailySchedule', fn ($query) => $query->where('mail_merge_group_id', $schedule->mail_merge_group_id))
+                ->exists();
+
+            if ($chargedInGroup) {
+                return true;
+            }
+        }
+
         $targetKey = self::customerPostageKey($schedule);
         $workDate = $schedule->work_date?->format('Y-m-d');
 
