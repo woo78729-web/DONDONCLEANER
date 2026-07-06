@@ -435,17 +435,20 @@ a {
   }
 
   .data-table thead th,
-  .data-table tbody td {
+  .data-table tbody td,
+  .data-table tfoot td {
     padding: 14px 22px;
   }
 
   .data-table thead th:first-child,
-  .data-table tbody td:first-child {
+  .data-table tbody td:first-child,
+  .data-table tfoot td:first-child {
     padding-left: 26px;
   }
 
   .data-table thead th:last-child,
-  .data-table tbody td:last-child {
+  .data-table tbody td:last-child,
+  .data-table tfoot td:last-child {
     padding-right: 26px;
   }
 
@@ -1009,27 +1012,89 @@ select option {
   font-size: 1.2rem;
 }
 
+.data-table.accounting-performance-table {
+  table-layout: fixed;
+  width: max-content;
+  min-width: 100%;
+}
+
+.data-table.accounting-performance-table thead th {
+  position: static;
+}
+
 .accounting-performance-table th,
 .accounting-performance-table td {
   min-width: 0;
   white-space: nowrap;
 }
 
+.accounting-performance-table col.col-employee {
+  width: 88px;
+}
+
+.accounting-performance-table col.col-units {
+  width: 54px;
+}
+
+.accounting-performance-table col.col-total-units {
+  width: 62px;
+}
+
+.accounting-performance-table col.col-money {
+  width: 96px;
+}
+
 .accounting-performance-table th.num,
 .accounting-performance-table td.num {
   text-align: right;
-  width: 1%;
 }
 
-.accounting-performance-table thead th:first-child,
-.accounting-performance-table tbody td:first-child {
-  min-width: 72px;
+.accounting-performance-table tfoot td {
+  padding: 12px 14px;
+  border-top: 1px solid rgba(255, 140, 0, 0.28);
+  background: rgba(255, 140, 0, 0.08);
+  vertical-align: middle;
+}
+
+.accounting-performance-table tfoot td.num {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  color: var(--brand-800);
+}
+
+.data-table.accounting-employee-due-table {
+  table-layout: fixed;
+}
+
+.accounting-employee-due-table th,
+.accounting-employee-due-table td {
+  min-width: 0;
+}
+
+.accounting-employee-due-table thead th:first-child,
+.accounting-employee-due-table tbody td:first-child,
+.accounting-employee-due-table tfoot td:first-child {
+  width: 88px;
 }
 
 .accounting-employee-due-table th.num,
 .accounting-employee-due-table td.num {
   text-align: right;
   white-space: nowrap;
+  width: 1%;
+}
+
+.accounting-employee-due-table tfoot td {
+  padding: 12px 14px;
+  border-top: 1px solid rgba(255, 140, 0, 0.28);
+  background: rgba(255, 140, 0, 0.08);
+  vertical-align: middle;
+}
+
+.accounting-employee-due-table tfoot td.num {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  color: var(--brand-800);
 }
 
 .field-checkbox {
@@ -2004,6 +2069,55 @@ select option {
 
 .schedule-popover__list--compact {
   gap: 14px;
+}
+
+.schedule-popover__value--emphasis {
+  color: var(--brand-800);
+  font-weight: 700;
+}
+
+.schedule-popover__section-title {
+  margin: 16px 0 8px;
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--brand-800);
+}
+
+.schedule-popover__pricing-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.schedule-popover__pricing-item {
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(255, 140, 0, 0.24);
+  background: rgba(255, 140, 0, 0.08);
+}
+
+.schedule-popover__pricing-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.schedule-popover__pricing-amount {
+  font-weight: 800;
+  color: var(--brand-800);
+  white-space: nowrap;
+}
+
+.schedule-popover__mail-hint {
+  margin: 12px 0 0;
+}
+
+.service-address-row__note {
+  margin-top: 4px;
 }
 
 .schedule-day-block__header {

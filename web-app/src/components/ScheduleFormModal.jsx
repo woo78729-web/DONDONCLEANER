@@ -575,6 +575,17 @@ export function ScheduleFormModal({
                       <span>同總聯絡人</span>
                     </label>
                   </div>
+
+                  <label className="field service-address-row__note" style={{ gridColumn: '1 / -1' }}>
+                    <span className="field-label">站點備註（選填）</span>
+                    <input
+                      className="field-control"
+                      value={row.station_note || ''}
+                      onChange={(e) => updateServiceAddress(row.id, { station_note: e.target.value })}
+                      placeholder="例：此站收 3150 元，需開三聯單"
+                      maxLength={255}
+                    />
+                  </label>
                 </div>
               ))}
             </div>

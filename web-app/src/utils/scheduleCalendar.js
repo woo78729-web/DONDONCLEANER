@@ -122,6 +122,7 @@ export function createServiceAddress(overrides = {}) {
     address: '',
     phone: '',
     same_as_customer: true,
+    station_note: '',
     ...overrides,
   };
 }
@@ -275,6 +276,103 @@ export function parseMultiAddressNote(notes) {
   };
 }
 
+export function parseStationNote(notes) {
+  const text = String(notes || '');
+  const match = text.match(/\[站備\]\s*([^\n\[]+)/);
+
+  return match ? match[1].trim() : '';
+}
+
+export function stripInternalScheduleNotes(notes) {
+  return String(notes || '')
+    .replace(/\[多址\s+\d+\/\d+(?:·共\d+離\d+)?\]/g, '')
+    .replace(/\[站備\]\s*[^\n\[]+/g, '')
+    .trim();
+}
+
+export function composeScheduleNotes(baseNotes, { stationNote = '' } = {}) {
+  const base = String(baseNotes || '')
+    .replace(/\[站備\]\s*[^\n\[]+/g, '')
+    .trim();
+  const note = String(stationNote || '').trim();
+  const parts = [];
+
+  if (base) {
+    parts.push(base);
+  }
+
+  if (note) {
+    parts.push(`[站備] ${note}`);
+  }
+
+  return parts.join('\n') || null;
+}
+
+function getPricingLineSummaryLabel(line) {
+  if (!lineHasInvoice(line)) {
+    return '未稅';
+  }
+
+  if (line.invoice_type === INVOICE_TYPE_TRIPLICATE) {
+    return line.charge_customer_tax !== false ? '三聯含稅' : '三聯';
+  }
+
+  return line.charge_customer_tax !== false ? '含稅' : '二聯';
+}
+
+export function buildPricingLinesSummaryTag(schedule) {
+  const lines = normalizePricingLines(
+    schedule?.pricing_lines,
+    schedule?.ac_units ?? 1,
+    inferUnitPrice(schedule),
+    schedule,
+  );
+
+  if (lines.length <= 1) {
+    return '';
+  }
+
+  const multiplePrices = new Set(lines.map((line) => String(line.unit_price))).size > 1;
+  const segments = lines.map((line) => {
+    const units = Number(line.ac_units) || 0;
+    const taxLabel = getPricingLineSummaryLabel(line);
+
+    if (multiplePrices) {
+      return `${units}台${line.unit_price}${taxLabel}`;
+    }
+
+    return `${units}台${taxLabel}`;
+  });
+
+  return `[明細: ${segments.join(' / ')}]`;
+}
+
+export function getSchedulePricingLineDetails(schedule) {
+  const lines = normalizePricingLines(
+    schedule?.pricing_lines,
+    schedule?.ac_units ?? 1,
+    inferUnitPrice(schedule),
+    schedule,
+  );
+
+  return lines.map((line, index) => {
+    const totals = calculatePricingLineTotals(line);
+    const invoiceOption = INVOICE_TYPE_OPTIONS.find((option) => option.value === line.invoice_type);
+
+    return {
+      index: index + 1,
+      units: Number(line.ac_units) || 0,
+      unitPrice: Number(line.unit_price) || 0,
+      customerAmount: totals.customerAmount,
+      invoiceTypeLabel: invoiceOption?.label || '不開',
+      invoiceTitle: String(line.invoice_title || '').trim(),
+      invoiceTaxId: String(line.invoice_tax_id || '').trim(),
+      summaryLabel: getPricingLineSummaryLabel(line),
+      chargeCustomerTax: totals.chargeCustomerTax,
+    };
+  });
+}
+
 export function normalizeServiceAddresses(form) {
   if (Array.isArray(form.service_addresses) && form.service_addresses.length > 0) {
     return form.service_addresses.map((row, index) => ({
@@ -283,6 +381,7 @@ export function normalizeServiceAddresses(form) {
       address: String(row.address ?? '').trim(),
       phone: String(row.phone ?? '').trim(),
       same_as_customer: row.same_as_customer !== false,
+      station_note: String(row.station_note ?? '').trim(),
     }));
   }
 
@@ -807,6 +906,11 @@ export function buildScheduleCardLine(schedule, { hidePrice = false } = {}) {
 
   if (unitsPrice) {
     parts.push(unitsPrice);
+  }
+
+  const pricingSummary = buildPricingLinesSummaryTag(schedule);
+  if (pricingSummary) {
+    parts.push(pricingSummary);
   }
 
   return parts.join(' ');
@@ -1436,6 +1540,7 @@ export function scheduleToForm(schedule) {
       address: schedule.customer_address ?? '',
       phone: schedule.customer_phone ?? '',
       same_as_customer: true,
+      station_note: parseStationNote(schedule.notes),
     })],
     needs_mail: Boolean(schedule.needs_mail),
     needs_receipt: Boolean(schedule.needs_receipt),
@@ -1460,7 +1565,7 @@ export function scheduleToForm(schedule) {
     invoice_tax_id: schedule.invoice_tax_id ?? '',
     invoice_title: schedule.invoice_title ?? '',
     hongyi_fee: String(schedule.hongyi_fee ?? 0),
-    notes: schedule.notes || '',
+    notes: stripInternalScheduleNotes(schedule.notes),
   });
 }
 
@@ -1922,14 +2027,40 @@ export function buildSchedulePayload(form, { original = null, userRole = 'admin'
     invoice_title: needsInvoice
       ? (triplicateLine?.invoice_title?.trim() || form.invoice_title?.trim() || null)
       : null,
-    notes: form.notes?.trim() || null,
+    notes: composeScheduleNotes(form.notes, {
+      stationNote: primaryAddress?.station_note,
+    }),
   };
 
   if (form.multi_address_part) {
     payload.multi_address_part = form.multi_address_part;
   }
 
-  return payload;
+  return enforceMailTrackingPayload(payload, form);
+}
+
+function enforceMailTrackingPayload(payload, form) {
+  const hasMailable = Boolean(form.needs_receipt)
+    || hasInvoicedPricingLine(form.pricing_lines)
+    || Boolean(form.needs_invoice);
+
+  if (!form.needs_mail || !hasMailable) {
+    return {
+      ...payload,
+      needs_mail: false,
+      mail_recipient: null,
+      mail_phone: null,
+      mail_address: null,
+    };
+  }
+
+  return {
+    ...payload,
+    needs_mail: true,
+    mail_recipient: payload.mail_recipient || form.mail_recipient?.trim() || payload.customer_name,
+    mail_phone: payload.mail_phone || form.mail_phone?.trim() || payload.customer_phone,
+    mail_address: payload.mail_address || form.mail_address?.trim() || payload.customer_address,
+  };
 }
 
 export function buildSchedulePayloads(form, options = {}) {
@@ -1993,10 +2124,13 @@ export function buildSchedulePayloads(form, options = {}) {
         group_units: totalUnits,
         group_price: groupPrice,
       },
-      notes: appendMultiAddressNote(form.notes, index, addresses.length, {
-        groupUnits: totalUnits,
-        groupPrice: groupPrice,
-      }),
+      notes: composeScheduleNotes(
+        appendMultiAddressNote(form.notes, index, addresses.length, {
+          groupUnits: totalUnits,
+          groupPrice: groupPrice,
+        }),
+        { stationNote: row.station_note },
+      ),
     }, options));
 
     currentStart = endTime;

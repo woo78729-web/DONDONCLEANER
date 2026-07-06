@@ -449,6 +449,14 @@ export default function AdminAccountingPage() {
             </div>
             <div className="table-wrap">
               <table className="data-table accounting-performance-table">
+                <colgroup>
+                  <col className="col-employee" />
+                  <col className="col-units" />
+                  <col className="col-units" />
+                  <col className="col-units" />
+                  <col className="col-total-units" />
+                  <col className="col-money" span={7} />
+                </colgroup>
                 <thead>
                   <tr>
                     <th>員工</th>
