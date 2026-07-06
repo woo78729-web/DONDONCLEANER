@@ -55,6 +55,52 @@ function memberFromRow(row) {
   return { kind: row.kind, source: row.source };
 }
 
+function resolveMailBilling(schedule, report = null) {
+  if (!schedule && !report) {
+    return { units: 0, amount: 0 };
+  }
+
+  const units = Number(
+    report?.completed_units
+    ?? schedule?.ac_units
+    ?? 0,
+  );
+
+  let amount = 0;
+
+  if (report?.collected_amount != null && report.collected_amount !== '') {
+    amount = Number(report.collected_amount);
+  } else if (schedule?.cleaning_price != null && schedule.cleaning_price !== '') {
+    amount = Number(schedule.cleaning_price);
+  }
+
+  return {
+    units: Number.isFinite(units) ? units : 0,
+    amount: Number.isFinite(amount) ? amount : 0,
+  };
+}
+
+function billingFromRow(row) {
+  if (row.kind === 'schedule') {
+    const report = row.source?.daily_report ?? row.source?.dailyReport;
+
+    return resolveMailBilling(row.source, report);
+  }
+
+  return resolveMailBilling(row.source?.daily_schedule, row.source);
+}
+
+function sumBillingFromRows(rows) {
+  return rows.reduce((total, row) => {
+    const billing = billingFromRow(row);
+
+    return {
+      units: total.units + billing.units,
+      amount: total.amount + billing.amount,
+    };
+  }, { units: 0, amount: 0 });
+}
+
 function compareMailRows(left, right) {
   const leftPlanned = formatDateOnly(left.plannedDate);
   const rightPlanned = formatDateOnly(right.plannedDate);
@@ -84,11 +130,15 @@ function mergeProjectMailRows(projectId, rows) {
   const earliestDate = dates[0] || primary.date;
   const latestDate = dates[dates.length - 1] || primary.date;
 
+  const billing = sumBillingFromRows(sortedRows);
+
   return {
     ...primary,
     key: `project-${projectId}`,
     cleaningProjectId: projectId,
     members: sortedRows.map(memberFromRow),
+    billingUnits: billing.units,
+    billingAmount: billing.amount,
     date: earliestDate,
     dateEnd: earliestDate !== latestDate ? latestDate : null,
     employee: [...new Set(sortedRows.map((row) => row.employee).filter((name) => name && name !== '-'))].join('、') || primary.employee,
@@ -119,11 +169,15 @@ function mergeMailGroupRows(groupId, rows) {
   const earliestDate = dates[0] || primary.date;
   const latestDate = dates[dates.length - 1] || primary.date;
 
+  const billing = sumBillingFromRows(sortedRows);
+
   return {
     ...primary,
     key: `mail-merge-${groupId}`,
     mailMergeGroupId: groupId,
     members: sortedRows.map(memberFromRow),
+    billingUnits: billing.units,
+    billingAmount: billing.amount,
     date: earliestDate,
     dateEnd: earliestDate !== latestDate ? latestDate : null,
     employee: [...new Set(sortedRows.map((row) => row.employee).filter((name) => name && name !== '-'))].join('、') || primary.employee,
@@ -226,6 +280,7 @@ function scheduleHasPendingReportMail(schedule) {
 
 function mapScheduleRow(schedule) {
   const sourceOption = getCustomerSourceOption(schedule.customer_source);
+  const billing = billingFromRow({ kind: 'schedule', source: schedule });
 
   return {
     key: `schedule-${schedule.id}`,
@@ -239,6 +294,8 @@ function mapScheduleRow(schedule) {
     employee: schedule.user?.name || '-',
     customer: schedule.customer_name,
     type: resolveScheduleDocumentType(schedule) || scheduleTypeLabel(schedule),
+    billingUnits: billing.units,
+    billingAmount: billing.amount,
     recipient: schedule.mail_recipient,
     invoiceTitle: schedule.invoice_title,
     taxId: schedule.invoice_tax_id,
@@ -253,6 +310,7 @@ function mapScheduleRow(schedule) {
 function mapReportRow(report) {
   const schedule = report?.daily_schedule;
   const sourceOption = getCustomerSourceOption(schedule?.customer_source);
+  const billing = billingFromRow({ kind: 'report', source: report });
 
   return {
     key: `report-${report.id}`,
@@ -266,6 +324,8 @@ function mapReportRow(report) {
     employee: schedule?.user?.name || '-',
     customer: schedule?.customer_name || '-',
     type: reportTypeLabel(report),
+    billingUnits: billing.units,
+    billingAmount: billing.amount,
     recipient: schedule?.mail_recipient,
     invoiceTitle: schedule?.invoice_title,
     taxId: schedule?.invoice_tax_id,
@@ -304,11 +364,13 @@ function scheduleTypeLabel(schedule) {
 }
 
 function reportTypeLabel(report) {
-  if (report?.needs_invoice_and_mail) {
+  const schedule = report?.daily_schedule;
+
+  if (report?.needs_invoice_and_mail || schedule?.needs_invoice) {
     return '發票寄信';
   }
 
-  if (report?.needs_receipt_and_mail) {
+  if (report?.needs_receipt_and_mail || schedule?.needs_receipt || schedule?.needs_mail) {
     return '收據寄信';
   }
 

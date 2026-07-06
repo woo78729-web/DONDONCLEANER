@@ -239,6 +239,38 @@ class MailTrackingApiTest extends TestCase
             ->assertStatus(422);
     }
 
+    public function test_mail_tracking_schedule_payload_includes_billing_fields(): void
+    {
+        Sanctum::actingAs($this->admin);
+
+        $employee = User::query()->create([
+            'account' => 'emp-bill',
+            'password' => Hash::make('password123'),
+            'name' => '師傅',
+            'role' => 'employee',
+            'is_active' => true,
+            'rules_accepted_at' => now(),
+            'must_change_password' => false,
+        ]);
+
+        DailySchedule::query()->create($this->scheduleAttributes([
+            'user_id' => $employee->id,
+            'work_date' => now()->toDateString(),
+            'ac_units' => 7,
+            'unit_price' => 1000,
+            'pricing_lines' => [['ac_units' => 7, 'unit_price' => 1000, 'is_taxable' => true]],
+            'cleaning_price' => 7350,
+            'task_details' => '7台1000(含稅)=7350',
+            'needs_invoice' => true,
+            'invoice_charge_customer_tax' => true,
+        ]));
+
+        $this->getJson('/api/admin/mail-tracking')
+            ->assertOk()
+            ->assertJsonPath('data.pending.schedules.0.ac_units', 7)
+            ->assertJsonPath('data.pending.schedules.0.cleaning_price', 7350);
+    }
+
     public function test_admin_can_update_tracking_number_on_sent_schedule(): void
     {
         Sanctum::actingAs($this->admin);

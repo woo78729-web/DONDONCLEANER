@@ -557,6 +557,8 @@ class MaintenanceRecordController extends Controller
             'invoice_title' => $schedule->invoice_title,
             'invoice_planned_date' => $schedule->invoice_planned_date?->format('Y-m-d'),
             'invoice_charge_customer_tax' => (bool) $schedule->invoice_charge_customer_tax,
+            'ac_units' => (int) $schedule->ac_units,
+            'cleaning_price' => (int) $schedule->cleaning_price,
             'mail_tracking_number' => $schedule->mail_tracking_number,
             'mail_merge_group_id' => $schedule->mail_merge_group_id,
             'needs_mail' => (bool) $schedule->needs_mail,
@@ -582,6 +584,8 @@ class MaintenanceRecordController extends Controller
             'invoice_sent_at' => $report->invoice_sent_at?->toDateTimeString(),
             'needs_invoice_and_mail' => (bool) $report->needs_invoice_and_mail,
             'needs_receipt_and_mail' => (bool) $report->needs_receipt_and_mail,
+            'completed_units' => (int) $report->completed_units,
+            'collected_amount' => (int) $report->collected_amount,
             'daily_schedule' => $schedule ? [
                 'id' => $schedule->id,
                 'cleaning_project_id' => $schedule->cleaning_project_id,
@@ -604,6 +608,8 @@ class MaintenanceRecordController extends Controller
                 'needs_receipt' => (bool) $schedule->needs_receipt,
                 'invoice_planned_date' => $schedule->invoice_planned_date?->format('Y-m-d'),
                 'invoice_charge_customer_tax' => (bool) $schedule->invoice_charge_customer_tax,
+                'ac_units' => (int) $schedule->ac_units,
+                'cleaning_price' => (int) $schedule->cleaning_price,
                 'user' => $schedule->user,
             ] : null,
         ];

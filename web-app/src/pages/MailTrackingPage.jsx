@@ -18,22 +18,26 @@ function formatSentAt(value) {
   return value.replace('T', ' ').slice(0, 16);
 }
 
+function formatMoney(value) {
+  return Number(value || 0).toLocaleString('zh-TW');
+}
+
 function scheduleTypeLabel(schedule) {
   return resolveScheduleDocumentType(schedule) || '寄件';
 }
 
 function reportTypeLabel(report) {
-  const labels = [];
+  const schedule = report?.daily_schedule;
 
-  if (report?.needs_invoice_and_mail) {
-    labels.push('發票寄信');
+  if (report?.needs_invoice_and_mail || schedule?.needs_invoice) {
+    return '發票寄信';
   }
 
-  if (report?.needs_receipt_and_mail) {
-    labels.push('收據寄信');
+  if (report?.needs_receipt_and_mail || schedule?.needs_receipt || schedule?.needs_mail) {
+    return '收據寄信';
   }
 
-  return labels.join('、') || '寄件';
+  return '寄件';
 }
 
 const emptyManualPostageDraft = () => ({
@@ -322,6 +326,8 @@ function MailTrackingTable({
             <th>電話</th>
             <th>地址</th>
             <th>類型</th>
+            <th className="num">台數</th>
+            <th className="num">開立金額</th>
             <th>抬頭／統編</th>
             <th>處理狀況</th>
             {showTrackingNumber && <th>郵件號碼</th>}
@@ -381,6 +387,8 @@ function MailTrackingTable({
               <td>{row.phone || '-'}</td>
               <td className="mail-tracking-address">{row.address || '-'}</td>
               <td>{row.type}</td>
+              <td className="num">{row.billingUnits ? `${row.billingUnits} 台` : '-'}</td>
+              <td className="num">{row.billingAmount ? `${formatMoney(row.billingAmount)} 元` : '-'}</td>
               <td>
                 <div className="mail-tracking-contact">
                   <span>{row.invoiceTitle || '-'}</span>

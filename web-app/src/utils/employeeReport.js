@@ -149,12 +149,23 @@ export function buildReportPayload(schedule, draft) {
   return payload;
 }
 
+export function defaultMailFlagsFromSchedule(schedule) {
+  const needsInvoice = Boolean(schedule?.needs_invoice);
+  const needsReceipt = Boolean(schedule?.needs_receipt);
+  const needsMail = Boolean(schedule?.needs_mail);
+
+  return {
+    needs_invoice_and_mail: needsInvoice,
+    needs_receipt_and_mail: needsReceipt || (needsMail && !needsInvoice),
+  };
+}
+
 export function buildDefaultReportDraft(schedule) {
+  const mailFlags = defaultMailFlagsFromSchedule(schedule);
   const calculated = calculateEmployeeReportDraft(schedule, {
     completed_units: schedule?.ac_units ?? 1,
     has_tax: Boolean(schedule?.needs_invoice),
-    needs_invoice_and_mail: false,
-    needs_receipt_and_mail: Boolean(schedule?.needs_mail),
+    ...mailFlags,
     paid_to_company: false,
   });
 
@@ -162,8 +173,7 @@ export function buildDefaultReportDraft(schedule) {
     completed_units: String(schedule?.ac_units ?? 1),
     skip_reason: '',
     has_tax: Boolean(schedule?.needs_invoice),
-    needs_invoice_and_mail: false,
-    needs_receipt_and_mail: Boolean(schedule?.needs_mail),
+    ...mailFlags,
     temporary_request: '',
     collected_amount: String(calculated.collectedAmount),
     paid_to_company: false,
