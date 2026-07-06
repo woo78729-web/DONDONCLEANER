@@ -258,11 +258,11 @@ class MonthlyAccounting
 
         if ($autoInvoiceTax > 0) {
             $entries[] = [
-                'partner' => self::PARTNER_ATAI,
-                'partner_label' => self::partnerLabel(self::PARTNER_ATAI),
+                'partner' => self::PARTNER_HONGYI,
+                'partner_label' => self::partnerLabel(self::PARTNER_HONGYI),
                 'label' => self::AUTO_INVOICE_TAX_LABEL,
                 'amount' => $autoInvoiceTax,
-                'notes' => '當月開發票案件自動帶入',
+                'notes' => '宏逸代墊發票稅，月底與阿泰軋差',
                 'auto' => true,
             ];
         }
@@ -342,6 +342,8 @@ class MonthlyAccounting
                     'company_inbound_expected' => 0,
                     'company_transfer' => 0,
                     'invoice_surcharge_due' => 0,
+                    'company_share_due' => 0,
+                    'remittance_company_share' => 0,
                     'invoice_tax_cost' => 0,
                     'net_collect_from_employee' => 0,
                     'payment_to_finance' => 0,
@@ -365,6 +367,8 @@ class MonthlyAccounting
             $byEmployee[$employeeId]['company_inbound_expected'] += $companyInboundExpected;
             $byEmployee[$employeeId]['company_transfer'] += $companyTransferConfirmed;
             $byEmployee[$employeeId]['invoice_surcharge_due'] += (int) $summary['invoice_surcharge_due'];
+            $byEmployee[$employeeId]['company_share_due'] += (int) $summary['company_share_due'];
+            $byEmployee[$employeeId]['remittance_company_share'] += (int) $summary['remittance_company_share'];
             $byEmployee[$employeeId]['invoice_tax_cost'] += (int) $report->report_invoice_tax_cost;
             $byEmployee[$employeeId]['travel_allowance'] += $travelAllowance;
             $byEmployee[$employeeId]['units_by_price'] = EmployeeRemittance::mergeTierUnitCounts(
@@ -387,6 +391,8 @@ class MonthlyAccounting
                 'company_inbound_expected' => $companyInboundExpected,
                 'company_transfer' => $companyTransferConfirmed,
                 'invoice_surcharge_due' => (int) $summary['invoice_surcharge_due'],
+                'company_share_due' => (int) $summary['company_share_due'],
+                'remittance_company_share' => (int) $summary['remittance_company_share'],
                 'remittance_status' => $report->companyRemittance?->status,
                 'remittance_status_label' => $report->companyRemittance
                     ? CompanyRemittanceSupport::statusLabel($report->companyRemittance->status)
@@ -427,6 +433,8 @@ class MonthlyAccounting
                     'company_inbound_expected' => 0,
                     'company_transfer' => 0,
                     'invoice_surcharge_due' => 0,
+                    'company_share_due' => 0,
+                    'remittance_company_share' => 0,
                     'invoice_tax_cost' => 0,
                     'net_collect_from_employee' => 0,
                     'payment_to_finance' => 0,
@@ -590,15 +598,19 @@ class MonthlyAccounting
         $netFromEmployees = $jobNetFromEmployees + $compensationDueToCompany;
         $companyTransferConfirmed = array_sum(array_column($employees, 'company_transfer'));
         $companyInboundExpected = array_sum(array_column($employees, 'company_inbound_expected'));
+        $companyShareTotal = (int) array_sum(array_column($employees, 'company_share_due'));
+        $invoiceSurchargeTotal = (int) array_sum(array_column($employees, 'invoice_surcharge_due'));
+        $remittanceCompanyShare = (int) array_sum(array_column($employees, 'remittance_company_share'));
         $invoiceTaxCost = $autoInvoiceTax;
         $fixedExpenseTotal = array_sum(array_column($fixedExpenses, 'amount'));
         $manualAtaiAdvances = (int) $entries->where('partner', self::PARTNER_ATAI)->sum('amount');
         $manualHongyiAdvances = (int) $entries->where('partner', self::PARTNER_HONGYI)->sum('amount');
-        $ataiAdvances = $manualAtaiAdvances + $autoInvoiceTax + $fixedExpenseTotal + $travelAllowanceTotal;
-        $hongyiAdvances = $manualHongyiAdvances;
+        $ataiAdvances = $manualAtaiAdvances + $fixedExpenseTotal + $travelAllowanceTotal;
+        $hongyiAdvances = $manualHongyiAdvances + $autoInvoiceTax;
         $advanceEntryTotal = $manualAtaiAdvances + $manualHongyiAdvances + $autoInvoiceTax + $travelAllowanceTotal;
         $monthlyExpenseTotal = $fixedExpenseTotal + $autoPostage + $advanceEntryTotal;
-        $grossProfit = $netFromEmployees - $monthlyExpenseTotal;
+        $operatingIncome = $companyShareTotal + $invoiceSurchargeTotal + $compensationDueToCompany;
+        $grossProfit = $operatingIncome - $monthlyExpenseTotal;
         $profitShareHalf = (int) round($grossProfit / 2);
         $ataiShare = $profitShareHalf;
         $hongyiShare = $profitShareHalf - $companyInboundExpected + $invoiceTaxCost;
@@ -612,6 +624,10 @@ class MonthlyAccounting
             'net_from_employees' => $netFromEmployees,
             'company_transfer' => $companyTransferConfirmed,
             'company_inbound_expected' => $companyInboundExpected,
+            'company_share_total' => $companyShareTotal,
+            'customer_invoice_surcharge_total' => $invoiceSurchargeTotal,
+            'remittance_company_share_total' => $remittanceCompanyShare,
+            'operating_income' => $operatingIncome,
             'profit_share_half' => $profitShareHalf,
             'invoice_tax_cost' => $invoiceTaxCost,
             'auto_postage' => $autoPostage,
@@ -652,6 +668,10 @@ class MonthlyAccounting
                 'net_from_employees_jobs' => $jobNetFromEmployees,
                 'compensation_due_to_company' => $compensationDue,
                 'net_from_employees' => (int) $totals['net_from_employees'],
+                'company_share_total' => (int) ($totals['company_share_total'] ?? 0),
+                'customer_invoice_surcharge_total' => (int) ($totals['customer_invoice_surcharge_total'] ?? 0),
+                'remittance_company_share_total' => (int) ($totals['remittance_company_share_total'] ?? 0),
+                'operating_income' => (int) ($totals['operating_income'] ?? 0),
                 'monthly_expense_total' => (int) $totals['monthly_expense_total'],
                 'gross_profit' => (int) $totals['gross_profit'],
                 'profit_share_half' => $profitShareHalf,
@@ -660,19 +680,18 @@ class MonthlyAccounting
             'inter_partner' => [
                 'profit_share_half' => $profitShareHalf,
                 'customer_remittance_in_account' => $companyInboundExpected,
-                'invoice_tax_company_advance' => $invoiceTaxCost,
+                'invoice_tax_hongyi_advance' => $invoiceTaxCost,
                 'settlement_amount' => abs($interPartnerSettlement),
                 'direction' => $interPartnerSettlement >= 0 ? 'dongdong_to_hongyi' : 'hongyi_to_dongdong',
                 'direction_label' => $interPartnerSettlement >= 0
                     ? '東東應補給宏逸'
                     : '宏逸應退東東',
-                'formula_hint' => '每人分潤 − 發票帳客戶匯款 + 阿泰代墊發票稅8%；正數表示東東補差額，負數表示宏逸退還東東',
+                'formula_hint' => '每人分潤 − 發票帳客戶匯款 + 宏逸代墊發票稅8%；正數表示東東補差額，負數表示宏逸退還東東',
             ],
             'atai' => [
                 'account_label' => '東東公司帳（阿泰代管）',
                 'profit_share_half' => $profitShareHalf,
                 'profit_share_settled' => $profitShareHalf,
-                'invoice_tax_company_advance' => $invoiceTaxCost,
                 'advances' => (int) $totals['atai_advance_total'],
                 'compensation_from_employees' => $compensationDue,
                 'employee_payment_due' => (int) ($totals['payment_to_finance_total'] ?? 0),
@@ -687,6 +706,7 @@ class MonthlyAccounting
                 'profit_share' => $profitShareHalf,
                 'customer_remittance_in_account' => $companyInboundExpected,
                 'customer_remittance_confirmed' => $companyTransferConfirmed,
+                'invoice_tax_hongyi_advance' => $invoiceTaxCost,
                 'inter_partner_settlement' => $interPartnerSettlement,
                 'inter_partner_settlement_label' => $interPartnerSettlement >= 0 ? '東東應給宏逸（分潤）' : '宏逸發票帳應退東東',
                 'income' => $profitShareHalf,

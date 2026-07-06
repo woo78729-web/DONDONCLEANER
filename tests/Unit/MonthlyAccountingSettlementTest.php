@@ -7,13 +7,16 @@ use PHPUnit\Framework\TestCase;
 
 class MonthlyAccountingSettlementTest extends TestCase
 {
-    public function test_hongyi_payment_splits_gross_profit_and_counts_invoice_tax_as_company_advance(): void
+    public function test_hongyi_payment_splits_gross_profit_and_counts_invoice_tax_as_hongyi_advance(): void
     {
         $employees = [[
             'collect_from_employee' => 20000,
             'advance_to_employee' => 0,
             'company_transfer' => 0,
             'company_inbound_expected' => 0,
+            'company_share_due' => 20000,
+            'invoice_surcharge_due' => 0,
+            'remittance_company_share' => 0,
             'invoice_tax_cost' => 500,
         ]];
 
@@ -27,8 +30,9 @@ class MonthlyAccountingSettlementTest extends TestCase
 
         $this->assertSame(500, $totals['invoice_tax_cost']);
         $this->assertSame(500, $totals['auto_invoice_tax_advance']);
-        $this->assertSame(500, $totals['atai_advance_total']);
-        $this->assertSame(9250, $totals['atai_net_balance']);
+        $this->assertSame(0, $totals['atai_advance_total']);
+        $this->assertSame(500, $totals['hongyi_advance_total']);
+        $this->assertSame(9750, $totals['atai_net_balance']);
         $this->assertSame(19500, $totals['gross_profit']);
         $this->assertSame(10250, $totals['hongyi_payment']);
         $this->assertSame(9750, $totals['atai_retained']);
@@ -59,6 +63,40 @@ class MonthlyAccountingSettlementTest extends TestCase
 
         $this->assertSame(28, $totals['auto_postage']);
         $this->assertSame(28, $totals['monthly_expense_total']);
+    }
+
+    public function test_gross_profit_matches_excel_company_share_plus_customer_surcharge(): void
+    {
+        $totals = $this->invokeCalculateTotals(
+            [[
+                'collect_from_employee' => 50000,
+                'advance_to_employee' => 69600,
+                'company_inbound_expected' => 121800,
+                'company_share_due' => 135300,
+                'invoice_surcharge_due' => 6050,
+                'remittance_company_share' => 46400,
+            ]],
+            [[
+                'key' => 'expense_ad',
+                'label' => '廣告',
+                'amount' => 10500,
+            ], [
+                'key' => 'expense_control',
+                'label' => '管控開支',
+                'amount' => 7000,
+            ]],
+            [],
+            112,
+            9680,
+        );
+
+        $this->assertSame(135300, $totals['company_share_total']);
+        $this->assertSame(6050, $totals['customer_invoice_surcharge_total']);
+        $this->assertSame(46400, $totals['remittance_company_share_total']);
+        $this->assertSame(141350, $totals['operating_income']);
+        $this->assertSame(114058, $totals['gross_profit']);
+        $this->assertSame(57029, $totals['profit_share_half']);
+        $this->assertSame(-55091, $totals['hongyi_payment']);
     }
 
     public function test_travel_allowance_counts_toward_atai_advance_and_monthly_expense(): void

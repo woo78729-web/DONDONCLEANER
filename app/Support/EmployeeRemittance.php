@@ -134,6 +134,8 @@ class EmployeeRemittance
      *     collect_from_employee:int,
      *     advance_to_employee:int,
      *     company_transfer:int,
+     *     company_share_due:int,
+     *     remittance_company_share:int,
      *     invoice_surcharge_due:int,
      *     invoice_tax_cost:int,
      *     completed_units:int
@@ -151,6 +153,8 @@ class EmployeeRemittance
         $collectFromEmployee = 0;
         $advanceToEmployee = 0;
         $companyTransfer = 0;
+        $companyShareDue = 0;
+        $remittanceCompanyShare = 0;
         $invoiceSurchargeDue = 0;
         $invoiceTaxCost = 0;
         $unitsTotal = 0;
@@ -161,6 +165,13 @@ class EmployeeRemittance
             $unitsTotal += $units;
 
             $base = $units * $unitPrice;
+            $companyShare = $units * self::remittancePerUnit($unitPrice);
+            $companyShareDue += $companyShare;
+
+            if ($paidToCompany) {
+                $remittanceCompanyShare += $companyShare;
+            }
+
             $customerAmount = $needsInvoice
                 ? (int) round($base * (1 + self::INVOICE_SURCHARGE_RATE))
                 : $base;
@@ -179,7 +190,7 @@ class EmployeeRemittance
                 $advanceToEmployee += $units * self::employeeSharePerUnit($unitPrice);
                 $companyTransfer += $customerAmount;
             } else {
-                $collectFromEmployee += $units * self::remittancePerUnit($unitPrice);
+                $collectFromEmployee += $companyShare;
             }
         }
 
@@ -187,6 +198,8 @@ class EmployeeRemittance
             'collect_from_employee' => $collectFromEmployee,
             'advance_to_employee' => $advanceToEmployee,
             'company_transfer' => $companyTransfer,
+            'company_share_due' => $companyShareDue,
+            'remittance_company_share' => $remittanceCompanyShare,
             'invoice_surcharge_due' => $invoiceSurchargeDue,
             'invoice_tax_cost' => $invoiceTaxCost,
             'completed_units' => $unitsTotal,

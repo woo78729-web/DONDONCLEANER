@@ -18,6 +18,7 @@ class EmployeeRemittanceTest extends TestCase
         );
 
         $this->assertSame(16000, $summary['collect_from_employee']);
+        $this->assertSame(16000, $summary['company_share_due']);
         $this->assertSame(0, $summary['advance_to_employee']);
     }
 
@@ -32,6 +33,8 @@ class EmployeeRemittanceTest extends TestCase
         );
 
         $this->assertSame(0, $summary['collect_from_employee']);
+        $this->assertSame(4000, $summary['company_share_due']);
+        $this->assertSame(4000, $summary['remittance_company_share']);
         $this->assertSame(6000, $summary['advance_to_employee']);
         $this->assertSame(10000, $summary['company_transfer']);
     }
@@ -62,6 +65,8 @@ class EmployeeRemittanceTest extends TestCase
         );
 
         $this->assertSame(500, $summary['invoice_surcharge_due']);
+        $this->assertSame(4000, $summary['company_share_due']);
+        $this->assertSame(4000, $summary['remittance_company_share']);
         $this->assertSame(10500, $summary['company_transfer']);
         $this->assertSame(0, $summary['collect_from_employee']);
     }

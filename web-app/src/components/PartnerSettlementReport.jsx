@@ -144,9 +144,9 @@ export function PartnerSettlementReport({ settlement, employees = [] }) {
             <h2 className="card-title">合夥軋差（東東 ↔ 宏逸）</h2>
             <p className="hint">
               每人分潤 {formatMoney(interPartner.profit_share_half)} 元，發票帳客戶匯款 {formatMoney(interPartner.customer_remittance_in_account)} 元
-              {interPartner.invoice_tax_company_advance > 0 && (
+              {interPartner.invoice_tax_hongyi_advance > 0 && (
                 <>
-                  ，阿泰代墊發票稅8% {formatMoney(interPartner.invoice_tax_company_advance)} 元（東東轉給宏逸）
+                  ，宏逸代墊發票稅8% {formatMoney(interPartner.invoice_tax_hongyi_advance)} 元
                 </>
               )}
               。{interPartner.formula_hint}
@@ -180,14 +180,10 @@ export function PartnerSettlementReport({ settlement, employees = [] }) {
 
           <div className="partner-settlement-lines partner-settlement-lines--after-hero">
             <SettlementLine
-              label="減：公司代墊（廣告、固定費、發票稅8%、賠款等）"
+              label="減：公司代墊（廣告、固定費、車馬費、賠款等）"
               amount={-atai.advances}
               signed
-              hint={
-                atai.invoice_tax_company_advance > 0
-                  ? `含發票稅金 8% ${formatMoney(atai.invoice_tax_company_advance)} 元，已由公司分攤毛利`
-                  : '你先行代墊的公司開支（含維修賠款全額）'
-              }
+              hint="你先行代墊的公司開支（含維修賠款全額；發票稅8%另列宏逸代墊）"
             />
             {atai.take_home < 0 && (
               <SettlementLine
@@ -239,11 +235,11 @@ export function PartnerSettlementReport({ settlement, employees = [] }) {
                   : '在宏逸發票帳代管，結算時與分潤軋差'
               }
             />
-            {interPartner?.invoice_tax_company_advance > 0 && (
+            {interPartner?.invoice_tax_hongyi_advance > 0 && (
               <SettlementLine
-                label="加：阿泰代墊發票稅8%（東東轉宏逸）"
-                amount={interPartner.invoice_tax_company_advance}
-                hint="發票稅由阿泰代墊，軋差時由東東公司帳轉給宏逸發票帳"
+                label="加：宏逸代墊發票稅8%"
+                amount={interPartner.invoice_tax_hongyi_advance}
+                hint="發票稅由宏逸代墊，月底結算時由東東公司帳補給宏逸發票帳"
               />
             )}
           </div>
@@ -260,18 +256,39 @@ export function PartnerSettlementReport({ settlement, employees = [] }) {
           </p>
         </div>
         <div className="partner-settlement-basis">
-          <SettlementLine label="師傅交回公司（工作淨額）" amount={basis.net_from_employees_jobs} />
+          <SettlementLine
+            label="師傅公司份（1500→600／1300→500／1000→400）"
+            amount={basis.company_share_total ?? 0}
+            hint="等同 Excel 周結／應結加總"
+          />
+          {(basis.customer_invoice_surcharge_total ?? 0) > 0 && (
+            <SettlementLine
+              label="加：向客戶收取 5% 稅金"
+              amount={basis.customer_invoice_surcharge_total}
+              signed
+              hint="含匯款案與現金案，匯款部分的 5% 已含在宏逸帳匯款內"
+            />
+          )}
           {basis.compensation_due_to_company > 0 && (
             <SettlementLine
               label="加：師傅賠償應入公司"
               amount={basis.compensation_due_to_company}
               signed
-              hint="賠款由公司代墊，師傅分擔款入東東公司帳（阿泰代收）"
             />
           )}
-          <SettlementLine label="＝ 師傅交回合計" amount={basis.net_from_employees} />
-          <SettlementLine label="減：本月開支（含賠款代墊、固定費等）" amount={-basis.monthly_expense_total} signed />
-          <SettlementLine label="＝ 總毛利" amount={basis.gross_profit} />
+          <SettlementLine
+            label="＝ 營業收入合計"
+            amount={basis.operating_income ?? basis.gross_profit}
+          />
+          <SettlementLine label="減：本月開支（含代墊、郵資、宏逸代墊8% 等）" amount={-basis.monthly_expense_total} signed />
+          <SettlementLine label="＝ 營利（總毛利）" amount={basis.gross_profit} />
+          {(basis.remittance_company_share_total ?? 0) > 0 && (
+            <SettlementLine
+              label="其中匯款案公司份（已在宏逸帳，供對帳）"
+              amount={basis.remittance_company_share_total}
+              hint="此數已含在公司份內；軋差時以發票帳匯款總額扣除"
+            />
+          )}
           {basis.travel_allowance_total > 0 && (
             <SettlementLine
               label="其中車馬費加給（計入阿泰代墊）"

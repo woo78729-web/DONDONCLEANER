@@ -90,6 +90,7 @@ class AccountingEnhancementApiTest extends TestCase
         $invoiceTaxEntry = collect($autoAdvances)->firstWhere('label', '發票稅金 8%');
         $this->assertNotNull($invoiceTaxEntry);
         $this->assertSame(80, $invoiceTaxEntry['amount']);
+        $this->assertSame('hongyi', $invoiceTaxEntry['partner']);
     }
 
     public function test_accounting_postage_counts_invoice_schedules_without_report_postage(): void

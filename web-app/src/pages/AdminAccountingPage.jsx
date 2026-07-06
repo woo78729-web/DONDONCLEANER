@@ -228,7 +228,7 @@ export default function AdminAccountingPage() {
             <div className="card-header">
               <h2 className="card-title">阿泰帳戶（個人代墊）</h2>
               <p className="hint">
-                固定開支、發票稅金與其他代墊皆列入阿泰代墊；分潤留存扣除代墊合計為阿泰淨額。
+                固定開支、車馬費與其他代墊列入阿泰代墊；發票稅金 8% 為宏逸代墊，月底與宏逸軋差。
                 目前尚未區分公司帳戶或公帳，日後若有再另行分類。
               </p>
             </div>

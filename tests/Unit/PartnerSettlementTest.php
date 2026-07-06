@@ -48,6 +48,8 @@ class PartnerSettlementTest extends TestCase
                 'advance_to_employee' => 0,
                 'company_transfer' => 0,
                 'company_inbound_expected' => 0,
+                'company_share_due' => 20000,
+                'invoice_surcharge_due' => 0,
             ]],
             [[
                 'key' => 'expense_control',
@@ -104,10 +106,10 @@ class PartnerSettlementTest extends TestCase
 
         $this->assertSame('hongyi_to_dongdong', $refund['inter_partner']['direction']);
         $this->assertSame(2000, $refund['inter_partner']['settlement_amount']);
-        $this->assertSame(8000, $refund['inter_partner']['invoice_tax_company_advance']);
+        $this->assertSame(8000, $refund['inter_partner']['invoice_tax_hongyi_advance']);
     }
 
-    public function test_inter_partner_settlement_includes_invoice_tax_advance(): void
+    public function test_inter_partner_settlement_includes_hongyi_invoice_tax_advance(): void
     {
         $settlement = MonthlyAccounting::partnerSettlement([
             'gross_profit' => -10938,
@@ -119,7 +121,7 @@ class PartnerSettlementTest extends TestCase
             'company_inbound_expected' => 0,
             'invoice_tax_cost' => 8000,
             'hongyi_payment' => 2531,
-            'atai_advance_total' => 8000,
+            'atai_advance_total' => 0,
         ]);
 
         $this->assertSame('dongdong_to_hongyi', $settlement['inter_partner']['direction']);
