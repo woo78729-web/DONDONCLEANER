@@ -303,6 +303,66 @@ export function parseMultiAddressNote(notes) {
   };
 }
 
+function sameMultiAddressCustomer(left, right) {
+  if (!left || !right) {
+    return false;
+  }
+
+  return formatDateOnly(left.work_date) === formatDateOnly(right.work_date)
+    && String(left.customer_phone || '').trim() === String(right.customer_phone || '').trim()
+    && String(left.customer_name || '').trim() === String(right.customer_name || '').trim();
+}
+
+export function resolveMultiAddressGroupTotals(schedule, relatedSchedules = []) {
+  const multi = parseMultiAddressNote(schedule?.notes);
+
+  if (!multi) {
+    return null;
+  }
+
+  if (multi.groupUnits && multi.groupPrice != null) {
+    return {
+      groupUnits: multi.groupUnits,
+      groupPrice: multi.groupPrice,
+    };
+  }
+
+  for (const candidate of relatedSchedules) {
+    if (candidate.id === schedule.id || !sameMultiAddressCustomer(schedule, candidate)) {
+      continue;
+    }
+
+    const otherMulti = parseMultiAddressNote(candidate?.notes);
+
+    if (!otherMulti || otherMulti.total !== multi.total) {
+      continue;
+    }
+
+    if (otherMulti.groupUnits && otherMulti.groupPrice != null) {
+      return {
+        groupUnits: otherMulti.groupUnits,
+        groupPrice: otherMulti.groupPrice,
+      };
+    }
+  }
+
+  return null;
+}
+
+export function getMultiAddressSegmentDisplayPrice(schedule, groupTotals) {
+  if (!groupTotals?.groupUnits || groupTotals.groupPrice == null) {
+    return null;
+  }
+
+  const units = Number(getScheduleDisplayUnits(schedule)) || 0;
+
+  if (units <= 0) {
+    return null;
+  }
+
+  return Math.round((groupTotals.groupPrice * units) / groupTotals.groupUnits);
+}
+
 export function parseStationNote(notes) {
   const text = String(notes || '');
   const match = text.match(/\[站備\]\s*([^\n\[]+)/);
@@ -785,7 +845,10 @@ export function getCalendarDisplayRange(view, rangeStart, displayDays = 7) {
 }
 
 export function buildScheduleCalendarEvents(schedules, leaves, dateFrom, dateTo, options = {}) {
-  const scheduleEvents = schedules.map((schedule) => scheduleToEvent(schedule, options));
+  const scheduleEvents = schedules.map((schedule) => scheduleToEvent(schedule, {
+    ...options,
+    relatedSchedules: schedules,
+  }));
   const leaveEvents = expandLeavesToEvents(leaves, dateFrom, dateTo);
 
   return [...leaveEvents, ...scheduleEvents];
@@ -919,11 +982,11 @@ export function buildScheduleEventTitle(schedule, options = {}) {
   return buildScheduleCardLine(schedule, options);
 }
 
-export function buildScheduleCardLine(schedule, { hidePrice = false } = {}) {
+export function buildScheduleCardLine(schedule, { hidePrice = false, relatedSchedules = [] } = {}) {
   const customerName = String(schedule.customer_name || '').trim() || '客';
   const address = String(schedule.customer_address || '').trim();
   const phone = String(schedule.customer_phone || '').trim().replace(/\s+/g, '');
-  const unitsPrice = buildScheduleUnitsPriceTag(schedule, { hidePrice });
+  const unitsPrice = buildScheduleUnitsPriceTag(schedule, { hidePrice, relatedSchedules });
   const projectTag = schedule?.cleaning_project_id ? '[專]' : '';
   const parts = [`${projectTag}${customerName})${address}`];
 
@@ -1004,8 +1067,15 @@ export function getScheduleSegmentTotal(schedule) {
   return 0;
 }
 
-export function getScheduleSegmentDisplayPrice(schedule) {
+export function getScheduleSegmentDisplayPrice(schedule, relatedSchedules = []) {
   const multi = parseMultiAddressNote(schedule?.notes);
+  const groupTotals = resolveMultiAddressGroupTotals(schedule, relatedSchedules);
+  const fromGroup = getMultiAddressSegmentDisplayPrice(schedule, groupTotals);
+
+  if (fromGroup != null && fromGroup > 0) {
+    return fromGroup;
+  }
+
   const lines = normalizePricingLines(schedule?.pricing_lines);
 
   if (lines.length > 0) {
@@ -1019,8 +1089,8 @@ export function getScheduleSegmentDisplayPrice(schedule) {
   const stored = Number(schedule?.cleaning_price);
 
   if (Number.isFinite(stored) && stored > 0) {
-    if (multi?.index === 1 && multi.groupPrice != null && stored === multi.groupPrice) {
-      return 0;
+    if (multi?.index === 1 && groupTotals?.groupPrice != null && stored === groupTotals.groupPrice) {
+      return getMultiAddressSegmentDisplayPrice(schedule, groupTotals) || 0;
     }
 
     return stored;
@@ -1029,22 +1099,23 @@ export function getScheduleSegmentDisplayPrice(schedule) {
   return getScheduleSegmentTotal(schedule);
 }
 
-export function buildScheduleUnitsPriceTag(schedule, { hidePrice = false } = {}) {
+export function buildScheduleUnitsPriceTag(schedule, { hidePrice = false, relatedSchedules = [] } = {}) {
   const units = getScheduleDisplayUnits(schedule);
   const multi = parseMultiAddressNote(schedule?.notes);
+  const groupTotals = resolveMultiAddressGroupTotals(schedule, relatedSchedules);
 
   if (multi) {
     if (hidePrice) {
       return units ? `[${units}台]` : '';
     }
 
-    const segmentPrice = getScheduleSegmentDisplayPrice(schedule);
+    const segmentPrice = getScheduleSegmentDisplayPrice(schedule, relatedSchedules);
     const localTag = segmentPrice > 0
       ? `[${units || '-'}離${segmentPrice}]`
       : `[${units || '-'}離]`;
 
-    if (multi.groupUnits && multi.groupPrice != null) {
-      return `${localTag}[共${multi.groupUnits}離${multi.groupPrice}]`;
+    if (groupTotals?.groupUnits && groupTotals.groupPrice != null) {
+      return `${localTag}[共${groupTotals.groupUnits}離${groupTotals.groupPrice}]`;
     }
 
     return localTag;
@@ -1522,6 +1593,7 @@ export function scheduleToEvent(schedule, options = {}) {
   const displayTimes = getScheduleDisplayTimes(schedule);
   const start = combineDateTime(schedule.work_date, displayTimes.start_time);
   let end = combineDateTime(schedule.work_date, displayTimes.end_time);
+  const { relatedSchedules = [], ...titleOptions } = options;
 
   if (end.getTime() <= start.getTime()) {
     end = new Date(start.getTime() + 3 * 60 * 60 * 1000);
@@ -1529,7 +1601,7 @@ export function scheduleToEvent(schedule, options = {}) {
 
   return {
     id: schedule.id,
-    title: buildScheduleEventTitle(schedule, options),
+    title: buildScheduleEventTitle(schedule, { ...titleOptions, relatedSchedules }),
     start,
     end,
     resource: schedule,
@@ -2206,6 +2278,7 @@ export function buildSchedulePayloads(form, options = {}) {
     const endTime = calculateEndTimeFromUnits(currentStart, units);
     const isFirst = index === 0;
     const segmentLine = resolveSegmentPricingLine(normalizedLines, index);
+    const primaryInvoiceSettings = clonePricingLineInvoiceSettings(normalizedLines[0]);
 
     payloads.push(buildSchedulePayload({
       ...form,
@@ -2215,6 +2288,7 @@ export function buildSchedulePayloads(form, options = {}) {
       customer_phone: row.same_as_customer ? form.customer_phone : (row.phone || form.customer_phone),
       pricing_lines: [{
         ...segmentLine,
+        ...primaryInvoiceSettings,
         ac_units: String(units),
       }],
       needs_mail: isFirst ? form.needs_mail : false,

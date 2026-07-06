@@ -4,7 +4,7 @@ import {
 } from '../utils/scheduleCalendar';
 import { ScheduleTechnicianBadge } from './ScheduleTechnicianBadge';
 
-export function CalendarScheduleEvent({ event, view, hidePrice = false }) {
+export function CalendarScheduleEvent({ event, view, hidePrice = false, relatedSchedules = [] }) {
   const schedule = event.resource;
   const compact = view === 'month';
 
@@ -44,14 +44,14 @@ export function CalendarScheduleEvent({ event, view, hidePrice = false }) {
   }
 
   return (
-    <div className="calendar-event-detail" data-schedule-id={schedule.id} title={buildScheduleCardLine(schedule, { hidePrice })}>
+    <div className="calendar-event-detail" data-schedule-id={schedule.id} title={buildScheduleCardLine(schedule, { hidePrice, relatedSchedules })}>
       <ScheduleTechnicianBadge
         user={schedule.user}
         size="xs"
         showName
         className="calendar-event-detail__technician"
       />
-      <p className="calendar-event-detail__line">{buildScheduleCardLine(schedule, { hidePrice })}</p>
+      <p className="calendar-event-detail__line">{buildScheduleCardLine(schedule, { hidePrice, relatedSchedules })}</p>
       <p className="calendar-event-detail__time">{formatScheduleDisplayTimeRange(schedule)}</p>
     </div>
   );

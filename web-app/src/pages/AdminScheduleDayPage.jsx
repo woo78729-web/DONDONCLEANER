@@ -445,7 +445,7 @@ export default function AdminScheduleDayPage() {
                       size="sm"
                       className="schedule-day-block__technician"
                     />
-                    <p className="schedule-day-block__line">{buildScheduleCardLine(schedule, { hidePrice: !canManageSchedulePricing(userRole) })}</p>
+                    <p className="schedule-day-block__line">{buildScheduleCardLine(schedule, { hidePrice: !canManageSchedulePricing(userRole), relatedSchedules: schedules })}</p>
                     <p className="schedule-day-block__time">{formatChineseTimeRange(schedule)}</p>
                   </button>
                 </article>

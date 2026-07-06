@@ -87,7 +87,7 @@ export function EmployeeScheduleList({
                 </span>
                 <StatusBadge status={scheduleStatus(schedule)} />
               </div>
-              <p className="schedule-day-block__line">{buildScheduleCardLine(schedule)}</p>
+              <p className="schedule-day-block__line">{buildScheduleCardLine(schedule, { relatedSchedules: schedules })}</p>
               {schedule.cleaning_project && (
                 <p className="schedule-day-block__project hint">
                   專案 {schedule.cleaning_project.project_code || schedule.cleaning_project.title || ''}

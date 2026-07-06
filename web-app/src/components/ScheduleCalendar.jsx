@@ -434,8 +434,8 @@ export function ScheduleCalendar({
 
 
   const components = useMemo(() => ({
-    event: (props) => <CalendarScheduleEvent {...props} view={view} hidePrice={hidePrice} />,
-  }), [hidePrice, view]);
+    event: (props) => <CalendarScheduleEvent {...props} view={view} hidePrice={hidePrice} relatedSchedules={schedules} />,
+  }), [hidePrice, schedules, view]);
 
 
 
