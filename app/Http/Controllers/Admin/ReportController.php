@@ -154,7 +154,13 @@ class ReportController extends Controller
         ], $validated);
 
         try {
-            $payload = EmployeeReportSupport::buildFromSchedule($report->dailySchedule, $input, $report);
+            $requireSkipReason = ! in_array($request->user()->role, ['admin', 'customer_service'], true);
+            $payload = EmployeeReportSupport::buildFromSchedule(
+                $report->dailySchedule,
+                $input,
+                $report,
+                $requireSkipReason,
+            );
         } catch (\InvalidArgumentException $exception) {
             return $this->error($exception->getMessage(), 422);
         }

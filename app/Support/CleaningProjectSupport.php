@@ -443,7 +443,9 @@ class CleaningProjectSupport
                     ]);
 
                     if ($schedule->dailyReport) {
-                        EmployeeReportSupport::resyncFromSchedule($schedule->dailyReport);
+                        EmployeeReportSupport::resyncFromSchedule($schedule->dailyReport, [
+                            'completed_units' => $units,
+                        ]);
                     }
                 }
             }
@@ -487,7 +489,9 @@ class CleaningProjectSupport
             ]);
 
             if ($schedule->dailyReport) {
-                EmployeeReportSupport::resyncFromSchedule($schedule->dailyReport);
+                EmployeeReportSupport::resyncFromSchedule($schedule->dailyReport, [
+                    'completed_units' => $units,
+                ]);
             }
 
             self::recalculateProjectTotals($project);

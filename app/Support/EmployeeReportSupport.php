@@ -61,8 +61,11 @@ class EmployeeReportSupport
         return $report->fresh();
     }
 
-    public static function resyncFromSchedule(DailyReport $report): DailyReport
-    {
+    public static function resyncFromSchedule(
+        DailyReport $report,
+        array $overrides = [],
+        bool $requireSkipReason = false,
+    ): DailyReport {
         $report->loadMissing('dailySchedule');
         $schedule = $report->dailySchedule;
 
@@ -80,7 +83,8 @@ class EmployeeReportSupport
             'collected_amount' => $report->collected_amount,
             'paid_to_company' => $report->paid_to_company,
             'travel_allowance' => $report->travel_allowance,
-        ], $report);
+            ...$overrides,
+        ], $report, $requireSkipReason);
 
         return self::applyPayload($report, $payload);
     }
@@ -98,8 +102,12 @@ class EmployeeReportSupport
      * @param  array<string, mixed>  $input
      * @return array<string, mixed>
      */
-    public static function buildFromSchedule(DailySchedule $schedule, array $input, ?DailyReport $existingReport = null): array
-    {
+    public static function buildFromSchedule(
+        DailySchedule $schedule,
+        array $input,
+        ?DailyReport $existingReport = null,
+        bool $requireSkipReason = true,
+    ): array {
         $plannedUnits = (int) $schedule->ac_units;
         $hasTax = (bool) ($input['has_tax'] ?? false);
         $needsInvoiceAndMail = (bool) ($input['needs_invoice_and_mail'] ?? false);
@@ -134,12 +142,14 @@ class EmployeeReportSupport
         $skippedUnits = max(0, $plannedUnits - $completedUnits);
         $unitMismatch = $completedUnits !== $plannedUnits;
 
-        if ($unitMismatch && $skipReason === '') {
+        if ($requireSkipReason && $unitMismatch && $skipReason === '') {
             throw new \InvalidArgumentException('台數異動需填寫原因');
         }
 
-        if (! $unitMismatch) {
-            $skipReason = null;
+        if (! $unitMismatch || ! $requireSkipReason) {
+            if ($skipReason === '') {
+                $skipReason = null;
+            }
         }
 
         $needsInvoice = $hasTax || $needsInvoiceAndMail || (bool) $schedule->needs_invoice;

@@ -65,11 +65,6 @@ export function AdminReportEditModal({
     event.preventDefault();
     setError('');
 
-    if (calculated?.skippedUnits > 0 && !draft.skip_reason?.trim()) {
-      setError('未完成台數需填寫原因');
-      return;
-    }
-
     setSubmitting(true);
 
     try {
@@ -122,13 +117,12 @@ export function AdminReportEditModal({
 
           {calculated.skippedUnits > 0 && (
             <label className="field">
-              <span className="field-label">未洗原因</span>
+              <span className="field-label">未洗原因（選填）</span>
               <textarea
                 className="field-control"
                 rows={2}
                 value={draft.skip_reason}
                 onChange={(event) => updateDraft({ skip_reason: event.target.value })}
-                required
               />
             </label>
           )}

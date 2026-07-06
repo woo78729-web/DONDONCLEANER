@@ -233,4 +233,52 @@ class CleaningProjectApiTest extends TestCase
         $this->assertSame(25, (int) $schedule->ac_units);
         $this->assertSame(1300, (int) $schedule->unit_price);
     }
+
+    public function test_admin_can_update_reported_schedule_units_without_skip_reason(): void
+    {
+        Sanctum::actingAs($this->admin);
+
+        $start = now()->addDays(3)->toDateString();
+        $end = $start;
+
+        $projectId = $this->postJson('/api/admin/projects', [
+            'employee_ids' => [$this->employee->id],
+            'planned_start_date' => $start,
+            'planned_end_date' => $end,
+            'customer_name' => '測試客戶',
+            'customer_phone' => '0912345678',
+            'customer_address' => '台東市',
+            'customer_source' => 'phone',
+            'pricing_lines' => [
+                ['ac_units' => 18, 'unit_price' => 1000],
+            ],
+        ])->json('data.id');
+
+        $schedule = DailySchedule::query()
+            ->where('cleaning_project_id', $projectId)
+            ->firstOrFail();
+
+        $report = \App\Models\DailyReport::query()->create([
+            'schedule_id' => $schedule->id,
+            'planned_units' => 18,
+            'completed_units' => 18,
+            'skipped_units' => 0,
+            'collected_amount' => 18000,
+            'paid_to_company' => false,
+        ]);
+
+        $this->patchJson('/api/admin/projects/'.$projectId.'/schedules/'.$schedule->id.'/units', [
+            'ac_units' => 16,
+            'unit_price' => 1000,
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.progress.total_units', 16);
+
+        $schedule->refresh();
+        $report->refresh();
+
+        $this->assertSame(16, (int) $schedule->ac_units);
+        $this->assertSame(16, (int) $report->completed_units);
+        $this->assertFalse((bool) $report->unit_mismatch);
+    }
 }
