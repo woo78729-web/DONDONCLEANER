@@ -28,6 +28,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
     'ac_units',
     'units_allocated',
     'cleaning_price',
+    'hongyi_fee',
     'unit_price',
     'needs_invoice',
     'needs_receipt',

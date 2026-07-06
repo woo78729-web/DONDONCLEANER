@@ -110,6 +110,12 @@ class EmployeeReportSupport
             throw new \InvalidArgumentException('發票寄信與收據寄信不可同時勾選');
         }
 
+        [$needsInvoiceAndMail, $needsReceiptAndMail] = self::resolveMailFlagsFromSchedule(
+            $schedule,
+            $needsInvoiceAndMail,
+            $needsReceiptAndMail,
+        );
+
         $skipReason = trim((string) ($input['skip_reason'] ?? ''));
 
         if (! empty($input['pricing_lines']) && is_array($input['pricing_lines'])) {
@@ -165,9 +171,15 @@ class EmployeeReportSupport
             $needsMail,
             $existingReport?->id
         );
-        $reportInvoiceTaxCost = ($hasTax || $needsInvoiceAndMail || (bool) $schedule->needs_invoice)
-            ? (int) round($baseAmount * self::INVOICE_TAX_RATE)
-            : 0;
+        $reportInvoiceTaxCost = (int) ($schedule->hongyi_fee ?? 0);
+
+        if ($reportInvoiceTaxCost === 0) {
+            $reportInvoiceTaxCost = (int) ($summary['hongyi_fee'] ?? 0);
+        }
+
+        if ($reportInvoiceTaxCost === 0 && ($hasTax || $needsInvoiceAndMail || (bool) $schedule->needs_invoice)) {
+            $reportInvoiceTaxCost = (int) round($baseAmount * self::INVOICE_TAX_RATE);
+        }
 
         return [
             'planned_units' => $plannedUnits,
@@ -222,5 +234,28 @@ class EmployeeReportSupport
             'created_at' => $report->created_at?->toDateTimeString(),
             'daily_schedule' => $report->dailySchedule,
         ];
+    }
+
+    /**
+     * @return array{0:bool,1:bool}
+     */
+    private static function resolveMailFlagsFromSchedule(
+        DailySchedule $schedule,
+        bool $needsInvoiceAndMail,
+        bool $needsReceiptAndMail,
+    ): array {
+        if ((bool) $schedule->needs_invoice) {
+            return [true, false];
+        }
+
+        if ((bool) $schedule->needs_receipt) {
+            return [false, true];
+        }
+
+        if (! $needsInvoiceAndMail && ! $needsReceiptAndMail && (bool) $schedule->needs_mail) {
+            return [false, true];
+        }
+
+        return [$needsInvoiceAndMail, $needsReceiptAndMail];
     }
 }

@@ -10,7 +10,7 @@ import {
   getMinScheduleWorkDate,
   getTotalAddressUnits,
   hasScheduleReport,
-  hasTaxablePricingLine,
+  hasInvoicedPricingLine,
   isTriplicateInvoice,
   resolveMailContactFields,
   patchFormContactId,
@@ -157,6 +157,10 @@ export function ScheduleFormModal({
         pricing_lines: (form.pricing_lines || [createPricingLine()]).map((line) => ({
           ...line,
           is_taxable: false,
+          invoice_type: 'none',
+          charge_customer_tax: false,
+          invoice_title: '',
+          invoice_tax_id: '',
         })),
       };
 
@@ -205,7 +209,7 @@ export function ScheduleFormModal({
   const addressUnitsSum = getTotalAddressUnits(serviceAddresses);
   const pricingUnitsTotal = Number(form.ac_units) || 0;
   const addressUnitsMismatch = hasMultipleAddresses && addressUnitsSum !== pricingUnitsTotal;
-  const invoiceAutoEnabled = hasTaxablePricingLine(form.pricing_lines);
+  const invoiceAutoEnabled = hasInvoicedPricingLine(form.pricing_lines);
   const triplicateInvoice = isTriplicateInvoice(form);
   const contactIdLabel = form.customer_source === 'line'
     ? 'LINE ID'
@@ -413,14 +417,10 @@ export function ScheduleFormModal({
             <PricingLineEditor
               lines={form.pricing_lines || [createPricingLine()]}
               onChange={(pricing_lines) => updateForm(onChange, form, { pricing_lines })}
-              showTax={!form.needs_invoice}
+              showInvoice
+              showTax={false}
               showAdd
             />
-            {form.needs_invoice && (
-              <p className="hint" style={{ marginTop: 8 }}>
-                已勾選發票時，+5% 請在下方「向客戶加收 5%」設定；不勾則為二聯、實收不含稅。
-              </p>
-            )}
           </div>
           ) : (
           <label className="field" style={{ gridColumn: '1 / -1' }}>
@@ -447,10 +447,15 @@ export function ScheduleFormModal({
           <div className="field" style={{ gridColumn: '1 / -1' }}>
             <span className="field-label">合計</span>
             <div className="price-summary">
-              <strong>共 {form.ac_units} 台，{form.cleaning_price || 0} 元</strong>
-              {!form.needs_invoice && invoiceAutoEnabled && <span className="hint">部分品項已含 5% 稅</span>}
-              {form.needs_invoice && !triplicateInvoice && !form.invoice_charge_customer_tax && (
-                <span className="hint">二聯發票，實收不含 5%</span>
+              <div>共 {form.ac_units} 台</div>
+              <div>
+                客戶應付總尾款：<strong>{form.cleaning_price || 0} 元</strong>
+              </div>
+              {Number(form.hongyi_fee) > 0 && (
+                <div className="price-summary__hongyi">
+                  撥給宏逸金流：<strong>{form.hongyi_fee} 元</strong>
+                  <span className="hint">（代墊發票稅 8%，與是否向客戶加收 5% 無關）</span>
+                </div>
               )}
             </div>
           </div>
@@ -628,7 +633,7 @@ export function ScheduleFormModal({
             </label>
           </div>
 
-          {form.needs_invoice && (
+          {form.needs_invoice && !canManagePricing && (
             <div className="form-section" style={{ gridColumn: '1 / -1' }}>
               <div className="form-section__body form-section__body--flush">
                 <InvoiceTaxIdFields
@@ -636,7 +641,7 @@ export function ScheduleFormModal({
                   invoiceTaxId={form.invoice_tax_id}
                   onChange={handleInvoiceFieldChange}
                 />
-                {!triplicateInvoice && canManagePricing && (
+                {!triplicateInvoice && (
                   <>
                     <p className="hint" style={{ marginTop: 12 }}>
                       不填抬頭／統編即為二聯；若要向客戶加收 5% 再勾選下方選項。
@@ -651,9 +656,42 @@ export function ScheduleFormModal({
                     </label>
                   </>
                 )}
-                {triplicateInvoice && canManagePricing && (
+                {triplicateInvoice && (
                   <p className="hint" style={{ marginTop: 12 }}>三聯發票已自動向客戶加收 5% 稅金。</p>
                 )}
+                <div className="form-grid cols-2" style={{ marginTop: 12 }}>
+                  <label className="field field-checkbox">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(form.invoice_pre_issue)}
+                      onChange={(e) => handleChange({
+                        invoice_pre_issue: e.target.checked,
+                        invoice_planned_date: e.target.checked ? form.invoice_planned_date : '',
+                      })}
+                    />
+                    <span>預開／延後發票</span>
+                  </label>
+                  {form.invoice_pre_issue && (
+                    <label className="field">
+                      <span className="field-label">預計開發票日期</span>
+                      <input
+                        className="field-control"
+                        type="date"
+                        value={form.invoice_planned_date || ''}
+                        onChange={(e) => handleChange({ invoice_planned_date: e.target.value })}
+                        required
+                      />
+                    </label>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {(form.needs_invoice || invoiceAutoEnabled) && canManagePricing && (
+            <div className="form-section" style={{ gridColumn: '1 / -1' }}>
+              <div className="form-section__body form-section__body--flush">
+                <p className="hint">各清洗項目的發票類型請在上方逐項設定（可部分開、部分不開）。</p>
                 <div className="form-grid cols-2" style={{ marginTop: 12 }}>
                   <label className="field field-checkbox">
                     <input

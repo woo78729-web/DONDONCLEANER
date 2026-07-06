@@ -326,6 +326,15 @@ class ScheduleController extends Controller
             'pricing_lines.*.ac_units' => ['required', 'integer', 'min:1', 'max:99'],
             'pricing_lines.*.unit_price' => ['required', 'integer', Rule::in(SchedulePricing::unitPrices())],
             'pricing_lines.*.is_taxable' => ['nullable', 'boolean'],
+            'pricing_lines.*.invoice_type' => ['nullable', 'string', Rule::in([
+                SchedulePricing::INVOICE_TYPE_NONE,
+                SchedulePricing::INVOICE_TYPE_DUPLICATE,
+                SchedulePricing::INVOICE_TYPE_TRIPLICATE,
+            ])],
+            'pricing_lines.*.invoice_title' => ['nullable', 'string', 'max:255'],
+            'pricing_lines.*.invoice_tax_id' => ['nullable', 'string', 'max:20'],
+            'pricing_lines.*.charge_customer_tax' => ['nullable', 'boolean'],
+            'hongyi_fee' => ['nullable', 'integer', 'min:0'],
             'multi_address_part' => ['nullable', 'array'],
             'multi_address_part.index' => ['nullable', 'integer', 'min:1'],
             'multi_address_part.total' => ['nullable', 'integer', 'min:2'],
@@ -348,7 +357,6 @@ class ScheduleController extends Controller
      */
     private function normalizeSchedulePayload(array $payload): array
     {
-        $needsInvoice = (bool) ($payload['needs_invoice'] ?? false);
         $needsReceipt = (bool) ($payload['needs_receipt'] ?? false);
         $lines = SchedulePricing::normalizeLines(
             $payload['pricing_lines'] ?? null,
@@ -358,65 +366,65 @@ class ScheduleController extends Controller
         $multiAddressPart = is_array($payload['multi_address_part'] ?? null)
             ? $payload['multi_address_part']
             : null;
-        $isTriplicate = $needsInvoice && (
-            trim((string) ($payload['invoice_title'] ?? '')) !== ''
-            || trim((string) ($payload['invoice_tax_id'] ?? '')) !== ''
-        );
-        $chargeCustomerTax = $isTriplicate || (bool) ($payload['invoice_charge_customer_tax'] ?? false);
-
-        if ($needsInvoice && $chargeCustomerTax) {
-            $lines = array_map(
-                static fn (array $line): array => [...$line, 'is_taxable' => true],
-                $lines
-            );
-        } elseif (! $needsInvoice) {
-            $lines = array_map(
-                static fn (array $line): array => [...$line, 'is_taxable' => false],
-                $lines
-            );
-        }
-
+        $needsInvoice = (bool) ($payload['needs_invoice'] ?? false)
+            || collect($lines)->contains(fn (array $line): bool => SchedulePricing::lineHasInvoice($line));
         $summary = SchedulePricing::summarizeLines($lines, $needsInvoice);
+        $triplicateLine = collect($lines)->first(
+            fn (array $line): bool => ($line['invoice_type'] ?? '') === SchedulePricing::INVOICE_TYPE_TRIPLICATE
+        );
+        $chargeCustomerTax = collect($lines)->contains(
+            fn (array $line): bool => SchedulePricing::lineHasInvoice($line) && ($line['charge_customer_tax'] ?? true)
+        ) || (bool) ($payload['invoice_charge_customer_tax'] ?? false);
 
         if ($multiAddressPart) {
             $partIndex = max(1, (int) ($multiAddressPart['index'] ?? 1));
             $segmentUnits = max(1, (int) ($multiAddressPart['segment_units'] ?? ($lines[0]['ac_units'] ?? 1)));
             $groupUnits = max($segmentUnits, (int) ($multiAddressPart['group_units'] ?? $segmentUnits));
             $groupPrice = max(0, (int) ($multiAddressPart['group_price'] ?? 0));
-            $unitPrice = (int) ($lines[0]['unit_price'] ?? 1500);
-            $isTaxable = (bool) ($lines[0]['is_taxable'] ?? false);
+            $primaryLine = $lines[0] ?? SchedulePricing::normalizeLines(null)[0];
 
             if ($partIndex === 1) {
                 $lines = [[
                     'ac_units' => $segmentUnits,
-                    'unit_price' => $unitPrice,
-                    'is_taxable' => $isTaxable,
+                    'unit_price' => (int) ($primaryLine['unit_price'] ?? 1500),
+                    'is_taxable' => (bool) ($primaryLine['is_taxable'] ?? false),
+                    'invoice_type' => $primaryLine['invoice_type'] ?? SchedulePricing::INVOICE_TYPE_NONE,
+                    'invoice_title' => $primaryLine['invoice_title'] ?? null,
+                    'invoice_tax_id' => $primaryLine['invoice_tax_id'] ?? null,
+                    'charge_customer_tax' => (bool) ($primaryLine['charge_customer_tax'] ?? false),
                 ]];
                 $summary = [
                     'ac_units' => $segmentUnits,
-                    'unit_price' => $unitPrice,
+                    'unit_price' => (int) ($primaryLine['unit_price'] ?? 1500),
                     'cleaning_price' => $groupPrice,
+                    'hongyi_fee' => (int) ($payload['hongyi_fee'] ?? $summary['hongyi_fee'] ?? 0),
                     'needs_invoice' => $needsInvoice,
-                    'task_details' => $segmentUnits.'台'.$unitPrice.'·共'.$groupUnits.'台'.$groupPrice,
+                    'task_details' => $segmentUnits.'台'.($primaryLine['unit_price'] ?? 1500).'·共'.$groupUnits.'台'.$groupPrice,
                 ];
             } else {
                 $lines = [[
                     'ac_units' => $segmentUnits,
-                    'unit_price' => $unitPrice,
+                    'unit_price' => (int) ($primaryLine['unit_price'] ?? 1500),
                     'is_taxable' => false,
+                    'invoice_type' => SchedulePricing::INVOICE_TYPE_NONE,
+                    'invoice_title' => null,
+                    'invoice_tax_id' => null,
+                    'charge_customer_tax' => false,
                 ]];
                 $summary = [
                     'ac_units' => $segmentUnits,
-                    'unit_price' => $unitPrice,
+                    'unit_price' => (int) ($primaryLine['unit_price'] ?? 1500),
                     'cleaning_price' => 0,
+                    'hongyi_fee' => 0,
                     'needs_invoice' => false,
-                    'task_details' => $segmentUnits.'台'.$unitPrice,
+                    'task_details' => $segmentUnits.'台'.($primaryLine['unit_price'] ?? 1500),
                 ];
                 $payload['needs_mail'] = false;
                 $payload['needs_invoice'] = false;
                 $payload['needs_receipt'] = false;
                 $payload['invoice_charge_customer_tax'] = false;
                 $payload['invoice_planned_date'] = null;
+                $payload['hongyi_fee'] = 0;
             }
         }
 
@@ -430,6 +438,7 @@ class ScheduleController extends Controller
             ? $payload['invoice_planned_date']
             : null;
         $payload['cleaning_price'] = $summary['cleaning_price'];
+        $payload['hongyi_fee'] = (int) ($summary['hongyi_fee'] ?? 0);
         $payload['task_details'] = $summary['task_details'];
         unset($payload['multi_address_part']);
         $needsMail = (bool) ($payload['needs_mail'] ?? false);
@@ -455,12 +464,17 @@ class ScheduleController extends Controller
             $payload['invoice_tax_id'] = null;
             $payload['invoice_title'] = null;
         } elseif ($payload['needs_invoice']) {
-            $payload['invoice_tax_id'] = isset($payload['invoice_tax_id']) && $payload['invoice_tax_id'] !== ''
-                ? trim((string) $payload['invoice_tax_id'])
-                : null;
-            $payload['invoice_title'] = isset($payload['invoice_title']) && $payload['invoice_title'] !== ''
-                ? trim((string) $payload['invoice_title'])
-                : null;
+            if ($triplicateLine) {
+                $payload['invoice_tax_id'] = trim((string) ($triplicateLine['invoice_tax_id'] ?? '')) ?: null;
+                $payload['invoice_title'] = trim((string) ($triplicateLine['invoice_title'] ?? '')) ?: null;
+            } else {
+                $payload['invoice_tax_id'] = isset($payload['invoice_tax_id']) && $payload['invoice_tax_id'] !== ''
+                    ? trim((string) $payload['invoice_tax_id'])
+                    : null;
+                $payload['invoice_title'] = isset($payload['invoice_title']) && $payload['invoice_title'] !== ''
+                    ? trim((string) $payload['invoice_title'])
+                    : null;
+            }
         } else {
             $payload['invoice_tax_id'] = null;
             $payload['invoice_title'] = null;

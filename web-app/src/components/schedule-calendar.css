@@ -3513,6 +3513,29 @@
   display: flex;
 }
 
+.pricing-line__invoice {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.pricing-line__invoice-triplicate {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.price-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.price-summary__hongyi {
+  color: var(--color-text-secondary, #5f6368);
+}
+
 .service-addresses__header {
   display: flex;
   align-items: center;

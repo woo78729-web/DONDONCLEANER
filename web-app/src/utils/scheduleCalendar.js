@@ -4,6 +4,20 @@ export const UNIT_PRICE_OPTIONS = [1500, 1300, 1000];
 
 export const INVOICE_SURCHARGE_RATE = 0.05;
 
+export const HONGYI_TAX_RATE = 0.08;
+
+export const INVOICE_TYPE_NONE = 'none';
+
+export const INVOICE_TYPE_DUPLICATE = 'duplicate';
+
+export const INVOICE_TYPE_TRIPLICATE = 'triplicate';
+
+export const INVOICE_TYPE_OPTIONS = [
+  { value: INVOICE_TYPE_NONE, label: '不開' },
+  { value: INVOICE_TYPE_DUPLICATE, label: '二聯' },
+  { value: INVOICE_TYPE_TRIPLICATE, label: '三聯' },
+];
+
 export const EMPLOYEE_POSTAGE_AMOUNT = 28;
 
 export function createPricingLine(overrides = {}) {
@@ -12,7 +26,92 @@ export function createPricingLine(overrides = {}) {
     ac_units: '1',
     unit_price: '1500',
     is_taxable: false,
+    invoice_type: INVOICE_TYPE_NONE,
+    invoice_title: '',
+    invoice_tax_id: '',
+    charge_customer_tax: false,
     ...overrides,
+  };
+}
+
+export function lineHasInvoice(line) {
+  return line?.invoice_type === INVOICE_TYPE_DUPLICATE
+    || line?.invoice_type === INVOICE_TYPE_TRIPLICATE;
+}
+
+export function hasInvoicedPricingLine(lines) {
+  return (lines || []).some(lineHasInvoice);
+}
+
+export function migratePricingLineFields(line, scheduleContext = null) {
+  if (line?.invoice_type && INVOICE_TYPE_OPTIONS.some((option) => option.value === line.invoice_type)) {
+    return {
+      ...line,
+      charge_customer_tax: lineHasInvoice(line) ? line.charge_customer_tax !== false : false,
+    };
+  }
+
+  if (line?.is_taxable) {
+    return {
+      ...line,
+      invoice_type: INVOICE_TYPE_DUPLICATE,
+      charge_customer_tax: true,
+      invoice_title: '',
+      invoice_tax_id: '',
+    };
+  }
+
+  if (scheduleContext?.needs_invoice) {
+    const hasTriplicate = Boolean(
+      String(scheduleContext.invoice_title || '').trim()
+      || String(scheduleContext.invoice_tax_id || '').trim(),
+    );
+
+    if (hasTriplicate) {
+      return {
+        ...line,
+        invoice_type: INVOICE_TYPE_TRIPLICATE,
+        invoice_title: scheduleContext.invoice_title || '',
+        invoice_tax_id: scheduleContext.invoice_tax_id || '',
+        charge_customer_tax: true,
+      };
+    }
+
+    return {
+      ...line,
+      invoice_type: INVOICE_TYPE_DUPLICATE,
+      charge_customer_tax: Boolean(scheduleContext.invoice_charge_customer_tax),
+      invoice_title: '',
+      invoice_tax_id: '',
+    };
+  }
+
+  return {
+    ...line,
+    invoice_type: INVOICE_TYPE_NONE,
+    charge_customer_tax: false,
+    invoice_title: '',
+    invoice_tax_id: '',
+  };
+}
+
+export function calculatePricingLineTotals(line) {
+  const units = Number(line.ac_units) || 0;
+  const unitPrice = Number(line.unit_price) || 0;
+  const subtotal = units * unitPrice;
+  const hasInvoice = lineHasInvoice(line);
+  const chargeCustomerTax = hasInvoice && line.charge_customer_tax !== false;
+  const customerAmount = subtotal + (chargeCustomerTax
+    ? Math.round(subtotal * INVOICE_SURCHARGE_RATE)
+    : 0);
+  const hongyiFee = hasInvoice ? Math.round(subtotal * HONGYI_TAX_RATE) : 0;
+
+  return {
+    subtotal,
+    customerAmount,
+    hongyiFee,
+    hasInvoice,
+    chargeCustomerTax,
   };
 }
 
@@ -32,31 +131,51 @@ export function hasTaxablePricingLine(lines) {
 }
 
 export function deriveNeedsInvoice(form) {
-  return Boolean(form.needs_invoice) || hasTaxablePricingLine(form.pricing_lines);
+  return Boolean(form.needs_invoice) || hasInvoicedPricingLine(form.pricing_lines);
 }
 
 export function isTriplicateInvoice(form) {
+  if ((form.pricing_lines || []).some((line) => line.invoice_type === INVOICE_TYPE_TRIPLICATE)) {
+    return true;
+  }
+
   return Boolean(form.needs_invoice)
     && Boolean(String(form.invoice_title || '').trim() || String(form.invoice_tax_id || '').trim());
 }
 
 export function shouldChargeCustomerTax(form) {
+  const lines = form.pricing_lines || [];
+
+  if (hasInvoicedPricingLine(lines)) {
+    return lines.some((line) => lineHasInvoice(line) && line.charge_customer_tax !== false);
+  }
+
   if (form.needs_invoice) {
     return isTriplicateInvoice(form) || Boolean(form.invoice_charge_customer_tax);
   }
 
-  return hasTaxablePricingLine(form.pricing_lines);
+  return hasTaxablePricingLine(lines);
 }
 
 export function syncInvoiceTaxFlags(form) {
-  const chargeTax = shouldChargeCustomerTax(form);
+  const pricingLines = (form.pricing_lines || [createPricingLine()]).map((line) => ({
+    ...line,
+    is_taxable: lineHasInvoice(line)
+      ? line.charge_customer_tax !== false
+      : Boolean(line.is_taxable),
+  }));
+
+  const triplicateLine = pricingLines.find((line) => line.invoice_type === INVOICE_TYPE_TRIPLICATE);
 
   return {
     ...form,
-    pricing_lines: (form.pricing_lines || [createPricingLine()]).map((line) => ({
-      ...line,
-      is_taxable: form.needs_invoice ? chargeTax : Boolean(line.is_taxable),
-    })),
+    pricing_lines: pricingLines,
+    needs_invoice: deriveNeedsInvoice({ ...form, pricing_lines: pricingLines }),
+    invoice_charge_customer_tax: pricingLines.some(
+      (line) => line.invoice_type === INVOICE_TYPE_DUPLICATE && line.charge_customer_tax !== false,
+    ) || Boolean(form.invoice_charge_customer_tax),
+    invoice_title: triplicateLine?.invoice_title ?? form.invoice_title ?? '',
+    invoice_tax_id: triplicateLine?.invoice_tax_id ?? form.invoice_tax_id ?? '',
   };
 }
 
@@ -176,14 +295,25 @@ export function normalizeServiceAddresses(form) {
   })];
 }
 
-export function normalizePricingLines(lines, fallbackUnits = 1, fallbackUnitPrice = 1500) {
+export function normalizePricingLines(lines, fallbackUnits = 1, fallbackUnitPrice = 1500, scheduleContext = null) {
   if (Array.isArray(lines) && lines.length > 0) {
-    return lines.map((line, index) => ({
-      id: line.id || `line-${index}`,
-      ac_units: String(line.ac_units ?? 1),
-      unit_price: String(line.unit_price ?? fallbackUnitPrice),
-      is_taxable: Boolean(line.is_taxable),
-    }));
+    return lines.map((line, index) => {
+      const migrated = migratePricingLineFields({
+        id: line.id || `line-${index}`,
+        ac_units: String(line.ac_units ?? 1),
+        unit_price: String(line.unit_price ?? fallbackUnitPrice),
+        is_taxable: Boolean(line.is_taxable),
+        invoice_type: line.invoice_type,
+        invoice_title: line.invoice_title ?? '',
+        invoice_tax_id: line.invoice_tax_id ?? '',
+        charge_customer_tax: line.charge_customer_tax,
+      }, scheduleContext);
+
+      return {
+        ...migrated,
+        is_taxable: lineHasInvoice(migrated) ? migrated.charge_customer_tax !== false : Boolean(migrated.is_taxable),
+      };
+    });
   }
 
   return [createPricingLine({
@@ -192,36 +322,27 @@ export function normalizePricingLines(lines, fallbackUnits = 1, fallbackUnitPric
   })];
 }
 
-export function summarizePricingLines(lines, needsInvoice = false) {
+export function summarizePricingLines(lines) {
   const normalized = normalizePricingLines(lines);
   let totalUnits = 0;
-  let nonTaxableTotal = 0;
-  let taxableBase = 0;
+  let customerTotal = 0;
+  let hongyiFee = 0;
 
   normalized.forEach((line) => {
-    const units = Number(line.ac_units) || 0;
-    const unitPrice = Number(line.unit_price) || 0;
-    const lineBase = units * unitPrice;
-    totalUnits += units;
-
-    if (line.is_taxable) {
-      taxableBase += lineBase;
-    } else {
-      nonTaxableTotal += lineBase;
-    }
+    const totals = calculatePricingLineTotals(line);
+    totalUnits += Number(line.ac_units) || 0;
+    customerTotal += totals.customerAmount;
+    hongyiFee += totals.hongyiFee;
   });
-
-  const cleaningPrice = nonTaxableTotal + Math.round(taxableBase * (1 + INVOICE_SURCHARGE_RATE));
-  const derivedNeedsInvoice = needsInvoice || hasTaxablePricingLine(normalized);
 
   return {
     pricing_lines: normalized,
     ac_units: String(totalUnits || 1),
     unit_price: normalized[0]?.unit_price || '1500',
-    cleaning_price: String(cleaningPrice),
-    needs_invoice: derivedNeedsInvoice,
-    taxable_base: String(taxableBase),
-    non_taxable_total: String(nonTaxableTotal),
+    cleaning_price: String(customerTotal),
+    customer_total: String(customerTotal),
+    hongyi_fee: String(hongyiFee),
+    needs_invoice: hasInvoicedPricingLine(normalized),
   };
 }
 
@@ -293,7 +414,7 @@ export function getDefaultStartTime(workDate, userId, schedules = []) {
 
 export function buildScheduleSuccessSummary(form, employees = [], { mode = 'create' } = {}) {
   const employee = employees.find((item) => String(item.id) === String(form.user_id));
-  const pricing = summarizePricingLines(form.pricing_lines, Boolean(form.needs_invoice));
+  const pricing = summarizePricingLines(form.pricing_lines);
   const serviceAddresses = normalizeServiceAddresses(form);
   const acUnits = serviceAddresses.length > 1
     ? serviceAddresses.reduce((total, row) => total + (Number(row.ac_units) || 0), 0)
@@ -364,7 +485,7 @@ export function inferUnitPrice(schedule) {
 
 export function applyPriceCalculation(form) {
   const synced = syncInvoiceTaxFlags(form);
-  const summary = summarizePricingLines(synced.pricing_lines, shouldChargeCustomerTax(synced));
+  const summary = summarizePricingLines(synced.pricing_lines);
   let serviceAddresses = normalizeServiceAddresses(synced);
   if (serviceAddresses.length === 1) {
     serviceAddresses = serviceAddresses.map((row) => ({
@@ -1288,6 +1409,7 @@ export const emptyScheduleForm = {
   invoice_tax_id: '',
   invoice_title: '',
   cleaning_price: '1500',
+  hongyi_fee: '0',
   notes: '',
 };
 
@@ -1297,6 +1419,7 @@ export function scheduleToForm(schedule) {
     schedule.pricing_lines,
     schedule.ac_units ?? parsed.ac_units ?? 1,
     inferUnitPrice(schedule),
+    schedule,
   );
 
   return applyPriceCalculation({
@@ -1336,6 +1459,7 @@ export function scheduleToForm(schedule) {
     invoice_planned_date: formatDateOnly(schedule.invoice_planned_date) || '',
     invoice_tax_id: schedule.invoice_tax_id ?? '',
     invoice_title: schedule.invoice_title ?? '',
+    hongyi_fee: String(schedule.hongyi_fee ?? 0),
     notes: schedule.notes || '',
   });
 }
@@ -1668,7 +1792,25 @@ export function validateScheduleForm(form, { userRole = 'admin', original = null
     }
   }
 
-  if (needsInvoice) {
+  if (canManagePricing) {
+    pricingLines.forEach((line, index) => {
+      if (line.invoice_type === INVOICE_TYPE_TRIPLICATE) {
+        if (!String(line.invoice_title || '').trim()) {
+          messages.push(`項目 ${index + 1}：三聯發票請填寫發票抬頭`);
+        }
+
+        const taxId = String(line.invoice_tax_id || '').trim();
+
+        if (!taxId) {
+          messages.push(`項目 ${index + 1}：三聯發票請填寫統一編號`);
+        } else if (!/^\d{8}$/.test(taxId)) {
+          messages.push(`項目 ${index + 1}：統一編號須為 8 碼數字`);
+        }
+      }
+    });
+  }
+
+  if (needsInvoice && !canManagePricing) {
     const taxId = String(form.invoice_tax_id || '').trim();
     if (taxId && !/^\d{8}$/.test(taxId)) {
       messages.push('統一編號須為 8 碼數字');
@@ -1711,15 +1853,22 @@ export function buildSchedulePayload(form, { original = null, userRole = 'admin'
 
   const hidePricing = userRole === 'customer_service';
   const synced = syncInvoiceTaxFlags(form);
-  const summary = hidePricing
-    ? summarizePricingLines(synced.pricing_lines, false)
-    : summarizePricingLines(synced.pricing_lines, shouldChargeCustomerTax(synced));
-  const needsInvoice = Boolean(synced.needs_invoice);
-  const pricingLines = summary.pricing_lines.map(({ ac_units, unit_price, is_taxable }) => ({
-    ac_units: Number(ac_units),
-    unit_price: Number(unit_price),
-    is_taxable: Boolean(is_taxable),
+  const summary = summarizePricingLines(synced.pricing_lines);
+  const needsInvoice = Boolean(summary.needs_invoice || synced.needs_invoice);
+  const pricingLines = summary.pricing_lines.map((line) => ({
+    ac_units: Number(line.ac_units),
+    unit_price: Number(line.unit_price),
+    is_taxable: lineHasInvoice(line) && line.charge_customer_tax !== false,
+    invoice_type: line.invoice_type || INVOICE_TYPE_NONE,
+    invoice_title: line.invoice_type === INVOICE_TYPE_TRIPLICATE
+      ? String(line.invoice_title || '').trim() || null
+      : null,
+    invoice_tax_id: line.invoice_type === INVOICE_TYPE_TRIPLICATE
+      ? String(line.invoice_tax_id || '').trim() || null
+      : null,
+    charge_customer_tax: lineHasInvoice(line) ? line.charge_customer_tax !== false : false,
   }));
+  const triplicateLine = summary.pricing_lines.find((line) => line.invoice_type === INVOICE_TYPE_TRIPLICATE);
   const serviceAddresses = normalizeServiceAddresses(form);
   const primaryAddress = serviceAddresses[0];
 
@@ -1762,12 +1911,17 @@ export function buildSchedulePayload(form, { original = null, userRole = 'admin'
     pricing_lines: pricingLines,
     needs_invoice: needsInvoice,
     needs_receipt: Boolean(form.needs_receipt),
-    invoice_charge_customer_tax: needsInvoice ? Boolean(form.invoice_charge_customer_tax) : false,
+    invoice_charge_customer_tax: pricingLines.some((line) => line.charge_customer_tax),
+    hongyi_fee: Number(summary.hongyi_fee) || 0,
     invoice_planned_date: form.invoice_pre_issue && form.invoice_planned_date
       ? form.invoice_planned_date
       : null,
-    invoice_tax_id: needsInvoice ? form.invoice_tax_id?.trim() || null : null,
-    invoice_title: needsInvoice ? form.invoice_title?.trim() || null : null,
+    invoice_tax_id: needsInvoice
+      ? (triplicateLine?.invoice_tax_id?.trim() || form.invoice_tax_id?.trim() || null)
+      : null,
+    invoice_title: needsInvoice
+      ? (triplicateLine?.invoice_title?.trim() || form.invoice_title?.trim() || null)
+      : null,
     notes: form.notes?.trim() || null,
   };
 
@@ -1781,13 +1935,11 @@ export function buildSchedulePayload(form, { original = null, userRole = 'admin'
 export function buildSchedulePayloads(form, options = {}) {
   const addresses = normalizeServiceAddresses(form);
   const synced = syncInvoiceTaxFlags(form);
-  const chargeTax = shouldChargeCustomerTax(synced);
-  const summary = summarizePricingLines(synced.pricing_lines, chargeTax);
+  const summary = summarizePricingLines(synced.pricing_lines);
   const totalUnits = getTotalPricingUnits(synced);
   const groupPrice = Number(summary.cleaning_price) || 0;
   const primaryLine = normalizePricingLines(synced.pricing_lines)[0] || createPricingLine();
   const primaryUnitPrice = Number(primaryLine.unit_price) || 1500;
-  const primaryTaxable = Boolean(primaryLine.is_taxable);
 
   if (addresses.length <= 1) {
     const row = addresses[0];
@@ -1820,7 +1972,11 @@ export function buildSchedulePayloads(form, options = {}) {
       pricing_lines: [{
         ac_units: String(units),
         unit_price: String(primaryUnitPrice),
-        is_taxable: isFirst ? primaryTaxable : false,
+        is_taxable: isFirst ? Boolean(primaryLine.is_taxable) : false,
+        invoice_type: isFirst ? (primaryLine.invoice_type || INVOICE_TYPE_NONE) : INVOICE_TYPE_NONE,
+        invoice_title: isFirst ? (primaryLine.invoice_title || '') : '',
+        invoice_tax_id: isFirst ? (primaryLine.invoice_tax_id || '') : '',
+        charge_customer_tax: isFirst ? primaryLine.charge_customer_tax !== false : false,
       }],
       needs_mail: isFirst ? form.needs_mail : false,
       needs_invoice: isFirst ? form.needs_invoice : false,
