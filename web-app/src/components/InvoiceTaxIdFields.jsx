@@ -1,64 +1,12 @@
-import { useEffect, useRef, useState } from 'react';
-import { lookupCompanyByTaxId } from '../utils/taxIdLookup';
+import { useTaxIdLookup, normalizeTaxIdInput } from '../utils/useTaxIdLookup';
 
 export function InvoiceTaxIdFields({ invoiceTitle, invoiceTaxId, onChange }) {
-  const [lookupStatus, setLookupStatus] = useState('');
-  const lastLookedUpRef = useRef('');
-  const abortRef = useRef(null);
-  const onChangeRef = useRef(onChange);
-
-  onChangeRef.current = onChange;
-
-  useEffect(() => {
-    const taxId = String(invoiceTaxId || '').trim();
-
-    if (!/^\d{8}$/.test(taxId)) {
-      setLookupStatus('');
-      lastLookedUpRef.current = '';
-      return undefined;
-    }
-
-    if (taxId === lastLookedUpRef.current) {
-      return undefined;
-    }
-
-    abortRef.current?.abort();
-    const controller = new AbortController();
-    abortRef.current = controller;
-
-    setLookupStatus('loading');
-    lastLookedUpRef.current = taxId;
-
-    lookupCompanyByTaxId(taxId, controller.signal)
-      .then((companyName) => {
-        if (controller.signal.aborted) {
-          return;
-        }
-
-        if (companyName) {
-          onChangeRef.current({ invoice_title: companyName });
-          setLookupStatus('');
-          return;
-        }
-
-        onChangeRef.current({ invoice_title: '' });
-        setLookupStatus('not_found');
-      })
-      .catch(() => {
-        if (controller.signal.aborted) {
-          return;
-        }
-
-        onChangeRef.current({ invoice_title: '' });
-        setLookupStatus('not_found');
-      });
-
-    return () => controller.abort();
-  }, [invoiceTaxId]);
+  const lookupStatus = useTaxIdLookup(invoiceTaxId, (title) => {
+    onChange({ invoice_title: title });
+  });
 
   function handleTaxIdChange(event) {
-    const value = event.target.value.replace(/\D/g, '').slice(0, 8);
-    onChange({ invoice_tax_id: value });
+    onChange({ invoice_tax_id: normalizeTaxIdInput(event.target.value) });
   }
 
   return (

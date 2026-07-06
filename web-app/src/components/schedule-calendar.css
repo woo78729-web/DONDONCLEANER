@@ -3526,6 +3526,11 @@
   gap: 12px;
 }
 
+.pricing-line__invoice-lookup {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
 .pricing-line__invoice-sync {
   align-self: flex-start;
   padding: 0;

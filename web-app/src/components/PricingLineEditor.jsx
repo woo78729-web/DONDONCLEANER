@@ -7,7 +7,46 @@ import {
   INVOICE_TYPE_TRIPLICATE,
   UNIT_PRICE_OPTIONS,
 } from '../utils/scheduleCalendar';
+import { normalizeTaxIdInput, useTaxIdLookup } from '../utils/useTaxIdLookup';
 import './schedule-calendar.css';
+
+function PricingLineTriplicateFields({ line, onUpdate }) {
+  const lookupStatus = useTaxIdLookup(line.invoice_tax_id, (title) => {
+    onUpdate({ invoice_title: title });
+  });
+
+  return (
+    <div className="pricing-line__invoice-triplicate">
+      <label className="field">
+        <span className="field-label">發票抬頭</span>
+        <input
+          className="field-control"
+          value={line.invoice_title || ''}
+          onChange={(event) => onUpdate({ invoice_title: event.target.value })}
+          required
+        />
+      </label>
+      <label className="field">
+        <span className="field-label">統一編號</span>
+        <input
+          className="field-control"
+          value={line.invoice_tax_id || ''}
+          onChange={(event) => onUpdate({ invoice_tax_id: normalizeTaxIdInput(event.target.value) })}
+          inputMode="numeric"
+          pattern="\d{8}"
+          maxLength={8}
+          required
+        />
+      </label>
+      {lookupStatus === 'loading' && (
+        <p className="hint pricing-line__invoice-lookup">查詢中...</p>
+      )}
+      {lookupStatus === 'not_found' && (
+        <p className="hint pricing-line__invoice-lookup">查無此公司，請手動填寫抬頭</p>
+      )}
+    </div>
+  );
+}
 
 export function PricingLineEditor({
   lines,
@@ -129,29 +168,10 @@ export function PricingLineEditor({
                   </div>
 
                   {invoiceType === INVOICE_TYPE_TRIPLICATE && (
-                    <div className="pricing-line__invoice-triplicate">
-                      <label className="field">
-                        <span className="field-label">發票抬頭</span>
-                        <input
-                          className="field-control"
-                          value={line.invoice_title || ''}
-                          onChange={(event) => updateLine(line.id, { invoice_title: event.target.value })}
-                          required
-                        />
-                      </label>
-                      <label className="field">
-                        <span className="field-label">統一編號</span>
-                        <input
-                          className="field-control"
-                          value={line.invoice_tax_id || ''}
-                          onChange={(event) => updateLine(line.id, { invoice_tax_id: event.target.value })}
-                          inputMode="numeric"
-                          pattern="\d{8}"
-                          maxLength={8}
-                          required
-                        />
-                      </label>
-                    </div>
+                    <PricingLineTriplicateFields
+                      line={line}
+                      onUpdate={(changes) => updateLine(line.id, changes)}
+                    />
                   )}
 
                   {showCustomerTax && (
