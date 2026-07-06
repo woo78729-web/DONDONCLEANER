@@ -105,13 +105,15 @@ class MailTrackingApiTest extends TestCase
             'invoice_title' => '測試有限公司',
             'mail_tracking_number' => 'RR123456789TW',
             'invoice_sent' => true,
+            'mailed_at' => now()->toDateString(),
         ])
             ->assertOk()
             ->assertJsonPath('data.mail_recipient', '測試店家')
             ->assertJsonPath('data.invoice_tax_id', '12345678')
             ->assertJsonPath('data.invoice_title', '測試有限公司')
             ->assertJsonPath('data.mail_tracking_number', 'RR123456789TW')
-            ->assertJsonPath('data.invoice_sent', true);
+            ->assertJsonPath('data.invoice_sent', true)
+            ->assertJsonPath('data.mailed_at', now()->toDateString());
 
         $schedule->refresh();
 
@@ -119,6 +121,7 @@ class MailTrackingApiTest extends TestCase
         $this->assertSame('RR123456789TW', $schedule->mail_tracking_number);
         $this->assertTrue($schedule->invoice_sent);
         $this->assertNotNull($schedule->invoice_sent_at);
+        $this->assertSame(now()->toDateString(), $schedule->mailed_at?->format('Y-m-d'));
 
         $this->getJson('/api/admin/mail-tracking')
             ->assertOk()
@@ -234,6 +237,7 @@ class MailTrackingApiTest extends TestCase
         $schedule->forceFill([
             'invoice_sent' => true,
             'invoice_sent_at' => now()->subMonth(),
+            'mailed_at' => now()->subMonth()->toDateString(),
         ])->save();
 
         $this->getJson('/api/admin/mail-tracking/history?tax_id=87654321')
@@ -320,9 +324,11 @@ class MailTrackingApiTest extends TestCase
         $schedule->forceFill([
             'invoice_sent' => true,
             'invoice_sent_at' => now()->subDay(),
+            'mailed_at' => now()->subDay()->toDateString(),
         ])->save();
 
         $originalSentAt = $schedule->invoice_sent_at?->toDateTimeString();
+        $originalMailedAt = $schedule->mailed_at?->format('Y-m-d');
 
         $this->patchJson("/api/admin/schedules/{$schedule->id}/mail-tracking", [
             'mail_tracking_number' => 'RR555666777TW',
@@ -335,5 +341,93 @@ class MailTrackingApiTest extends TestCase
 
         $this->assertSame('RR555666777TW', $schedule->mail_tracking_number);
         $this->assertSame($originalSentAt, $schedule->invoice_sent_at?->toDateTimeString());
+        $this->assertSame($originalMailedAt, $schedule->mailed_at?->format('Y-m-d'));
+    }
+
+    public function test_admin_can_backdate_mailed_at_when_marking_sent(): void
+    {
+        Sanctum::actingAs($this->admin);
+
+        $employee = User::query()->create([
+            'account' => 'emp6',
+            'password' => Hash::make('password123'),
+            'name' => '師傅己',
+            'role' => 'employee',
+            'is_active' => true,
+            'rules_accepted_at' => now(),
+            'must_change_password' => false,
+        ]);
+
+        $schedule = DailySchedule::query()->create($this->scheduleAttributes([
+            'user_id' => $employee->id,
+            'work_date' => now()->toDateString(),
+            'needs_invoice' => true,
+            'needs_mail' => true,
+            'pricing_lines' => [[
+                'ac_units' => 1,
+                'unit_price' => 1500,
+                'invoice_type' => \App\Support\SchedulePricing::INVOICE_TYPE_DUPLICATE,
+                'charge_customer_tax' => true,
+            ]],
+        ]));
+
+        $backdated = now()->subMonth()->startOfMonth()->toDateString();
+
+        $this->patchJson("/api/admin/schedules/{$schedule->id}/mail-tracking", [
+            'invoice_sent' => true,
+            'mailed_at' => $backdated,
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.mailed_at', $backdated);
+
+        $this->getJson('/api/admin/mail-tracking')
+            ->assertOk()
+            ->assertJsonCount(0, 'data.sent_this_month.schedules');
+
+        $schedule->refresh();
+        $this->assertSame($backdated, $schedule->mailed_at?->format('Y-m-d'));
+    }
+
+    public function test_sent_this_month_list_uses_mailed_at_not_invoice_sent_at(): void
+    {
+        Sanctum::actingAs($this->admin);
+
+        $employee = User::query()->create([
+            'account' => 'emp7',
+            'password' => Hash::make('password123'),
+            'name' => '師傅庚',
+            'role' => 'employee',
+            'is_active' => true,
+            'rules_accepted_at' => now(),
+            'must_change_password' => false,
+        ]);
+
+        $schedule = DailySchedule::query()->create($this->scheduleAttributes([
+            'user_id' => $employee->id,
+            'work_date' => now()->toDateString(),
+            'needs_invoice' => true,
+            'needs_mail' => true,
+            'pricing_lines' => [[
+                'ac_units' => 1,
+                'unit_price' => 1500,
+                'invoice_type' => \App\Support\SchedulePricing::INVOICE_TYPE_DUPLICATE,
+                'charge_customer_tax' => true,
+            ]],
+            'invoice_sent' => true,
+            'invoice_sent_at' => now(),
+            'mailed_at' => now()->toDateString(),
+        ]));
+
+        $this->getJson('/api/admin/mail-tracking')
+            ->assertOk()
+            ->assertJsonPath('data.sent_this_month.schedules.0.id', $schedule->id);
+
+        $schedule->forceFill([
+            'mailed_at' => now()->subMonth()->startOfMonth()->toDateString(),
+        ])->save();
+
+        $this->getJson('/api/admin/mail-tracking')
+            ->assertOk()
+            ->assertJsonCount(0, 'data.sent_this_month.schedules');
     }
 }

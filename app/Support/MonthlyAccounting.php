@@ -72,9 +72,8 @@ class MonthlyAccounting
 
         $employeeSummaries = self::summarizeEmployees($reports, $yearMonth);
         $fixedExpenses = self::fixedExpensePayload();
-        $mailRecipientCount = self::countMailRecipientsForMonth((int) $year, (int) $month);
-        $manualPostageEntries = ManualPostageEntry::query()
-            ->where('year_month', $yearMonth)
+        $mailRecipientCount = MailPostageAccounting::countSentRecipientsForMonth((int) $year, (int) $month);
+        $manualPostageEntries = MailPostageAccounting::manualPostageForMonthQuery((int) $year, (int) $month)
             ->orderByDesc('id')
             ->get()
             ->map(fn (ManualPostageEntry $entry) => self::manualPostagePayload($entry))
@@ -163,40 +162,7 @@ class MonthlyAccounting
      */
     private static function countMailRecipientsForMonth(int $year, int $month): int
     {
-        $keys = [];
-
-        DailySchedule::query()
-            ->whereYear('work_date', $year)
-            ->whereMonth('work_date', $month)
-            ->where(function ($builder) {
-                $builder
-                    ->where('needs_mail', true)
-                    ->orWhere('needs_invoice', true)
-                    ->orWhere('needs_receipt', true);
-            })
-            ->each(function (DailySchedule $schedule) use (&$keys) {
-                $keys[MailMergeSupport::accountingPostageKey($schedule)] = true;
-            });
-
-        DailyReport::query()
-            ->with('dailySchedule')
-            ->where(function ($builder) {
-                $builder
-                    ->where('needs_invoice_and_mail', true)
-                    ->orWhere('needs_receipt_and_mail', true);
-            })
-            ->whereHas('dailySchedule', function ($query) use ($year, $month) {
-                $query->whereYear('work_date', $year)->whereMonth('work_date', $month);
-            })
-            ->each(function (DailyReport $report) use (&$keys) {
-                $schedule = $report->dailySchedule;
-
-                if ($schedule) {
-                    $keys[MailMergeSupport::accountingPostageKey($schedule)] = true;
-                }
-            });
-
-        return count($keys);
+        return MailPostageAccounting::countSentRecipientsForMonth($year, $month);
     }
 
     /**
@@ -564,6 +530,7 @@ class MonthlyAccounting
         return [
             'id' => $entry->id,
             'year_month' => $entry->year_month,
+            'mailed_at' => $entry->mailed_at?->format('Y-m-d'),
             'amount' => (int) $entry->amount,
             'mail_recipient' => $entry->mail_recipient,
             'mail_phone' => $entry->mail_phone,

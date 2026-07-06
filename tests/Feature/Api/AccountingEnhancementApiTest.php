@@ -64,7 +64,7 @@ class AccountingEnhancementApiTest extends TestCase
             'task_details' => '1台1000=1050',
         ]));
 
-        DailyReport::query()->create([
+        $report = DailyReport::query()->create([
             'schedule_id' => $schedule->id,
             'planned_units' => 1,
             'completed_units' => 1,
@@ -74,6 +74,9 @@ class AccountingEnhancementApiTest extends TestCase
             'report_invoice_tax_cost' => 80,
             'collected_amount' => 1050,
             'paid_to_company' => false,
+            'invoice_sent' => true,
+            'invoice_sent_at' => now(),
+            'mailed_at' => $workDate,
         ]);
 
         $this->assertTrue($schedule->fresh()->needs_mail);
@@ -108,6 +111,9 @@ class AccountingEnhancementApiTest extends TestCase
             'customer_name' => '潘媽',
             'customer_phone' => '0911111111',
             'customer_address' => '950臺東市測試路1號',
+            'invoice_sent' => true,
+            'invoice_sent_at' => now(),
+            'mailed_at' => $workDate,
         ]));
 
         $this->getJson('/api/admin/accounting?year_month='.$yearMonth)
@@ -132,6 +138,9 @@ class AccountingEnhancementApiTest extends TestCase
             'customer_name' => 'Ching Chem',
             'customer_phone' => '0979518775',
             'customer_address' => '950臺東市地址一號',
+            'invoice_sent' => true,
+            'invoice_sent_at' => now(),
+            'mailed_at' => $workDate,
         ]));
 
         DailySchedule::query()->create($this->scheduleAttributes([
@@ -141,6 +150,9 @@ class AccountingEnhancementApiTest extends TestCase
             'customer_name' => 'Ching Chem',
             'customer_phone' => '0979518775',
             'customer_address' => '950臺東市地址二號',
+            'invoice_sent' => true,
+            'invoice_sent_at' => now(),
+            'mailed_at' => $workDate,
         ]));
 
         $this->getJson('/api/admin/accounting?year_month='.$yearMonth)
@@ -156,7 +168,7 @@ class AccountingEnhancementApiTest extends TestCase
         $yearMonth = now()->format('Y-m');
 
         $this->postJson('/api/admin/accounting/manual-postage', [
-            'year_month' => $yearMonth,
+            'mailed_at' => now()->toDateString(),
             'mail_recipient' => '王小姐',
             'mail_phone' => '0912345678',
             'mail_address' => '台北市信義區信義路一段1號',
@@ -164,6 +176,7 @@ class AccountingEnhancementApiTest extends TestCase
         ])
             ->assertCreated()
             ->assertJsonPath('data.entry.amount', 28)
+            ->assertJsonPath('data.entry.mailed_at', now()->toDateString())
             ->assertJsonPath('data.entry.mail_recipient', '王小姐')
             ->assertJsonPath('data.entry.mail_phone', '0912345678')
             ->assertJsonPath('data.entry.notes', '發票抬頭更正補寄');
@@ -173,6 +186,75 @@ class AccountingEnhancementApiTest extends TestCase
             ->assertJsonPath('data.manual_postage_entries.0.notes', '發票抬頭更正補寄')
             ->assertJsonPath('data.auto_charges.0.manual_postage_count', 1)
             ->assertJsonPath('data.auto_charges.0.amount', 28);
+    }
+
+    public function test_pending_mail_items_do_not_count_toward_postage(): void
+    {
+        Sanctum::actingAs($this->admin);
+
+        $yearMonth = now()->format('Y-m');
+
+        DailySchedule::query()->create($this->scheduleAttributes([
+            'user_id' => $this->employee->id,
+            'work_date' => now()->toDateString(),
+            'needs_invoice' => true,
+            'invoice_sent' => false,
+        ]));
+
+        $this->getJson('/api/admin/accounting?year_month='.$yearMonth)
+            ->assertOk()
+            ->assertJsonMissingPath('data.auto_charges.0');
+    }
+
+    public function test_postage_uses_mailed_at_month_not_work_date(): void
+    {
+        Sanctum::actingAs($this->admin);
+
+        $currentMonth = now()->format('Y-m');
+        $previousMonthDate = now()->subMonth()->startOfMonth()->toDateString();
+        $previousMonth = now()->subMonth()->format('Y-m');
+
+        DailySchedule::query()->create($this->scheduleAttributes([
+            'user_id' => $this->employee->id,
+            'work_date' => now()->toDateString(),
+            'needs_invoice' => true,
+            'invoice_sent' => true,
+            'invoice_sent_at' => now(),
+            'mailed_at' => $previousMonthDate,
+        ]));
+
+        $this->getJson('/api/admin/accounting?year_month='.$currentMonth)
+            ->assertOk()
+            ->assertJsonMissingPath('data.auto_charges.0');
+
+        $this->getJson('/api/admin/accounting?year_month='.$previousMonth)
+            ->assertOk()
+            ->assertJsonPath('data.auto_charges.0.amount', 28);
+    }
+
+    public function test_manual_postage_backdated_to_previous_month_counts_there(): void
+    {
+        Sanctum::actingAs($this->admin);
+
+        $previousMonth = now()->subMonth()->format('Y-m');
+        $mailedAt = now()->subMonth()->startOfMonth()->toDateString();
+
+        $this->postJson('/api/admin/accounting/manual-postage', [
+            'mailed_at' => $mailedAt,
+            'mail_recipient' => '補登客戶',
+            'mail_phone' => '0911222333',
+            'mail_address' => '台東市補登路1號',
+            'notes' => '六月補寄',
+        ])->assertCreated();
+
+        $this->getJson('/api/admin/accounting?year_month='.$previousMonth)
+            ->assertOk()
+            ->assertJsonPath('data.auto_charges.0.manual_postage_count', 1)
+            ->assertJsonPath('data.auto_charges.0.amount', 28);
+
+        $this->getJson('/api/admin/accounting?year_month='.now()->format('Y-m'))
+            ->assertOk()
+            ->assertJsonMissingPath('data.auto_charges.0');
     }
 
     public function test_unit_performance_endpoint_returns_yearly_totals(): void

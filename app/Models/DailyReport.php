@@ -26,6 +26,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
     'paid_to_company',
     'invoice_sent',
     'invoice_sent_at',
+    'mailed_at',
 ])]
 class DailyReport extends Model
 {
@@ -45,6 +46,7 @@ class DailyReport extends Model
             'paid_to_company' => 'boolean',
             'invoice_sent' => 'boolean',
             'invoice_sent_at' => 'datetime',
+            'mailed_at' => 'date:Y-m-d',
             'unit_mismatch' => 'boolean',
             'admin_unit_alert_dismissed_at' => 'datetime',
             'has_tax' => 'boolean',

@@ -15,7 +15,26 @@ function formatSentAt(value) {
     return '-';
   }
 
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return value;
+  }
+
   return value.replace('T', ' ').slice(0, 16);
+}
+
+function todayDateString() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+
+  return `${year}-${month}-${day}`;
+}
+
+function resolveMailedAt(source) {
+  return source?.mailed_at?.slice(0, 10)
+    || source?.invoice_sent_at?.slice(0, 10)
+    || '';
 }
 
 function formatMoney(value) {
@@ -45,6 +64,7 @@ const emptyManualPostageDraft = () => ({
   mail_phone: '',
   mail_address: '',
   notes: '',
+  mailed_at: todayDateString(),
 });
 
 function ManualPostageModal({ open, onClose, onSave, saving }) {
@@ -66,7 +86,7 @@ function ManualPostageModal({ open, onClose, onSave, saving }) {
         <div className="modal-header">
           <div>
             <h2 className="modal-title">新增補寄郵資</h2>
-            <p className="hint">填寫收件資料與原因，確認後計入本月 28 元郵資。</p>
+            <p className="hint">填寫收件資料與原因；依「實際寄出時間」歸屬月份，每筆計 28 元郵資。</p>
           </div>
           <button type="button" className="modal-close" onClick={onClose} aria-label="關閉">×</button>
         </div>
@@ -123,6 +143,18 @@ function ManualPostageModal({ open, onClose, onSave, saving }) {
             />
           </label>
 
+          <label className="field">
+            <span className="field-label">實際寄出時間</span>
+            <input
+              className="field-control"
+              type="date"
+              value={draft.mailed_at}
+              onChange={(event) => setDraft((previous) => ({ ...previous, mailed_at: event.target.value }))}
+              required
+            />
+            <span className="hint">補登舊帳時請改為實際寄出日期，會計入該月自動開支。</span>
+          </label>
+
           <div className="modal-actions">
             <button type="button" className="btn btn-secondary btn-pill" onClick={onClose} disabled={saving}>
               取消
@@ -146,6 +178,7 @@ function buildScheduleDraft(schedule) {
     invoice_title: schedule?.invoice_title || '',
     mail_tracking_number: schedule?.mail_tracking_number || '',
     invoice_sent: Boolean(schedule?.invoice_sent),
+    mailed_at: resolveMailedAt(schedule) || todayDateString(),
   };
 }
 
@@ -160,6 +193,7 @@ function buildReportDraft(report) {
     invoice_title: schedule?.invoice_title || '',
     mail_tracking_number: schedule?.mail_tracking_number || '',
     invoice_sent: Boolean(report?.invoice_sent),
+    mailed_at: resolveMailedAt(report) || todayDateString(),
   };
 }
 
@@ -276,10 +310,32 @@ function MailTrackingEditModal({ item, kind, open, onClose, onSave, saving, sent
               type="checkbox"
               checked={Boolean(draft.invoice_sent)}
               disabled={sentEdit}
-              onChange={(event) => setDraft((previous) => ({ ...previous, invoice_sent: event.target.checked }))}
+              onChange={(event) => {
+                const checked = event.target.checked;
+
+                setDraft((previous) => ({
+                  ...previous,
+                  invoice_sent: checked,
+                  mailed_at: checked ? (previous.mailed_at || todayDateString()) : previous.mailed_at,
+                }));
+              }}
             />
             <span>已寄件完成</span>
           </label>
+
+          {(draft.invoice_sent || sentEdit) && (
+            <label className="field">
+              <span className="field-label">實際寄出時間</span>
+              <input
+                className="field-control"
+                type="date"
+                value={draft.mailed_at || todayDateString()}
+                onChange={(event) => setDraft((previous) => ({ ...previous, mailed_at: event.target.value }))}
+                required
+              />
+              <span className="hint">補登舊帳時請改為實際寄出日期；月結郵資依此日期歸屬月份。</span>
+            </label>
+          )}
 
           <div className="modal-actions">
             <button type="submit" className="btn btn-primary btn-pill" disabled={saving}>
@@ -604,7 +660,7 @@ export default function MailTrackingPage() {
 
     try {
       await api.createManualPostage({
-        year_month: currentYearMonth,
+        mailed_at: draft.mailed_at || todayDateString(),
         mail_recipient,
         mail_phone,
         mail_address,
@@ -761,7 +817,7 @@ export default function MailTrackingPage() {
 
       <section className="card">
         <h3 className="section-label mail-tracking-section-title">補寄郵資（發票更正等）</h3>
-        <p className="hint">不需重新派工時，可在此新增 28 元補寄郵資，會計入本月自動開支。</p>
+        <p className="hint">不需重新派工時，可在此新增 28 元補寄郵資；依實際寄出時間歸屬月份。</p>
         <div className="mail-tracking-manual-postage">
           <button
             type="button"
@@ -781,6 +837,7 @@ export default function MailTrackingPage() {
                   <th>地址</th>
                   <th>說明</th>
                   <th>金額</th>
+                  <th>寄出時間</th>
                   <th>建立時間</th>
                   <th aria-label="操作" />
                 </tr>
@@ -793,6 +850,7 @@ export default function MailTrackingPage() {
                     <td className="mail-tracking-address">{entry.mail_address || '-'}</td>
                     <td>{entry.notes}</td>
                     <td className="num">{entry.amount} 元</td>
+                    <td>{formatSentAt(entry.mailed_at)}</td>
                     <td>{formatSentAt(entry.created_at)}</td>
                     <td>
                       <button
@@ -843,6 +901,7 @@ export default function MailTrackingPage() {
 
           <section className="card table-card">
             <h3 className="section-label mail-tracking-section-title">當月寄出紀錄</h3>
+            <p className="hint">依「實際寄出時間（mailed_at）」篩選本月已寄件完成項目，與月結郵資一致。</p>
             <MailTrackingTable
               rows={sentThisMonthRows}
               emptyText="本月尚無寄出紀錄。"

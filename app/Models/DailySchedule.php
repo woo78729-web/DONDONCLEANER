@@ -41,6 +41,9 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
     'pricing_lines',
     'task_details',
     'notes',
+    'invoice_sent',
+    'invoice_sent_at',
+    'mailed_at',
 ])]
 class DailySchedule extends Model
 {
@@ -75,6 +78,7 @@ class DailySchedule extends Model
             'needs_mail' => 'boolean',
             'invoice_sent' => 'boolean',
             'invoice_sent_at' => 'datetime',
+            'mailed_at' => 'date:Y-m-d',
             'pricing_lines' => 'array',
         ];
     }

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\AccountingSetting;
 use App\Models\ManualPostageEntry;
 use App\Models\MonthlyAdvanceEntry;
+use App\Support\MailPostageAccounting;
 use App\Support\MonthlyAccounting;
 use App\Support\UnitPerformanceReport;
 use Illuminate\Http\JsonResponse;
@@ -125,7 +126,8 @@ class AccountingController extends Controller
     public function storeManualPostage(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'year_month' => ['required', 'regex:/^\d{4}-\d{2}$/'],
+            'year_month' => ['nullable', 'regex:/^\d{4}-\d{2}$/'],
+            'mailed_at' => ['nullable', 'date'],
             'amount' => ['nullable', 'integer', 'min:1', 'max:9999'],
             'mail_recipient' => ['required', 'string', 'max:255'],
             'mail_phone' => ['required', 'string', 'max:50'],
@@ -133,8 +135,15 @@ class AccountingController extends Controller
             'notes' => ['required', 'string', 'max:255'],
         ]);
 
+        $mailedAt = MailPostageAccounting::resolveMailedAt(
+            $validated['mailed_at'] ?? null,
+            true,
+        );
+        $yearMonth = $validated['year_month'] ?? substr((string) $mailedAt, 0, 7);
+
         $entry = ManualPostageEntry::query()->create([
-            'year_month' => $validated['year_month'],
+            'year_month' => $yearMonth,
+            'mailed_at' => $mailedAt,
             'amount' => $validated['amount'] ?? MonthlyAccounting::POSTAGE_UNIT,
             'mail_recipient' => trim($validated['mail_recipient']),
             'mail_phone' => trim($validated['mail_phone']),
@@ -147,6 +156,7 @@ class AccountingController extends Controller
             'entry' => [
                 'id' => $entry->id,
                 'year_month' => $entry->year_month,
+                'mailed_at' => $entry->mailed_at?->format('Y-m-d'),
                 'amount' => (int) $entry->amount,
                 'mail_recipient' => $entry->mail_recipient,
                 'mail_phone' => $entry->mail_phone,
@@ -154,13 +164,13 @@ class AccountingController extends Controller
                 'notes' => $entry->notes,
                 'created_at' => $entry->created_at?->toDateTimeString(),
             ],
-            'summary' => MonthlyAccounting::buildSummary($validated['year_month']),
+            'summary' => MonthlyAccounting::buildSummary($yearMonth),
         ], '補寄郵資已新增', 201);
     }
 
     public function destroyManualPostage(ManualPostageEntry $manualPostage): JsonResponse
     {
-        $yearMonth = $manualPostage->year_month;
+        $yearMonth = $manualPostage->mailed_at?->format('Y-m') ?? $manualPostage->year_month;
         $manualPostage->delete();
 
         return $this->success(

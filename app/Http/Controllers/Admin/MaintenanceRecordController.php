@@ -10,6 +10,7 @@ use App\Models\MaintenanceRecordPhoto;
 use App\Models\User;
 use App\Support\MaintenanceRecordSupport;
 use App\Support\MailMergeSupport;
+use App\Support\MailPostageAccounting;
 use App\Support\MailTrackingSupport;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -222,12 +223,14 @@ class MaintenanceRecordController extends Controller
 
     public function mailTracking(Request $request): JsonResponse
     {
-        $monthStart = now()->startOfMonth();
+        $now = now();
+        $year = (int) $now->format('Y');
+        $month = (int) $now->format('n');
 
         $scheduleQuery = DailySchedule::query()
             ->with([
                 'user:id,name,account',
-                'dailyReport:id,schedule_id,needs_invoice_and_mail,needs_receipt_and_mail,invoice_sent,invoice_sent_at',
+                'dailyReport:id,schedule_id,needs_invoice_and_mail,needs_receipt_and_mail,invoice_sent,invoice_sent_at,mailed_at',
             ])
             ->where('needs_mail', true);
 
@@ -253,10 +256,12 @@ class MaintenanceRecordController extends Controller
             ->map(fn (DailySchedule $schedule) => $this->scheduleMailPayload($schedule));
 
         $sentThisMonthSchedules = MailTrackingSupport::uniqueMailTrackingSchedules(
-            (clone $scheduleQuery)
-                ->where('invoice_sent', true)
-                ->where('invoice_sent_at', '>=', $monthStart)
-                ->orderByDesc('invoice_sent_at')
+            MailPostageAccounting::sentSchedulesForMonthQuery($year, $month)
+                ->with([
+                    'user:id,name,account',
+                    'dailyReport:id,schedule_id,needs_invoice_and_mail,needs_receipt_and_mail,invoice_sent,invoice_sent_at,mailed_at',
+                ])
+                ->orderByDesc('mailed_at')
                 ->orderByDesc('id')
                 ->limit(200)
                 ->get()
@@ -292,10 +297,11 @@ class MaintenanceRecordController extends Controller
         )->map(fn (DailyReport $report) => $this->reportMailPayload($report));
 
         $sentThisMonthReports = MailTrackingSupport::uniqueMailTrackingReports(
-            (clone $reportQuery)
-                ->where('invoice_sent', true)
-                ->where('invoice_sent_at', '>=', $monthStart)
-                ->orderByDesc('invoice_sent_at')
+            MailPostageAccounting::sentReportsForMonthQuery($year, $month)
+                ->with([
+                    'dailySchedule' => fn ($query) => $query->with('user:id,name,account'),
+                ])
+                ->orderByDesc('mailed_at')
                 ->orderByDesc('id')
                 ->limit(100)
                 ->get()
@@ -345,7 +351,7 @@ class MaintenanceRecordController extends Controller
         $this->applyMailHistoryFilters($scheduleQuery, $taxId, $title, $phone);
 
         $schedules = $scheduleQuery
-            ->orderByDesc('invoice_sent_at')
+            ->orderByDesc('mailed_at')
             ->orderByDesc('work_date')
             ->limit(50)
             ->get()
@@ -366,7 +372,7 @@ class MaintenanceRecordController extends Controller
             });
 
         $reports = $reportQuery
-            ->orderByDesc('invoice_sent_at')
+            ->orderByDesc('mailed_at')
             ->orderByDesc('created_at')
             ->limit(50)
             ->get()
@@ -394,19 +400,13 @@ class MaintenanceRecordController extends Controller
             'invoice_title' => ['nullable', 'string', 'max:255'],
             'mail_tracking_number' => ['nullable', 'string', 'max:50'],
             'invoice_sent' => ['nullable', 'boolean'],
+            'mailed_at' => ['nullable', 'date'],
         ]);
 
         $this->applyMailTrackingFields($schedule, $validated);
 
         $wasSent = $schedule->invoice_sent;
-
-        if (! empty($validated['invoice_sent'])) {
-            if (! $wasSent) {
-                $schedule->invoice_sent_at = now();
-            }
-
-            $schedule->invoice_sent = true;
-        }
+        $this->applyScheduleMailSentState($schedule, $validated, $wasSent);
 
         $schedule->save();
 
@@ -432,6 +432,7 @@ class MaintenanceRecordController extends Controller
             'invoice_title' => ['nullable', 'string', 'max:255'],
             'mail_tracking_number' => ['nullable', 'string', 'max:50'],
             'invoice_sent' => ['nullable', 'boolean'],
+            'mailed_at' => ['nullable', 'date'],
         ]);
 
         $schedule = $report->dailySchedule;
@@ -440,24 +441,13 @@ class MaintenanceRecordController extends Controller
 
         if ($schedule) {
             $this->applyMailTrackingFields($schedule, $validated);
-
-            if (! empty($validated['invoice_sent'])) {
-                if (! $wasScheduleSent) {
-                    $schedule->invoice_sent_at = now();
-                }
-
-                $schedule->invoice_sent = true;
-            }
-
+            $this->applyScheduleMailSentState($schedule, $validated, $wasScheduleSent);
             $schedule->save();
         }
 
-        if (! empty($validated['invoice_sent'])) {
-            if (! $wasReportSent) {
-                $report->invoice_sent_at = now();
-            }
+        $this->applyReportMailSentState($report, $validated, $wasReportSent);
 
-            $report->invoice_sent = true;
+        if ($report->isDirty()) {
             $report->save();
         }
 
@@ -475,6 +465,7 @@ class MaintenanceRecordController extends Controller
     {
         $schedule->invoice_sent = true;
         $schedule->invoice_sent_at = now();
+        $schedule->mailed_at = now()->toDateString();
         $schedule->save();
 
         return $this->success($schedule->fresh(), '班表寄件狀態已更新');
@@ -484,6 +475,7 @@ class MaintenanceRecordController extends Controller
     {
         $report->invoice_sent = true;
         $report->invoice_sent_at = now();
+        $report->mailed_at = now()->toDateString();
         $report->save();
 
         return $this->success($report->fresh()->load('dailySchedule.user:id,name,account'), '回報寄件狀態已更新');
@@ -572,6 +564,7 @@ class MaintenanceRecordController extends Controller
             'needs_receipt' => (bool) $schedule->needs_receipt,
             'invoice_sent' => (bool) $schedule->invoice_sent,
             'invoice_sent_at' => $schedule->invoice_sent_at?->toDateTimeString(),
+            'mailed_at' => $schedule->mailed_at?->format('Y-m-d'),
             'user' => $schedule->user,
             'daily_report' => $schedule->dailyReport,
         ];
@@ -588,6 +581,7 @@ class MaintenanceRecordController extends Controller
             'id' => $report->id,
             'invoice_sent' => (bool) $report->invoice_sent,
             'invoice_sent_at' => $report->invoice_sent_at?->toDateTimeString(),
+            'mailed_at' => $report->mailed_at?->format('Y-m-d'),
             'needs_invoice_and_mail' => (bool) $report->needs_invoice_and_mail,
             'needs_receipt_and_mail' => (bool) $report->needs_receipt_and_mail,
             'completed_units' => (int) $report->completed_units,
@@ -661,6 +655,78 @@ class MaintenanceRecordController extends Controller
             $schedule->{$field} = $validated[$field] !== ''
                 ? trim((string) $validated[$field])
                 : null;
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $validated
+     */
+    private function applyScheduleMailSentState(DailySchedule $schedule, array $validated, bool $wasSent): void
+    {
+        if (array_key_exists('invoice_sent', $validated)) {
+            if (! empty($validated['invoice_sent'])) {
+                if (! $wasSent) {
+                    $schedule->invoice_sent_at = now();
+                }
+
+                $schedule->invoice_sent = true;
+
+                if (array_key_exists('mailed_at', $validated)) {
+                    $schedule->mailed_at = MailPostageAccounting::resolveMailedAt(
+                        $validated['mailed_at'],
+                        ! $wasSent,
+                    );
+                } elseif (! $wasSent) {
+                    $schedule->mailed_at = MailPostageAccounting::resolveMailedAt(null, true);
+                }
+
+                return;
+            }
+
+            return;
+        }
+
+        if ($schedule->invoice_sent && array_key_exists('mailed_at', $validated)) {
+            $schedule->mailed_at = MailPostageAccounting::resolveMailedAt(
+                $validated['mailed_at'],
+                false,
+            );
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $validated
+     */
+    private function applyReportMailSentState(DailyReport $report, array $validated, bool $wasSent): void
+    {
+        if (array_key_exists('invoice_sent', $validated)) {
+            if (! empty($validated['invoice_sent'])) {
+                if (! $wasSent) {
+                    $report->invoice_sent_at = now();
+                }
+
+                $report->invoice_sent = true;
+
+                if (array_key_exists('mailed_at', $validated)) {
+                    $report->mailed_at = MailPostageAccounting::resolveMailedAt(
+                        $validated['mailed_at'],
+                        ! $wasSent,
+                    );
+                } elseif (! $wasSent) {
+                    $report->mailed_at = MailPostageAccounting::resolveMailedAt(null, true);
+                }
+
+                return;
+            }
+
+            return;
+        }
+
+        if ($report->invoice_sent && array_key_exists('mailed_at', $validated)) {
+            $report->mailed_at = MailPostageAccounting::resolveMailedAt(
+                $validated['mailed_at'],
+                false,
+            );
         }
     }
 }

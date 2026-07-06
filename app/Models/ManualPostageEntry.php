@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 #[Fillable([
     'year_month',
+    'mailed_at',
     'amount',
     'mail_recipient',
     'mail_phone',
@@ -17,6 +18,13 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 ])]
 class ManualPostageEntry extends Model
 {
+    protected function casts(): array
+    {
+        return [
+            'mailed_at' => 'date:Y-m-d',
+        ];
+    }
+
     public function creator(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');
