@@ -116,6 +116,10 @@ export function ScheduleSuccessModal({ open, summary, onConfirm }) {
             <dd>{summary.customer_address || '-'}</dd>
           </div>
           <div className="schedule-success-modal__row">
+            <dt>客戶電話</dt>
+            <dd>{summary.customer_phone || '-'}</dd>
+          </div>
+          <div className="schedule-success-modal__row">
             <dt>清洗台數</dt>
             <dd>{formatScheduleAcUnits(summary)}</dd>
           </div>

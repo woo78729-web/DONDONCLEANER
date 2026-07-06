@@ -129,7 +129,7 @@ export function AddressAutocompleteInput({
       className={`address-autocomplete-field${open ? ' address-autocomplete-field--open' : ''}`}
       ref={containerRef}
     >
-      <input
+      <textarea
         className={className}
         value={value || ''}
         onChange={handleInputChange}
@@ -143,6 +143,7 @@ export function AddressAutocompleteInput({
         required={required}
         disabled={disabled}
         autoComplete="street-address"
+        rows={2}
         role="combobox"
         aria-expanded={open}
         aria-controls={open ? listboxId : undefined}
