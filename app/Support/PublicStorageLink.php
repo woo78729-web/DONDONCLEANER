@@ -2,6 +2,7 @@
 
 namespace App\Support;
 
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\File;
 
 class PublicStorageLink
@@ -12,6 +13,7 @@ class PublicStorageLink
         $target = storage_path('app/public');
 
         File::ensureDirectoryExists($target);
+        File::ensureDirectoryExists($target.'/avatars');
 
         if (is_link($link)) {
             $resolved = realpath($link);
@@ -22,14 +24,22 @@ class PublicStorageLink
             }
 
             @unlink($link);
-        } elseif (file_exists($link)) {
-            return;
+        } elseif (file_exists($link) && ! is_link($link)) {
+            if (is_dir($link)) {
+                File::deleteDirectory($link);
+            } else {
+                File::delete($link);
+            }
         }
 
         try {
-            File::link($target, $link);
+            Artisan::call('storage:link', ['--force' => true]);
         } catch (\Throwable $exception) {
-            report($exception);
+            try {
+                File::link($target, $link);
+            } catch (\Throwable $fallbackException) {
+                report($fallbackException);
+            }
         }
     }
 }

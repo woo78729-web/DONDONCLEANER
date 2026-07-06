@@ -767,12 +767,6 @@ export function buildScheduleUnitsPriceTag(schedule, { hidePrice = false } = {})
       return `${localTag}[共${multi.groupUnits}離${multi.groupPrice}]`;
     }
 
-    const segmentTotal = getScheduleSegmentTotal(schedule);
-
-    if (segmentTotal > 0) {
-      return `[${units || '-'}離${segmentTotal}]`;
-    }
-
     return localTag;
   }
 
