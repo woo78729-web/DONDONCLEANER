@@ -27,11 +27,10 @@ export default function RemittanceTrackingPage() {
     expected_remittance_date: '',
     confirmed_at: '',
     amount: '',
+    split_amount: '',
+    split_expected_remittance_date: '',
   });
-  const [splitItem, setSplitItem] = useState(null);
-  const [splitAmount, setSplitAmount] = useState('');
   const [savingEdit, setSavingEdit] = useState(false);
-  const [savingSplit, setSavingSplit] = useState(false);
 
   async function loadTracking(nextYearMonth = yearMonth) {
     setLoading(true);
@@ -69,22 +68,20 @@ export default function RemittanceTrackingPage() {
       expected_remittance_date: item.expected_remittance_date || item.work_date || '',
       confirmed_at: item.confirmed_at ? item.confirmed_at.slice(0, 10) : '',
       amount: String(item.amount || ''),
+      split_amount: '',
+      split_expected_remittance_date: item.expected_remittance_date || item.work_date || '',
     });
   }
 
   function closeEditModal() {
     setEditItem(null);
-    setEditDraft({ expected_remittance_date: '', confirmed_at: '', amount: '' });
-  }
-
-  function openSplitModal(item) {
-    setSplitItem(item);
-    setSplitAmount('');
-  }
-
-  function closeSplitModal() {
-    setSplitItem(null);
-    setSplitAmount('');
+    setEditDraft({
+      expected_remittance_date: '',
+      confirmed_at: '',
+      amount: '',
+      split_amount: '',
+      split_expected_remittance_date: '',
+    });
   }
 
   async function handleSaveEdit(event) {
@@ -114,26 +111,36 @@ export default function RemittanceTrackingPage() {
     }
   }
 
-  async function handleSplitSubmit(event) {
+  async function handleSplitFromEdit(event) {
     event.preventDefault();
 
-    if (!splitItem) {
+    if (!editItem) {
       return;
     }
 
-    setSavingSplit(true);
+    const splitAmount = Number(editDraft.split_amount);
+
+    if (!Number.isFinite(splitAmount) || splitAmount < 1 || splitAmount >= Number(editItem.amount || 1)) {
+      setError(`拆分金額需大於 0 且小於 ${formatMoney(editItem.amount)} 元`);
+      return;
+    }
+
+    setSavingEdit(true);
     setError('');
     setMessage('');
 
     try {
-      await api.splitRemittance(splitItem.id, Number(splitAmount));
+      await api.splitRemittance(editItem.id, {
+        split_amount: splitAmount,
+        expected_remittance_date: editDraft.split_expected_remittance_date || null,
+      });
       setMessage('匯款紀錄已拆分');
-      closeSplitModal();
+      closeEditModal();
       await loadTracking(yearMonth);
     } catch (err) {
       setError(err.message);
     } finally {
-      setSavingSplit(false);
+      setSavingEdit(false);
     }
   }
 
@@ -187,14 +194,27 @@ export default function RemittanceTrackingPage() {
                 <td>
                   {item.employee_name || '-'}
                   {item.is_project_total && item.project_code && (
-                    <div className="hint">專案 {item.project_code}</div>
+                    <div className="hint">
+                      專案 {item.project_code}
+                      {item.split_total_count > 1 && (
+                        <> · 第 {item.split_index}/{item.split_total_count} 筆</>
+                      )}
+                    </div>
                   )}
                 </td>
                 <td>{item.customer_name || '-'}</td>
                 <td>{item.customer_address || '-'}</td>
                 <td>{item.expected_remittance_date || item.work_date || '-'}</td>
                 <td>{item.confirmed_at ? item.confirmed_at.slice(0, 10) : '-'}</td>
-                <td className="num">{formatMoney(item.amount)}</td>
+                <td className="num">
+                  {formatMoney(item.amount)}
+                  {item.order_total_amount && item.split_total_count > 1 && (
+                    <div className="hint">全案 {formatMoney(item.order_total_amount)}</div>
+                  )}
+                  {item.amount_mismatch && (
+                    <div className="hint hint--warning">拆帳總額與訂單不符</div>
+                  )}
+                </td>
                 <td>
                   <span className={`status-pill${item.is_overdue ? ' status-pill--warn' : ''}`}>
                     {item.status_label}
@@ -213,13 +233,6 @@ export default function RemittanceTrackingPage() {
                       </button>
                       {item.status !== 'confirmed' && (
                         <>
-                          <button
-                            type="button"
-                            className="btn btn-secondary btn-sm"
-                            onClick={() => openSplitModal(item)}
-                          >
-                            拆帳
-                          </button>
                           <button
                             type="button"
                             className="btn btn-secondary btn-sm"
@@ -252,12 +265,18 @@ export default function RemittanceTrackingPage() {
     );
   }
 
+  const isConfirmed = editItem?.status === 'confirmed';
+  const canSplit = editItem?.can_split && !isConfirmed;
+  const remainingAfterSplit = editItem
+    ? Math.max(0, Number(editItem.amount || 0) - Number(editDraft.split_amount || 0))
+    : 0;
+
   return (
     <Layout title="匯款追查">
       <section className="card">
         <div className="card-header">
           <h2 className="card-title">月份查詢</h2>
-          <p className="hint">專案工單只會產生一筆匯款（總尾款）；營業額與宏逸 8% 代墊依工單日期計入當月，不受入帳狀態影響。</p>
+          <p className="hint">專案工單只產生一筆主匯款（總尾款），可於編輯內無限次拆帳分批入帳；營業額與宏逸 8% 仍依工單日期計入。</p>
         </div>
         <div className="filter-toolbar">
           <label className="field field-compact">
@@ -306,21 +325,24 @@ export default function RemittanceTrackingPage() {
 
       {editItem && (
         <div className="modal-overlay schedule-form-overlay" role="presentation" onClick={closeEditModal}>
-          <form
-            className="modal-panel modal-panel--wide"
+          <div
+            className="modal-panel modal-panel--wide schedule-form-modal"
             role="dialog"
             aria-modal="true"
             onClick={(event) => event.stopPropagation()}
-            onSubmit={handleSaveEdit}
           >
             <div className="modal-header">
               <div>
                 <h2 className="modal-title">編輯匯款紀錄</h2>
-                <p className="hint">{editItem.customer_name} · {editItem.work_date}</p>
+                <p className="hint">
+                  {editItem.customer_name} · {editItem.work_date}
+                  {editItem.order_total_amount ? ` · 訂單總額 ${formatMoney(editItem.order_total_amount)} 元` : ''}
+                </p>
               </div>
               <button type="button" className="modal-close" onClick={closeEditModal} aria-label="關閉">×</button>
             </div>
-            <div className="form-grid">
+
+            <form className="form-grid cols-2" onSubmit={handleSaveEdit}>
               <label className="field">
                 <span className="field-label">匯款金額</span>
                 <input
@@ -328,6 +350,7 @@ export default function RemittanceTrackingPage() {
                   type="number"
                   min="1"
                   value={editDraft.amount}
+                  disabled={isConfirmed}
                   onChange={(event) => setEditDraft((draft) => ({
                     ...draft,
                     amount: event.target.value,
@@ -341,6 +364,7 @@ export default function RemittanceTrackingPage() {
                   className="field-control"
                   type="date"
                   value={editDraft.expected_remittance_date}
+                  disabled={isConfirmed}
                   onChange={(event) => setEditDraft((draft) => ({
                     ...draft,
                     expected_remittance_date: event.target.value,
@@ -360,60 +384,70 @@ export default function RemittanceTrackingPage() {
                 />
                 <span className="hint">填寫後會標記為已入帳；清空可改回待匯款。</span>
               </label>
-            </div>
-            <div className="toolbar-actions" style={{ marginTop: 16 }}>
-              <button type="button" className="btn btn-secondary" onClick={closeEditModal} disabled={savingEdit}>
-                取消
-              </button>
-              <button type="submit" className="btn btn-primary" disabled={savingEdit}>
-                {savingEdit ? '儲存中...' : '儲存'}
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
 
-      {splitItem && (
-        <div className="modal-overlay schedule-form-overlay" role="presentation" onClick={closeSplitModal}>
-          <form
-            className="modal-panel"
-            role="dialog"
-            aria-modal="true"
-            onClick={(event) => event.stopPropagation()}
-            onSubmit={handleSplitSubmit}
-          >
-            <div className="modal-header">
-              <div>
-                <h2 className="modal-title">拆帳</h2>
-                <p className="hint">
-                  {splitItem.customer_name} · 原金額 {formatMoney(splitItem.amount)} 元
-                </p>
+              {canSplit && (
+                <div className="form-section" style={{ gridColumn: '1 / -1' }}>
+                  <div className="form-section__body">
+                    <h3 className="card-subtitle">拆帳（分次匯款）</h3>
+                    <p className="hint">從此筆獨立拆分出一筆新紀錄，原紀錄會扣除拆分金額，兩筆皆綁定同一訂單。</p>
+                    <div className="form-grid cols-2">
+                      <label className="field">
+                        <span className="field-label">拆分金額</span>
+                        <input
+                          className="field-control"
+                          type="number"
+                          min="1"
+                          max={Math.max(1, Number(editItem.amount || 1) - 1)}
+                          value={editDraft.split_amount}
+                          onChange={(event) => setEditDraft((draft) => ({
+                            ...draft,
+                            split_amount: event.target.value,
+                          }))}
+                          placeholder="例如 10000"
+                        />
+                      </label>
+                      <label className="field">
+                        <span className="field-label">新紀錄預計匯款日</span>
+                        <input
+                          className="field-control"
+                          type="date"
+                          value={editDraft.split_expected_remittance_date}
+                          onChange={(event) => setEditDraft((draft) => ({
+                            ...draft,
+                            split_expected_remittance_date: event.target.value,
+                          }))}
+                        />
+                      </label>
+                    </div>
+                    {Number(editDraft.split_amount) > 0 && (
+                      <p className="hint">
+                        拆分後此筆剩餘 {formatMoney(remainingAfterSplit)} 元，新紀錄 {formatMoney(editDraft.split_amount)} 元。
+                      </p>
+                    )}
+                    <div className="toolbar-actions" style={{ marginTop: 12 }}>
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        disabled={savingEdit || !editDraft.split_amount}
+                        onClick={handleSplitFromEdit}
+                      >
+                        {savingEdit ? '處理中...' : '確認拆帳'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="modal-actions" style={{ gridColumn: '1 / -1' }}>
+                <button type="button" className="btn btn-secondary btn-pill" onClick={closeEditModal} disabled={savingEdit}>
+                  取消
+                </button>
+                <button type="submit" className="btn btn-primary btn-pill" disabled={savingEdit}>
+                  {savingEdit ? '儲存中...' : '儲存'}
+                </button>
               </div>
-              <button type="button" className="modal-close" onClick={closeSplitModal} aria-label="關閉">×</button>
-            </div>
-            <label className="field">
-              <span className="field-label">拆分金額</span>
-              <input
-                className="field-control"
-                type="number"
-                min="1"
-                max={Math.max(1, Number(splitItem.amount || 1) - 1)}
-                value={splitAmount}
-                onChange={(event) => setSplitAmount(event.target.value)}
-                placeholder="請輸入要獨立拆分出來的匯款金額"
-                required
-              />
-              <span className="hint">原紀錄會扣除此金額，並新增一筆待匯款紀錄供分次入帳。</span>
-            </label>
-            <div className="toolbar-actions" style={{ marginTop: 16 }}>
-              <button type="button" className="btn btn-secondary" onClick={closeSplitModal} disabled={savingSplit}>
-                取消
-              </button>
-              <button type="submit" className="btn btn-primary" disabled={savingSplit}>
-                {savingSplit ? '處理中...' : '確認拆帳'}
-              </button>
-            </div>
-          </form>
+            </form>
+          </div>
         </div>
       )}
     </Layout>

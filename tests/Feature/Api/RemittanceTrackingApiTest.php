@@ -465,6 +465,97 @@ class RemittanceTrackingApiTest extends TestCase
             ->assertJsonCount(2, 'data.pending');
     }
 
+    public function test_admin_can_split_project_remittance_three_times(): void
+    {
+        Sanctum::actingAs($this->admin);
+
+        $workDate = now()->subDays(10)->toDateString();
+        $yearMonth = substr($workDate, 0, 7);
+
+        $this->postJson('/api/admin/projects', [
+            'employee_ids' => [$this->employee->id],
+            'planned_start_date' => $workDate,
+            'planned_end_date' => $workDate,
+            'customer_name' => '三次拆帳客戶',
+            'customer_phone' => '0912345678',
+            'customer_address' => '台東市',
+            'customer_source' => 'phone',
+            'expects_company_remittance' => true,
+            'pricing_lines' => [
+                ['ac_units' => 14, 'unit_price' => 1000, 'invoice_type' => 'duplicate', 'charge_customer_tax' => true],
+            ],
+        ])->assertCreated();
+
+        $orderTotal = 14700;
+        $firstId = $this->getJson('/api/admin/remittance-tracking?year_month='.$yearMonth)
+            ->assertOk()
+            ->assertJsonPath('data.pending.0.amount', $orderTotal)
+            ->json('data.pending.0.id');
+
+        $secondId = $this->postJson("/api/admin/remittance-tracking/{$firstId}/split", [
+            'split_amount' => 10000,
+            'expected_remittance_date' => $workDate,
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.original.amount', 4700)
+            ->assertJsonPath('data.split.amount', 10000)
+            ->json('data.split.id');
+
+        $this->postJson("/api/admin/remittance-tracking/{$secondId}/split", [
+            'split_amount' => 3000,
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.original.amount', 7000)
+            ->assertJsonPath('data.split.amount', 3000);
+
+        $this->getJson('/api/admin/remittance-tracking?year_month='.$yearMonth)
+            ->assertOk()
+            ->assertJsonCount(3, 'data.pending')
+            ->assertJsonPath('data.totals.pending_amount', $orderTotal);
+    }
+
+    public function test_sync_dedupes_duplicate_project_remittances(): void
+    {
+        Sanctum::actingAs($this->admin);
+
+        $workDate = now()->subDays(10)->toDateString();
+        $yearMonth = substr($workDate, 0, 7);
+
+        $this->postJson('/api/admin/projects', [
+            'employee_ids' => [$this->employee->id],
+            'planned_start_date' => $workDate,
+            'planned_end_date' => $workDate,
+            'customer_name' => '去重客戶',
+            'customer_phone' => '0912345678',
+            'customer_address' => '台東市',
+            'customer_source' => 'phone',
+            'expects_company_remittance' => true,
+            'pricing_lines' => [
+                ['ac_units' => 4, 'unit_price' => 1000],
+            ],
+        ])->assertCreated();
+
+        $project = \App\Models\CleaningProject::query()->first();
+        $reports = \App\Models\DailyReport::query()
+            ->whereHas('dailySchedule', fn ($query) => $query->where('cleaning_project_id', $project->id))
+            ->get();
+
+        foreach ($reports as $report) {
+            \App\Models\CompanyRemittance::query()->create([
+                'report_id' => $report->id,
+                'amount' => 4000,
+                'status' => \App\Models\CompanyRemittance::STATUS_PENDING,
+            ]);
+        }
+
+        CompanyRemittanceSupport::syncForProject($project);
+
+        $this->getJson('/api/admin/remittance-tracking?year_month='.$yearMonth)
+            ->assertOk()
+            ->assertJsonCount(1, 'data.pending')
+            ->assertJsonPath('data.pending.0.amount', 4000);
+    }
+
     public function test_admin_can_update_remittance_amount(): void
     {
         Sanctum::actingAs($this->admin);

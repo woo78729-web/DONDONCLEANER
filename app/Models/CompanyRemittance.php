@@ -15,6 +15,7 @@ class CompanyRemittance extends Model
 
     protected $fillable = [
         'report_id',
+        'cleaning_project_id',
         'amount',
         'status',
         'expected_remittance_date',
@@ -35,5 +36,10 @@ class CompanyRemittance extends Model
     public function report(): BelongsTo
     {
         return $this->belongsTo(DailyReport::class, 'report_id');
+    }
+
+    public function cleaningProject(): BelongsTo
+    {
+        return $this->belongsTo(CleaningProject::class, 'cleaning_project_id');
     }
 }

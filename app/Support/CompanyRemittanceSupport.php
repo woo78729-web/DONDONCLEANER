@@ -48,7 +48,7 @@ class CompanyRemittanceSupport
             return;
         }
 
-        if (self::shouldPreserveProjectSplit($reports, $project)) {
+        if (self::hasActiveSplitGroup($project)) {
             return;
         }
 
@@ -65,7 +65,34 @@ class CompanyRemittanceSupport
             ?? $canonical->dailySchedule?->work_date
             ?? now()->toDateString();
 
-        $remittance = CompanyRemittance::query()->firstOrNew(['report_id' => $canonical->id]);
+        $remittance = CompanyRemittance::query()
+            ->where('cleaning_project_id', $project->id)
+            ->orderBy('id')
+            ->first();
+
+        if (! $remittance) {
+            $remittance = new CompanyRemittance([
+                'report_id' => $canonical->id,
+                'cleaning_project_id' => $project->id,
+            ]);
+        }
+
+        CompanyRemittance::query()
+            ->where('cleaning_project_id', $project->id)
+            ->where('id', '!=', $remittance->id ?? 0)
+            ->delete();
+
+        CompanyRemittance::query()
+            ->whereIn('report_id', $reports->pluck('id'))
+            ->where(function (Builder $query) use ($project, $remittance) {
+                $query->whereNull('cleaning_project_id')
+                    ->orWhere('cleaning_project_id', '!=', $project->id);
+            })
+            ->when($remittance->exists, fn (Builder $query) => $query->where('id', '!=', $remittance->id))
+            ->delete();
+
+        $remittance->report_id = $canonical->id;
+        $remittance->cleaning_project_id = $project->id;
         $remittance->amount = $amount;
 
         if (! $remittance->exists) {
@@ -77,17 +104,6 @@ class CompanyRemittanceSupport
         }
 
         $remittance->save();
-
-        $siblingReportIds = $reports
-            ->pluck('id')
-            ->filter(fn (int $reportId) => $reportId !== $canonical->id)
-            ->values();
-
-        if ($siblingReportIds->isNotEmpty()) {
-            CompanyRemittance::query()
-                ->whereIn('report_id', $siblingReportIds)
-                ->delete();
-        }
     }
 
     public static function syncForMonth(int $year, int $month): void
@@ -156,7 +172,7 @@ class CompanyRemittanceSupport
     /**
      * @return array{original: CompanyRemittance, split: CompanyRemittance}
      */
-    public static function split(CompanyRemittance $remittance, int $splitAmount): array
+    public static function split(CompanyRemittance $remittance, int $splitAmount, ?string $expectedRemittanceDate = null): array
     {
         if ($remittance->status === CompanyRemittance::STATUS_CONFIRMED) {
             throw new \InvalidArgumentException('已入帳的匯款紀錄不可拆帳');
@@ -167,22 +183,91 @@ class CompanyRemittanceSupport
         }
 
         $remittance->loadMissing('report.dailySchedule.cleaningProject');
-        $targetReportId = self::resolveSplitReportId($remittance);
+        $projectId = self::resolveCleaningProjectId($remittance);
 
         $remittance->amount = (int) $remittance->amount - $splitAmount;
         $remittance->save();
 
         $split = CompanyRemittance::query()->create([
-            'report_id' => $targetReportId,
+            'report_id' => $remittance->report_id,
+            'cleaning_project_id' => $projectId,
             'amount' => $splitAmount,
             'status' => CompanyRemittance::STATUS_PENDING,
-            'expected_remittance_date' => $remittance->expected_remittance_date,
+            'expected_remittance_date' => $expectedRemittanceDate
+                ?? $remittance->expected_remittance_date?->toDateString(),
         ]);
+
+        if ($projectId) {
+            self::assertSplitGroupTotal(CleaningProject::query()->find($projectId));
+        }
 
         return [
             'original' => $remittance->fresh(),
             'split' => $split->fresh(),
         ];
+    }
+
+    public static function dedupeProjectRemittances(
+        CleaningProject $project,
+        bool $dryRun = false,
+        ?callable $onWouldFix = null,
+    ): bool {
+        $project->loadMissing(['schedules.dailyReport']);
+        $reports = self::projectReports($project);
+
+        if ($reports->isEmpty()) {
+            return false;
+        }
+
+        if (self::hasActiveSplitGroup($project)) {
+            return false;
+        }
+
+        $remittances = CompanyRemittance::query()
+            ->where('cleaning_project_id', $project->id)
+            ->orderBy('id')
+            ->get();
+
+        if ($remittances->count() <= 1) {
+            return false;
+        }
+
+        if ($dryRun) {
+            $onWouldFix && $onWouldFix();
+
+            return true;
+        }
+
+        $canonical = self::canonicalProjectReport($reports);
+        $targetAmount = self::projectRemittanceAmount($project);
+        $primary = $remittances->firstWhere('report_id', $canonical->id)
+            ?? $remittances->sortBy('id')->first();
+
+        CompanyRemittance::query()
+            ->where('cleaning_project_id', $project->id)
+            ->where('id', '!=', $primary->id)
+            ->delete();
+
+        $primary->report_id = $canonical->id;
+        $primary->cleaning_project_id = $project->id;
+        $primary->amount = $targetAmount;
+
+        if ($primary->expected_remittance_date === null) {
+            $primary->expected_remittance_date = $project->planned_end_date
+                ?? $canonical->dailySchedule?->work_date;
+        }
+
+        $primary->save();
+
+        CompanyRemittance::query()
+            ->whereIn('report_id', $reports->pluck('id'))
+            ->where(function (Builder $query) use ($project) {
+                $query->whereNull('cleaning_project_id')
+                    ->orWhere('cleaning_project_id', '!=', $project->id);
+            })
+            ->delete();
+
+        return true;
     }
 
     public static function projectRemittanceAmount(CleaningProject $project): int
@@ -261,9 +346,25 @@ class CompanyRemittanceSupport
             return false;
         }
 
-        $report->loadMissing('companyRemittance');
+        return self::confirmedRemittanceAmountForReport($report) > 0;
+    }
 
-        return $report->companyRemittance?->status === CompanyRemittance::STATUS_CONFIRMED;
+    public static function confirmedRemittanceAmountForReport(DailyReport $report): int
+    {
+        $report->loadMissing('dailySchedule.cleaningProject');
+        $project = $report->dailySchedule?->cleaningProject;
+
+        if ($project && (bool) $project->expects_company_remittance) {
+            return (int) CompanyRemittance::query()
+                ->where('cleaning_project_id', $project->id)
+                ->where('status', CompanyRemittance::STATUS_CONFIRMED)
+                ->sum('amount');
+        }
+
+        return (int) CompanyRemittance::query()
+            ->where('report_id', $report->id)
+            ->where('status', CompanyRemittance::STATUS_CONFIRMED)
+            ->sum('amount');
     }
 
     public static function expectedRemittanceAnchor(CompanyRemittance $remittance): ?Carbon
@@ -338,12 +439,14 @@ class CompanyRemittanceSupport
         $remittance->loadMissing([
             'report.dailySchedule.user:id,name,account',
             'report.dailySchedule.cleaningProject.schedules.user:id,name',
+            'cleaningProject.schedules.user:id,name',
         ]);
 
         $report = $remittance->report;
         $schedule = $report?->dailySchedule;
-        $project = $schedule?->cleaningProject;
+        $project = $remittance->cleaningProject ?? $schedule?->cleaningProject;
         $isProjectTotal = $project !== null && (bool) $project->expects_company_remittance;
+        $groupMeta = self::splitGroupMeta($remittance, $project);
 
         $employeeName = $schedule?->user?->name;
 
@@ -363,6 +466,11 @@ class CompanyRemittanceSupport
             'project_code' => $project?->project_code,
             'is_project_total' => $isProjectTotal,
             'amount' => (int) $remittance->amount,
+            'order_total_amount' => $groupMeta['order_total_amount'],
+            'split_index' => $groupMeta['split_index'],
+            'split_total_count' => $groupMeta['split_total_count'],
+            'can_split' => $groupMeta['can_split'],
+            'amount_mismatch' => $groupMeta['amount_mismatch'],
             'status' => $remittance->status,
             'status_label' => self::statusLabel($remittance->status),
             'is_overdue' => self::isOverdue($remittance),
@@ -393,23 +501,16 @@ class CompanyRemittanceSupport
 
         if ($report->dailySchedule?->cleaningProject?->expects_company_remittance) {
             $project = $report->dailySchedule->cleaningProject;
-            $project->loadMissing(['schedules.dailyReport']);
-            $canonical = self::canonicalProjectReport(self::projectReports($project));
-            $canonical?->loadMissing('companyRemittance');
-            $remittance = $canonical?->companyRemittance;
+            $remittance = CompanyRemittance::query()
+                ->where('cleaning_project_id', $project->id)
+                ->orderBy('id')
+                ->first();
 
             if (! $remittance) {
                 return null;
             }
 
-            return [
-                'id' => $remittance->id,
-                'amount' => (int) $remittance->amount,
-                'status' => $remittance->status,
-                'status_label' => self::statusLabel($remittance->status),
-                'is_overdue' => self::isOverdue($remittance),
-                'confirmed_at' => $remittance->confirmed_at?->toDateTimeString(),
-            ];
+            return self::compactRemittancePayload($remittance);
         }
 
         $remittance = $report->companyRemittance;
@@ -418,14 +519,7 @@ class CompanyRemittanceSupport
             return null;
         }
 
-        return [
-            'id' => $remittance->id,
-            'amount' => (int) $remittance->amount,
-            'status' => $remittance->status,
-            'status_label' => self::statusLabel($remittance->status),
-            'is_overdue' => self::isOverdue($remittance),
-            'confirmed_at' => $remittance->confirmed_at?->toDateTimeString(),
-        ];
+        return self::compactRemittancePayload($remittance);
     }
 
     /**
@@ -450,7 +544,13 @@ class CompanyRemittanceSupport
 
     private static function syncStandaloneReport(DailyReport $report): void
     {
-        $report->loadMissing('dailySchedule');
+        $report->loadMissing('dailySchedule.cleaningProject');
+
+        if ($report->dailySchedule?->cleaningProject?->expects_company_remittance) {
+            self::syncForProject($report->dailySchedule->cleaningProject);
+
+            return;
+        }
 
         if (! $report->dailySchedule) {
             return;
@@ -459,6 +559,10 @@ class CompanyRemittanceSupport
         if (! $report->paid_to_company) {
             CompanyRemittance::query()->where('report_id', $report->id)->delete();
 
+            return;
+        }
+
+        if (self::hasActiveSplitGroupForReport($report)) {
             return;
         }
 
@@ -471,8 +575,16 @@ class CompanyRemittanceSupport
             return;
         }
 
+        $existing = CompanyRemittance::query()->where('report_id', $report->id)->orderBy('id')->get();
+
+        if ($existing->count() > 1) {
+            $primary = $existing->first();
+            CompanyRemittance::query()->where('report_id', $report->id)->where('id', '!=', $primary->id)->delete();
+        }
+
         $remittance = CompanyRemittance::query()->firstOrNew(['report_id' => $report->id]);
         $remittance->amount = $amount;
+        $remittance->cleaning_project_id = null;
 
         if (! $remittance->exists) {
             $remittance->status = CompanyRemittance::STATUS_PENDING;
@@ -507,61 +619,106 @@ class CompanyRemittanceSupport
     {
         return $project->schedules
             ->map(fn ($schedule) => $schedule->dailyReport)
-            ->filter()
+            ->filter(fn ($report) => $report && $report->paid_to_company)
             ->values();
     }
 
     private static function purgeProjectRemittances(CleaningProject $project): void
     {
+        CompanyRemittance::query()
+            ->where('cleaning_project_id', $project->id)
+            ->delete();
+
         $reportIds = DailyReport::query()
             ->whereHas('dailySchedule', fn ($query) => $query->where('cleaning_project_id', $project->id))
             ->pluck('id');
 
-        if ($reportIds->isEmpty()) {
+        if ($reportIds->isNotEmpty()) {
+            CompanyRemittance::query()->whereIn('report_id', $reportIds)->delete();
+        }
+    }
+
+    private static function hasActiveSplitGroup(CleaningProject $project): bool
+    {
+        return CompanyRemittance::query()
+            ->where('cleaning_project_id', $project->id)
+            ->count() > 1;
+    }
+
+    private static function hasActiveSplitGroupForReport(DailyReport $report): bool
+    {
+        return CompanyRemittance::query()
+            ->where('report_id', $report->id)
+            ->count() > 1;
+    }
+
+    private static function assertSplitGroupTotal(?CleaningProject $project): void
+    {
+        if (! $project) {
             return;
         }
 
-        CompanyRemittance::query()->whereIn('report_id', $reportIds)->delete();
+        $expected = self::projectRemittanceAmount($project);
+        $actual = (int) CompanyRemittance::query()
+            ->where('cleaning_project_id', $project->id)
+            ->sum('amount');
+
+        if ($actual !== $expected) {
+            return;
+        }
+    }
+
+    private static function resolveCleaningProjectId(CompanyRemittance $remittance): ?int
+    {
+        if ($remittance->cleaning_project_id) {
+            return (int) $remittance->cleaning_project_id;
+        }
+
+        return $remittance->report?->dailySchedule?->cleaning_project_id;
     }
 
     /**
-     * @param  Collection<int, DailyReport>  $reports
+     * @return array{
+     *     order_total_amount:int|null,
+     *     split_index:int|null,
+     *     split_total_count:int|null,
+     *     can_split:bool,
+     *     amount_mismatch:bool
+     * }
      */
-    private static function shouldPreserveProjectSplit(Collection $reports, CleaningProject $project): bool
+    private static function splitGroupMeta(CompanyRemittance $remittance, ?CleaningProject $project): array
     {
-        $remittances = CompanyRemittance::query()
-            ->whereIn('report_id', $reports->pluck('id'))
-            ->get();
+        $groupQuery = $project
+            ? CompanyRemittance::query()->where('cleaning_project_id', $project->id)
+            : CompanyRemittance::query()->where('report_id', $remittance->report_id);
 
-        if ($remittances->count() <= 1) {
-            return false;
-        }
+        $group = $groupQuery->orderBy('id')->get();
+        $orderTotal = $project ? self::projectRemittanceAmount($project) : (int) $group->sum('amount');
+        $groupSum = (int) $group->sum('amount');
+        $index = $group->search(fn (CompanyRemittance $item) => $item->id === $remittance->id);
 
-        $projectTotal = self::projectRemittanceAmount($project);
-        $existingSum = (int) $remittances->sum('amount');
-
-        return $existingSum <= $projectTotal;
+        return [
+            'order_total_amount' => $orderTotal,
+            'split_index' => $index === false ? null : $index + 1,
+            'split_total_count' => $group->count(),
+            'can_split' => $remittance->status !== CompanyRemittance::STATUS_CONFIRMED
+                && (int) $remittance->amount > 1,
+            'amount_mismatch' => $groupSum !== $orderTotal,
+        ];
     }
 
-    private static function resolveSplitReportId(CompanyRemittance $remittance): int
+    /**
+     * @return array<string, mixed>
+     */
+    private static function compactRemittancePayload(CompanyRemittance $remittance): array
     {
-        $report = $remittance->report;
-        $projectId = $report?->dailySchedule?->cleaning_project_id;
-
-        if ($projectId) {
-            $targetReportId = DailyReport::query()
-                ->where('paid_to_company', true)
-                ->where('id', '!=', $report->id)
-                ->whereHas('dailySchedule', fn ($query) => $query->where('cleaning_project_id', $projectId))
-                ->whereDoesntHave('companyRemittance')
-                ->orderBy('id')
-                ->value('id');
-
-            if ($targetReportId) {
-                return (int) $targetReportId;
-            }
-        }
-
-        throw new \InvalidArgumentException('此工單沒有可用的派班回報建立拆分紀錄，請確認專案有多筆派班');
+        return [
+            'id' => $remittance->id,
+            'amount' => (int) $remittance->amount,
+            'status' => $remittance->status,
+            'status_label' => self::statusLabel($remittance->status),
+            'is_overdue' => self::isOverdue($remittance),
+            'confirmed_at' => $remittance->confirmed_at?->toDateTimeString(),
+        ];
     }
 }

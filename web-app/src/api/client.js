@@ -449,9 +449,13 @@ class AcCleaningApi {
     return this.request('PATCH', `/admin/remittance-tracking/${remittanceId}`, { body: payload });
   }
 
-  splitRemittance(remittanceId, splitAmount) {
+  splitRemittance(remittanceId, payload) {
+    const body = typeof payload === 'number'
+      ? { split_amount: payload }
+      : payload;
+
     return this.request('POST', `/admin/remittance-tracking/${remittanceId}/split`, {
-      body: { split_amount: splitAmount },
+      body,
     });
   }
 

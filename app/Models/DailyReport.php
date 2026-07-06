@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 
 #[Fillable([
@@ -37,7 +38,12 @@ class DailyReport extends Model
 
     public function companyRemittance(): HasOne
     {
-        return $this->hasOne(CompanyRemittance::class, 'report_id');
+        return $this->hasOne(CompanyRemittance::class, 'report_id')->oldestOfMany();
+    }
+
+    public function companyRemittances(): HasMany
+    {
+        return $this->hasMany(CompanyRemittance::class, 'report_id');
     }
 
     protected function casts(): array

@@ -107,6 +107,12 @@ class RemittanceTrackingController extends Controller
             'amount' => ['nullable', 'integer', 'min:1'],
         ]);
 
+        if ($remittance->status === CompanyRemittance::STATUS_CONFIRMED) {
+            if (array_key_exists('amount', $validated) || array_key_exists('expected_remittance_date', $validated)) {
+                return $this->error('已入帳紀錄僅可修改實際入帳日期', 422);
+            }
+        }
+
         if (array_key_exists('expected_remittance_date', $validated)) {
             $remittance->expected_remittance_date = $validated['expected_remittance_date'];
         }
@@ -141,10 +147,15 @@ class RemittanceTrackingController extends Controller
     {
         $validated = $request->validate([
             'split_amount' => ['required', 'integer', 'min:1'],
+            'expected_remittance_date' => ['nullable', 'date'],
         ]);
 
         try {
-            $result = CompanyRemittanceSupport::split($remittance, (int) $validated['split_amount']);
+            $result = CompanyRemittanceSupport::split(
+                $remittance,
+                (int) $validated['split_amount'],
+                $validated['expected_remittance_date'] ?? null,
+            );
         } catch (\InvalidArgumentException $exception) {
             return $this->error($exception->getMessage(), 422);
         }
