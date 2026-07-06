@@ -76,6 +76,46 @@ class CleaningProjectApiTest extends TestCase
         $this->assertSame(3, CleaningProject::query()->first()->schedules()->count());
     }
 
+    public function test_admin_can_create_project_with_invoiced_pricing_lines(): void
+    {
+        Sanctum::actingAs($this->admin);
+
+        $start = now()->addDays(3)->toDateString();
+        $end = now()->addDays(3)->toDateString();
+
+        $response = $this->postJson('/api/admin/projects', [
+            'title' => '發票專案',
+            'employee_ids' => [$this->employee->id],
+            'planned_start_date' => $start,
+            'planned_end_date' => $end,
+            'customer_name' => '測試客戶',
+            'customer_phone' => '0912345678',
+            'customer_address' => '台東市',
+            'customer_source' => 'fb',
+            'fb_display_name' => 'FB測試',
+            'pricing_lines' => [
+                [
+                    'ac_units' => 6,
+                    'unit_price' => 1500,
+                    'invoice_type' => 'duplicate',
+                    'charge_customer_tax' => true,
+                ],
+            ],
+        ]);
+
+        $response->assertCreated()
+            ->assertJsonPath('data.cleaning_price', 9450)
+            ->assertJsonPath('data.needs_invoice', true);
+
+        $this->assertDatabaseHas('cleaning_projects', [
+            'title' => '發票專案',
+            'cleaning_price' => 9450,
+            'needs_invoice' => true,
+            'customer_source' => 'fb',
+            'fb_display_name' => 'FB測試',
+        ]);
+    }
+
     public function test_admin_can_create_project_with_over_99_units(): void
     {
         Sanctum::actingAs($this->admin);

@@ -621,7 +621,7 @@ export function applyPriceCalculation(form) {
   return applyMailSync({
     ...synced,
     ...summary,
-    needs_invoice: Boolean(synced.needs_invoice),
+    needs_invoice: deriveNeedsInvoice(synced),
     customer_address: primaryAddress?.address || synced.customer_address,
     service_addresses: serviceAddresses,
     end_time,
@@ -1222,20 +1222,21 @@ export function getScheduleEventClassName(schedule) {
     return 'rbc-event-leave';
   }
 
-  if (schedule?.cleaning_project_id) {
-    return 'rbc-event-project';
-  }
-
   const source = schedule?.customer_source || 'phone';
   const sourceClass = (source === 'line' || source === 'fb' || source === 'phone')
     ? `rbc-event-source-${source}`
     : 'rbc-event-source-phone';
+  const classes = [sourceClass];
 
-  if (hasScheduleReport(schedule)) {
-    return `${sourceClass} rbc-event-reported`;
+  if (schedule?.cleaning_project_id) {
+    classes.push('rbc-event-project');
   }
 
-  return sourceClass;
+  if (hasScheduleReport(schedule)) {
+    classes.push('rbc-event-reported');
+  }
+
+  return classes.join(' ');
 }
 
 export function getLeaveEventStyle() {
@@ -1271,10 +1272,6 @@ export function getScheduleEventStyle(schedule) {
     fontWeight: 600,
     boxShadow: 'none',
   };
-
-  if (schedule?.cleaning_project_id) {
-    style.boxShadow = '0 0 0 2px #7b1fa2';
-  }
 
   return style;
 }
@@ -2054,6 +2051,65 @@ export function buildSchedulePayload(form, { original = null, userRole = 'admin'
   }
 
   return enforceMailTrackingPayload(payload, form);
+}
+
+export function buildProjectPayload(form) {
+  const synced = syncInvoiceTaxFlags(form);
+  const summary = summarizePricingLines(synced.pricing_lines);
+  const needsInvoice = deriveNeedsInvoice({ ...synced, pricing_lines: summary.pricing_lines });
+  const pricingLines = summary.pricing_lines.map((line) => ({
+    ac_units: Number(line.ac_units),
+    unit_price: Number(line.unit_price),
+    is_taxable: lineHasInvoice(line) && line.charge_customer_tax !== false,
+    invoice_type: line.invoice_type || INVOICE_TYPE_NONE,
+    invoice_title: line.invoice_type === INVOICE_TYPE_TRIPLICATE
+      ? String(line.invoice_title || '').trim() || null
+      : null,
+    invoice_tax_id: line.invoice_type === INVOICE_TYPE_TRIPLICATE
+      ? String(line.invoice_tax_id || '').trim() || null
+      : null,
+    charge_customer_tax: lineHasInvoice(line) ? line.charge_customer_tax !== false : false,
+  }));
+  const triplicateLine = summary.pricing_lines.find((line) => line.invoice_type === INVOICE_TYPE_TRIPLICATE);
+
+  if (pricingLines.some((line) => !Number.isFinite(line.ac_units) || line.ac_units < 1)) {
+    throw new Error('請填寫有效的冷氣台數');
+  }
+
+  if (pricingLines.some((line) => !UNIT_PRICE_OPTIONS.includes(line.unit_price))) {
+    throw new Error('請選擇有效的單價');
+  }
+
+  return {
+    title: form.title?.trim() || null,
+    employee_ids: form.employee_ids.map(Number),
+    planned_start_date: form.planned_start_date,
+    planned_end_date: form.planned_end_date,
+    start_time: form.start_time,
+    end_time: form.end_time,
+    customer_name: form.customer_name.trim(),
+    customer_phone: form.customer_phone.trim(),
+    customer_address: form.customer_address.trim(),
+    service_area: form.service_area || null,
+    customer_source: form.customer_source || 'phone',
+    fb_display_name: form.fb_display_name?.trim() || null,
+    line_display_name: form.line_display_name?.trim() || null,
+    pricing_lines: pricingLines,
+    needs_invoice: needsInvoice,
+    needs_receipt: Boolean(form.needs_receipt),
+    expects_company_remittance: Boolean(form.expects_company_remittance),
+    needs_mail: Boolean(form.needs_mail),
+    mail_recipient: form.needs_mail ? form.mail_recipient?.trim() || null : null,
+    mail_phone: form.needs_mail ? form.mail_phone?.trim() || null : null,
+    mail_address: form.needs_mail ? form.mail_address?.trim() || null : null,
+    invoice_tax_id: needsInvoice
+      ? (triplicateLine?.invoice_tax_id?.trim() || form.invoice_tax_id?.trim() || null)
+      : null,
+    invoice_title: needsInvoice
+      ? (triplicateLine?.invoice_title?.trim() || form.invoice_title?.trim() || null)
+      : null,
+    notes: form.notes?.trim() || null,
+  };
 }
 
 function enforceMailTrackingPayload(payload, form) {

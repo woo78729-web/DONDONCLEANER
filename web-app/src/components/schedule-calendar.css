@@ -3689,6 +3689,8 @@
 .schedule-workspace.schedule-calendar .rbc-event.rbc-event-project,
 .schedule-workspace .rbc-event.rbc-event-project {
   color: inherit !important;
+  outline: 2px dashed rgba(255, 255, 255, 0.32);
+  outline-offset: -2px;
 }
 
 .project-status-badge {
@@ -3752,6 +3754,12 @@
   display: grid;
   gap: 4px;
   font-size: 13px;
+}
+
+.admin-project-card__source {
+  margin-top: 2px;
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .admin-project-card__progress {

@@ -1,18 +1,16 @@
 import { Link } from 'react-router-dom';
-import { InvoiceTaxIdFields } from './InvoiceTaxIdFields';
 import { PricingLineEditor } from './PricingLineEditor';
 import {
   applyPriceCalculation,
   createPricingLine,
   CUSTOMER_SOURCE_OPTIONS,
   DEFAULT_FIRST_SHIFT_START,
-  DEFAULT_SECOND_SHIFT_START,
+  getFormContactId,
   getMinScheduleWorkDate,
-  isTriplicateInvoice,
+  patchFormContactId,
   patchScheduleForm,
   PROJECT_STATUS_LABELS,
   resolveMailContactFields,
-  syncInvoiceTaxFlags,
 } from '../utils/scheduleCalendar';
 import { TAITUNG_SERVICE_AREAS } from '../utils/taitungAreas';
 import { AddressAutocompleteInput } from './AddressAutocompleteInput';
@@ -120,36 +118,11 @@ export function ProjectFormModal({
     handleChange({ mail_same_as_customer: false });
   }
 
-  function toggleNeedsInvoice(checked) {
-    const patch = checked
-      ? { needs_invoice: true, needs_receipt: false }
-      : {
-        needs_invoice: false,
-        invoice_tax_id: '',
-        invoice_title: '',
-        invoice_charge_customer_tax: false,
-      };
-
-    handleChange(applyPriceCalculation(syncInvoiceTaxFlags(patchScheduleForm(form, patch))));
-  }
-
-  function toggleNeedsReceipt(checked) {
-    handleChange(patchScheduleForm(form, {
-      needs_receipt: checked,
-      ...(checked ? {
-        needs_invoice: false,
-        invoice_tax_id: '',
-        invoice_title: '',
-        invoice_charge_customer_tax: false,
-      } : {}),
-    }));
-  }
-
-  function handleInvoiceFieldChange(partial) {
-    handleChange(applyPriceCalculation(syncInvoiceTaxFlags(patchScheduleForm(form, partial))));
-  }
-
-  const triplicateInvoice = isTriplicateInvoice(form);
+  const contactIdLabel = form.customer_source === 'line'
+    ? 'LINE ID'
+    : form.customer_source === 'fb'
+      ? 'FB ID'
+      : '聯絡人 ID';
 
   return (
     <div className="modal-overlay schedule-form-overlay" role="presentation" onClick={onClose}>
@@ -196,6 +169,26 @@ export function ProjectFormModal({
                   </button>
                 );
               })}
+            </div>
+          </div>
+
+          <div className="field" style={{ gridColumn: '1 / -1' }}>
+            <span className="field-label">客戶來源</span>
+            <div className="option-chip-group" role="radiogroup" aria-label="客戶來源">
+              {CUSTOMER_SOURCE_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={form.customer_source === option.value}
+                  className={`option-chip option-chip--source${form.customer_source === option.value ? ' is-active' : ''}`}
+                  style={{ '--chip-color': option.color }}
+                  onClick={() => handleChange({ customer_source: option.value })}
+                >
+                  <span className="option-chip__dot" />
+                  {option.label}
+                </button>
+              ))}
             </div>
           </div>
 
@@ -246,8 +239,14 @@ export function ProjectFormModal({
           </label>
 
           <label className="field">
-            <span className="field-label">清洗聯絡人</span>
-            <input className="field-control" value={form.customer_name} onChange={(event) => handleChange({ customer_name: event.target.value })} required />
+            <span className="field-label">{contactIdLabel}</span>
+            <input
+              className="field-control"
+              value={getFormContactId(form)}
+              onChange={(event) => handleChange(patchFormContactId(form, event.target.value))}
+              required
+              placeholder={form.customer_source === 'phone' ? '客戶姓名或代稱' : '請填寫社群 ID'}
+            />
           </label>
 
           <label className="field">
@@ -290,8 +289,9 @@ export function ProjectFormModal({
             <PricingLineEditor
               lines={form.pricing_lines || [createPricingLine()]}
               onChange={(pricing_lines) => handleChange({ pricing_lines })}
+              showInvoice
               showTax={false}
-              showRemove={false}
+              showAdd
               maxUnits={9999}
             />
           </div>
@@ -299,7 +299,16 @@ export function ProjectFormModal({
           <div className="field" style={{ gridColumn: '1 / -1' }}>
             <span className="field-label">專案合計</span>
             <div className="price-summary">
-              <strong>共 {form.ac_units} 台，{form.cleaning_price || 0} 元</strong>
+              <div>共 {form.ac_units} 台</div>
+              <div>
+                客戶應付總尾款：<strong>{form.cleaning_price || 0} 元</strong>
+              </div>
+              {Number(form.hongyi_fee) > 0 && (
+                <div className="price-summary__hongyi">
+                  撥給宏逸金流：<strong>{form.hongyi_fee} 元</strong>
+                  <span className="hint">（代墊發票稅 8%，與是否向客戶加收 5% 無關）</span>
+                </div>
+              )}
             </div>
           </div>
 
@@ -316,19 +325,8 @@ export function ProjectFormModal({
             <label className="field field-checkbox">
               <input
                 type="checkbox"
-                checked={Boolean(form.needs_invoice)}
-                disabled={Boolean(form.needs_receipt)}
-                onChange={(event) => toggleNeedsInvoice(event.target.checked)}
-              />
-              <span>發票（二聯／三聯）</span>
-            </label>
-
-            <label className="field field-checkbox">
-              <input
-                type="checkbox"
                 checked={Boolean(form.needs_receipt)}
-                disabled={Boolean(form.needs_invoice)}
-                onChange={(event) => toggleNeedsReceipt(event.target.checked)}
+                onChange={(event) => handleChange({ needs_receipt: event.target.checked })}
               />
               <span>收據</span>
             </label>
@@ -350,40 +348,6 @@ export function ProjectFormModal({
               <Link to="/admin/remittance-tracking">匯款追查</Link>
               ，員工回報時請勾選「客戶已匯款至公司帳戶」。
             </p>
-          )}
-
-          {form.needs_invoice && (
-            <div className="form-section" style={{ gridColumn: '1 / -1' }}>
-              <div className="form-section__body form-section__body--flush">
-                <InvoiceTaxIdFields
-                  invoiceTitle={form.invoice_title}
-                  invoiceTaxId={form.invoice_tax_id}
-                  onChange={handleInvoiceFieldChange}
-                />
-                {!triplicateInvoice && (
-                  <>
-                    <p className="hint" style={{ marginTop: 12 }}>
-                      不填抬頭／統編即為二聯；若要向客戶加收 5% 再勾選下方選項。
-                    </p>
-                    <label className="field field-checkbox" style={{ marginTop: 8 }}>
-                      <input
-                        type="checkbox"
-                        checked={Boolean(form.invoice_charge_customer_tax)}
-                        onChange={(event) => handleChange(
-                          applyPriceCalculation(syncInvoiceTaxFlags(patchScheduleForm(form, {
-                            invoice_charge_customer_tax: event.target.checked,
-                          }))),
-                        )}
-                      />
-                      <span>向客戶加收 5% 稅金（二聯）</span>
-                    </label>
-                  </>
-                )}
-                {triplicateInvoice && (
-                  <p className="hint" style={{ marginTop: 12 }}>三聯發票已自動向客戶加收 5% 稅金。</p>
-                )}
-              </div>
-            </div>
           )}
 
           {form.needs_mail && (

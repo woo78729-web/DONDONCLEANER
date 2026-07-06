@@ -50,9 +50,13 @@ class CleaningProjectSupport
     public static function createProject(array $payload, array $employeeIds, User $creator): CleaningProject
     {
         return DB::transaction(function () use ($payload, $employeeIds, $creator) {
-            $needsInvoice = (bool) ($payload['needs_invoice'] ?? false);
             $lines = SchedulePricing::normalizeLines($payload['pricing_lines'] ?? null);
-            $summary = SchedulePricing::summarizeLines($lines, $needsInvoice);
+            $summary = SchedulePricing::summarizeLines($lines, false);
+            $needsInvoice = (bool) ($summary['needs_invoice'] ?? false)
+                || (bool) ($payload['needs_invoice'] ?? false);
+            $triplicateLine = collect($lines)->first(
+                fn (array $line) => ($line['invoice_type'] ?? '') === SchedulePricing::INVOICE_TYPE_TRIPLICATE
+            );
 
             $startDate = Carbon::parse($payload['planned_start_date'])->startOfDay();
             $endDate = Carbon::parse($payload['planned_end_date'])->startOfDay();
@@ -85,8 +89,12 @@ class CleaningProjectSupport
                 'mail_recipient' => $payload['mail_recipient'] ?? null,
                 'mail_phone' => $payload['mail_phone'] ?? null,
                 'mail_address' => $payload['mail_address'] ?? null,
-                'invoice_tax_id' => $payload['invoice_tax_id'] ?? null,
-                'invoice_title' => $payload['invoice_title'] ?? null,
+                'invoice_tax_id' => is_array($triplicateLine)
+                    ? ($triplicateLine['invoice_tax_id'] ?? $payload['invoice_tax_id'] ?? null)
+                    : ($payload['invoice_tax_id'] ?? null),
+                'invoice_title' => is_array($triplicateLine)
+                    ? ($triplicateLine['invoice_title'] ?? $payload['invoice_title'] ?? null)
+                    : ($payload['invoice_title'] ?? null),
                 'planned_start_date' => $startDate->toDateString(),
                 'planned_end_date' => $endDate->toDateString(),
                 'notes' => $payload['notes'] ?? null,
@@ -202,6 +210,11 @@ class CleaningProjectSupport
         return [[
             'ac_units' => max(1, $units),
             'unit_price' => (int) $primary['unit_price'],
+            'is_taxable' => (bool) ($primary['is_taxable'] ?? false),
+            'invoice_type' => $primary['invoice_type'] ?? SchedulePricing::INVOICE_TYPE_NONE,
+            'invoice_title' => $primary['invoice_title'] ?? null,
+            'invoice_tax_id' => $primary['invoice_tax_id'] ?? null,
+            'charge_customer_tax' => (bool) ($primary['charge_customer_tax'] ?? false),
         ]];
     }
 

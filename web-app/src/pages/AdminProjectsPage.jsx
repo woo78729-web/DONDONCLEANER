@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { CustomerSourceBadge } from '../components/CustomerSourceBadge';
 import { Layout } from '../components/Layout';
 import { PageAlert } from '../components/PageAlert';
 import { PageErrorBoundary } from '../components/PageErrorBoundary';
@@ -7,45 +8,13 @@ import { emptyProjectForm, ProjectFormModal, ProjectStatusBadge } from '../compo
 import { useAuth } from '../context/AuthContext';
 import { api } from '../api/client';
 import {
+  buildProjectPayload,
   createPricingLine,
   formatDateOnly,
   getProjectDurationDays,
   getProjectStatusLabel,
   PROJECT_STATUS_LABELS,
 } from '../utils/scheduleCalendar';
-
-function buildProjectPayload(form) {
-  return {
-    title: form.title || null,
-    employee_ids: form.employee_ids.map(Number),
-    planned_start_date: form.planned_start_date,
-    planned_end_date: form.planned_end_date,
-    start_time: form.start_time,
-    end_time: form.end_time,
-    customer_name: form.customer_name,
-    customer_phone: form.customer_phone,
-    customer_address: form.customer_address,
-    service_area: form.service_area || null,
-    customer_source: form.customer_source,
-    fb_display_name: form.fb_display_name || null,
-    line_display_name: form.line_display_name || null,
-    pricing_lines: form.pricing_lines.map((line) => ({
-      ac_units: Number(line.ac_units),
-      unit_price: Number(line.unit_price),
-      is_taxable: Boolean(line.is_taxable),
-    })),
-    needs_invoice: Boolean(form.needs_invoice),
-    needs_receipt: Boolean(form.needs_receipt),
-    expects_company_remittance: Boolean(form.expects_company_remittance),
-    needs_mail: Boolean(form.needs_mail),
-    mail_recipient: form.mail_recipient || null,
-    mail_phone: form.mail_phone || null,
-    mail_address: form.mail_address || null,
-    invoice_tax_id: form.invoice_tax_id || null,
-    invoice_title: form.invoice_title || null,
-    notes: form.notes || null,
-  };
-}
 
 function buildScheduleUnitsDraft(project) {
   return Object.fromEntries(
@@ -332,6 +301,7 @@ export default function AdminProjectsPage() {
                   <div className="admin-project-card__meta">
                     <strong>{project.title || project.customer_address}</strong>
                     <span className="hint">{project.project_code} · {project.customer_name}</span>
+                    <CustomerSourceBadge source={project.customer_source} className="admin-project-card__source" />
                     <span className="hint">
                       工期 {formatDateOnly(project.planned_start_date)} – {formatDateOnly(project.planned_end_date)}
                       （{getProjectDurationDays(project) || '-'} 天）
@@ -361,6 +331,7 @@ export default function AdminProjectsPage() {
                 <div>
                   <h2 className="modal-title">{selectedProject.title || selectedProject.customer_address}</h2>
                   <p className="hint">{selectedProject.project_code}</p>
+                  <CustomerSourceBadge source={selectedProject.customer_source} />
                 </div>
                 <button type="button" className="modal-close" onClick={() => setSelectedProject(null)}>×</button>
               </div>
@@ -379,6 +350,7 @@ export default function AdminProjectsPage() {
               </div>
 
               <dl className="schedule-detail">
+                <div><dt>客戶來源</dt><dd><CustomerSourceBadge source={selectedProject.customer_source} /></dd></div>
                 <div><dt>客戶</dt><dd>{selectedProject.customer_name} / {selectedProject.customer_phone}</dd></div>
                 <div><dt>地址</dt><dd>{selectedProject.customer_address}</dd></div>
                 <div><dt>總台數</dt><dd>{selectedProject.progress?.total_units} 台（已完成 {selectedProject.progress?.completed_units} 台）</dd></div>

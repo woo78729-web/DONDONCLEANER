@@ -121,6 +121,15 @@ class CleaningProjectController extends Controller
             'pricing_lines' => ['nullable', 'array', 'min:1', 'max:10'],
             'pricing_lines.*.ac_units' => ['required_with:pricing_lines', 'integer', 'min:1', 'max:9999'],
             'pricing_lines.*.unit_price' => ['required_with:pricing_lines', 'integer', Rule::in(SchedulePricing::unitPrices())],
+            'pricing_lines.*.is_taxable' => ['nullable', 'boolean'],
+            'pricing_lines.*.invoice_type' => ['nullable', 'string', Rule::in([
+                SchedulePricing::INVOICE_TYPE_NONE,
+                SchedulePricing::INVOICE_TYPE_DUPLICATE,
+                SchedulePricing::INVOICE_TYPE_TRIPLICATE,
+            ])],
+            'pricing_lines.*.invoice_title' => ['nullable', 'string', 'max:255'],
+            'pricing_lines.*.invoice_tax_id' => ['nullable', 'string', 'max:20'],
+            'pricing_lines.*.charge_customer_tax' => ['nullable', 'boolean'],
         ]);
 
         try {
@@ -235,6 +244,15 @@ class CleaningProjectController extends Controller
             'pricing_lines' => ['required', 'array', 'min:1', 'max:10'],
             'pricing_lines.*.ac_units' => ['required', 'integer', 'min:1', 'max:9999'],
             'pricing_lines.*.unit_price' => ['required', 'integer', Rule::in(SchedulePricing::unitPrices())],
+            'pricing_lines.*.is_taxable' => ['nullable', 'boolean'],
+            'pricing_lines.*.invoice_type' => ['nullable', 'string', Rule::in([
+                SchedulePricing::INVOICE_TYPE_NONE,
+                SchedulePricing::INVOICE_TYPE_DUPLICATE,
+                SchedulePricing::INVOICE_TYPE_TRIPLICATE,
+            ])],
+            'pricing_lines.*.invoice_title' => ['nullable', 'string', 'max:255'],
+            'pricing_lines.*.invoice_tax_id' => ['nullable', 'string', 'max:20'],
+            'pricing_lines.*.charge_customer_tax' => ['nullable', 'boolean'],
             'needs_invoice' => ['nullable', 'boolean'],
             'needs_receipt' => ['nullable', 'boolean'],
             'expects_company_remittance' => ['nullable', 'boolean'],
