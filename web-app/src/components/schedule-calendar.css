@@ -3526,6 +3526,21 @@
   gap: 12px;
 }
 
+.pricing-line__invoice-sync {
+  align-self: flex-start;
+  padding: 0;
+  border: none;
+  background: none;
+  color: #8ab4f8;
+  font-size: 13px;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.pricing-line__invoice-sync:hover {
+  color: #aecbf8;
+}
+
 .price-summary {
   display: flex;
   flex-direction: column;

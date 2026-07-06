@@ -34,6 +34,23 @@ export function createPricingLine(overrides = {}) {
   };
 }
 
+export function clonePricingLineInvoiceSettings(line) {
+  const invoiceType = line?.invoice_type || INVOICE_TYPE_NONE;
+  const chargeCustomerTax = line?.charge_customer_tax !== false;
+
+  return {
+    invoice_type: invoiceType,
+    charge_customer_tax: invoiceType === INVOICE_TYPE_NONE ? false : chargeCustomerTax,
+    is_taxable: invoiceType === INVOICE_TYPE_NONE ? false : chargeCustomerTax,
+    invoice_title: invoiceType === INVOICE_TYPE_TRIPLICATE
+      ? String(line?.invoice_title || '')
+      : '',
+    invoice_tax_id: invoiceType === INVOICE_TYPE_TRIPLICATE
+      ? String(line?.invoice_tax_id || '')
+      : '',
+  };
+}
+
 export function lineHasInvoice(line) {
   return line?.invoice_type === INVOICE_TYPE_DUPLICATE
     || line?.invoice_type === INVOICE_TYPE_TRIPLICATE;

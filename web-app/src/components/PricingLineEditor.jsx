@@ -1,4 +1,5 @@
 import {
+  clonePricingLineInvoiceSettings,
   createPricingLine,
   INVOICE_TYPE_DUPLICATE,
   INVOICE_TYPE_NONE,
@@ -40,6 +41,22 @@ export function PricingLineEditor({
     });
   }
 
+  function addLine() {
+    const previous = safeLines[safeLines.length - 1];
+    const inherited = previous ? clonePricingLineInvoiceSettings(previous) : {};
+
+    onChange([...safeLines, createPricingLine(inherited)]);
+  }
+
+  function applyInvoiceToAll(sourceLine) {
+    const settings = clonePricingLineInvoiceSettings(sourceLine);
+
+    onChange(safeLines.map((line) => ({
+      ...line,
+      ...settings,
+    })));
+  }
+
   return (
     <div className={`pricing-lines-editor ${className}`.trim()}>
       {showAdd && (
@@ -48,7 +65,7 @@ export function PricingLineEditor({
           <button
             type="button"
             className="btn btn-secondary btn-sm btn-pill"
-            onClick={() => onChange([...safeLines, createPricingLine()])}
+            onClick={addLine}
           >
             ＋ 新增項目
           </button>
@@ -149,6 +166,16 @@ export function PricingLineEditor({
                       />
                       <span>向客戶加收 5% 稅金</span>
                     </label>
+                  )}
+
+                  {safeLines.length > 1 && (
+                    <button
+                      type="button"
+                      className="pricing-line__invoice-sync"
+                      onClick={() => applyInvoiceToAll(line)}
+                    >
+                      套用發票設定至所有項目
+                    </button>
                   )}
                 </div>
               )}
