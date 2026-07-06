@@ -532,18 +532,22 @@ export function ScheduleFormModal({
                       </label>
                     )}
 
-                    <label className="field" style={{ gridColumn: hasMultipleAddresses ? 'span 2' : '1 / -1' }}>
+                    <label
+                      className="field service-address-row__address-field"
+                      style={{ gridColumn: hasMultipleAddresses ? 'span 2' : '1 / -1' }}
+                    >
                       <span className="field-label">{hasMultipleAddresses ? `${row.ac_units} 台 · 地址` : '地址'}</span>
-                      <div className="field-action-row">
-                        <AddressAutocompleteInput
-                          value={row.address}
-                          onChange={(address) => updateServiceAddress(row.id, { address })}
-                          placeholder="請輸入完整地址"
-                          required
-                          showFallbackHint={false}
-                        />
-                        <GoogleMapsLink address={row.address} />
-                      </div>
+                      <AddressAutocompleteInput
+                        value={row.address}
+                        onChange={(address) => updateServiceAddress(row.id, { address })}
+                        placeholder="請輸入完整地址"
+                        required
+                        showFallbackHint={false}
+                      />
+                      <GoogleMapsLink
+                        address={row.address}
+                        className="btn btn-secondary btn-sm map-link-btn service-address-row__map-link"
+                      />
                     </label>
 
                     <label className="field">
