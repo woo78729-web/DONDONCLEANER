@@ -9,16 +9,27 @@ return new class extends Migration
 {
     public function up(): void
     {
+        // MySQL：report_id 的 UNIQUE 同時被 FK 使用，須先移除外鍵再 drop unique
+        Schema::table('company_remittances', function (Blueprint $table) {
+            $table->dropForeign(['report_id']);
+        });
+
         Schema::table('company_remittances', function (Blueprint $table) {
             $table->dropUnique(['report_id']);
         });
 
         Schema::table('company_remittances', function (Blueprint $table) {
+            $table->foreign('report_id')
+                ->references('id')
+                ->on('daily_reports')
+                ->cascadeOnDelete();
+
             $table->foreignId('cleaning_project_id')
                 ->nullable()
                 ->after('report_id')
                 ->constrained('cleaning_projects')
                 ->nullOnDelete();
+
             $table->index(['cleaning_project_id', 'status']);
             $table->index('report_id');
         });
@@ -46,12 +57,17 @@ return new class extends Migration
         Schema::table('company_remittances', function (Blueprint $table) {
             $table->dropForeign(['cleaning_project_id']);
             $table->dropIndex(['cleaning_project_id', 'status']);
+            $table->dropForeign(['report_id']);
             $table->dropIndex(['report_id']);
             $table->dropColumn('cleaning_project_id');
         });
 
         Schema::table('company_remittances', function (Blueprint $table) {
             $table->unique('report_id');
+            $table->foreign('report_id')
+                ->references('id')
+                ->on('daily_reports')
+                ->cascadeOnDelete();
         });
     }
 };
