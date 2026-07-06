@@ -75,6 +75,13 @@ function EmployeePaymentDueSection({ employees = [] }) {
       </div>
       <div className="table-wrap">
         <table className="data-table accounting-employee-due-table">
+          <colgroup>
+            <col className="col-employee" />
+            <col className="col-money" />
+            <col className="col-money" />
+            <col className="col-money" />
+            <col className="col-note" />
+          </colgroup>
           <thead>
             <tr>
               <th>師傅</th>
