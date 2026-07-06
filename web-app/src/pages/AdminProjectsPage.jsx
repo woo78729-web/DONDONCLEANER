@@ -146,7 +146,13 @@ export default function AdminProjectsPage() {
       setSearchParams({});
 
       if (redirectToRemittance || result.data?.expects_company_remittance) {
-        navigate('/admin/remittance-tracking', { replace: true });
+        const remittanceMonth = String(form.planned_start_date || result.data?.planned_start_date || '').slice(0, 7);
+        navigate(
+          remittanceMonth
+            ? `/admin/remittance-tracking?year_month=${remittanceMonth}`
+            : '/admin/remittance-tracking',
+          { replace: true },
+        );
         return;
       }
 

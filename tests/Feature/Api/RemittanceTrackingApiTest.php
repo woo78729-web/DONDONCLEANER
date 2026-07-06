@@ -85,11 +85,12 @@ class RemittanceTrackingApiTest extends TestCase
         $schedule = DailySchedule::query()->create($this->scheduleAttributes([
             'user_id' => $this->employee->id,
             'work_date' => now()->toDateString(),
+            'needs_invoice' => true,
             'pricing_lines' => [
                 ['ac_units' => 2, 'unit_price' => 1000],
             ],
             'ac_units' => 2,
-            'cleaning_price' => 2000,
+            'cleaning_price' => 2100,
             'unit_price' => 1000,
         ]));
 
@@ -97,23 +98,35 @@ class RemittanceTrackingApiTest extends TestCase
             'schedule_id' => $schedule->id,
             'planned_units' => 2,
             'completed_units' => 2,
+            'has_tax' => true,
             'collected_amount' => 0,
             'paid_to_company' => true,
+            'report_invoice_tax_cost' => 160,
         ]);
         CompanyRemittanceSupport::syncForReport($report);
         $remittanceId = $report->fresh()->companyRemittance->id;
 
-        $this->getJson('/api/admin/accounting?year_month='.now()->format('Y-m'))
+        $yearMonth = now()->format('Y-m');
+
+        $beforeConfirm = $this->getJson('/api/admin/accounting?year_month='.$yearMonth)
             ->assertOk()
-            ->assertJsonPath('data.totals.company_transfer', 0);
+            ->json('data.totals');
+
+        $this->assertSame(0, $beforeConfirm['company_transfer']);
+        $this->assertSame(160, $beforeConfirm['auto_invoice_tax_advance']);
+        $this->assertGreaterThan(0, $beforeConfirm['operating_income']);
 
         $this->patchJson("/api/admin/remittance-tracking/{$remittanceId}/confirm")
             ->assertOk()
             ->assertJsonPath('data.status', 'confirmed');
 
-        $this->getJson('/api/admin/accounting?year_month='.now()->format('Y-m'))
+        $afterConfirm = $this->getJson('/api/admin/accounting?year_month='.$yearMonth)
             ->assertOk()
-            ->assertJsonPath('data.totals.company_transfer', 2000);
+            ->json('data.totals');
+
+        $this->assertSame(2100, $afterConfirm['company_transfer']);
+        $this->assertSame($beforeConfirm['auto_invoice_tax_advance'], $afterConfirm['auto_invoice_tax_advance']);
+        $this->assertSame($beforeConfirm['operating_income'], $afterConfirm['operating_income']);
     }
 
     public function test_remind_marks_remittance_and_alerts_respect_snooze(): void
@@ -285,6 +298,81 @@ class RemittanceTrackingApiTest extends TestCase
         $this->getJson('/api/admin/remittance-tracking?year_month='.$yearMonth)
             ->assertOk()
             ->assertJsonPath('data.pending.0.amount', 2000)
+            ->assertJsonPath('data.totals.pending_amount', 2000);
+    }
+
+    public function test_admin_can_update_remittance_dates_for_backfill(): void
+    {
+        Sanctum::actingAs($this->admin);
+
+        $workDate = now()->subMonths(2)->startOfMonth()->toDateString();
+        $yearMonth = substr($workDate, 0, 7);
+
+        $schedule = DailySchedule::query()->create($this->scheduleAttributes([
+            'user_id' => $this->employee->id,
+            'work_date' => $workDate,
+            'pricing_lines' => [
+                ['ac_units' => 1, 'unit_price' => 1000],
+            ],
+            'ac_units' => 1,
+            'cleaning_price' => 1000,
+            'unit_price' => 1000,
+        ]));
+
+        $report = DailyReport::query()->create([
+            'schedule_id' => $schedule->id,
+            'planned_units' => 1,
+            'completed_units' => 1,
+            'collected_amount' => 0,
+            'paid_to_company' => true,
+        ]);
+        CompanyRemittanceSupport::syncForReport($report);
+        $remittanceId = $report->fresh()->companyRemittance->id;
+
+        $expectedDate = now()->subMonth()->startOfMonth()->toDateString();
+        $confirmedDate = now()->subDays(10)->toDateString();
+
+        $this->patchJson("/api/admin/remittance-tracking/{$remittanceId}", [
+            'expected_remittance_date' => $expectedDate,
+            'confirmed_at' => $confirmedDate,
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.expected_remittance_date', $expectedDate)
+            ->assertJsonPath('data.status', 'confirmed')
+            ->assertJsonPath('data.confirmed_at', fn ($value) => str_starts_with((string) $value, $confirmedDate));
+
+        $this->getJson('/api/admin/remittance-tracking?year_month='.$yearMonth)
+            ->assertOk()
+            ->assertJsonPath('data.confirmed.0.amount', 1000)
+            ->assertJsonPath('data.totals.confirmed_amount', 1000);
+    }
+
+    public function test_project_with_company_remittance_backfills_pending_tracking_records(): void
+    {
+        Sanctum::actingAs($this->admin);
+
+        $workDate = now()->subDays(10)->toDateString();
+        $yearMonth = substr($workDate, 0, 7);
+
+        $this->postJson('/api/admin/projects', [
+            'employee_ids' => [$this->employee->id],
+            'planned_start_date' => $workDate,
+            'planned_end_date' => $workDate,
+            'customer_name' => '匯款專案客戶',
+            'customer_phone' => '0912345678',
+            'customer_address' => '台東市',
+            'customer_source' => 'phone',
+            'expects_company_remittance' => true,
+            'pricing_lines' => [
+                ['ac_units' => 2, 'unit_price' => 1000],
+            ],
+        ])->assertCreated();
+
+        $this->getJson('/api/admin/remittance-tracking?year_month='.$yearMonth)
+            ->assertOk()
+            ->assertJsonPath('data.pending.0.customer_name', '匯款專案客戶')
+            ->assertJsonPath('data.pending.0.status', 'pending')
+            ->assertJsonPath('data.pending.0.expected_remittance_date', $workDate)
             ->assertJsonPath('data.totals.pending_amount', 2000);
     }
 }

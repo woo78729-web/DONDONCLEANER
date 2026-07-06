@@ -17,6 +17,7 @@ class CompanyRemittance extends Model
         'report_id',
         'amount',
         'status',
+        'expected_remittance_date',
         'reminded_at',
         'confirmed_at',
     ];
@@ -25,6 +26,7 @@ class CompanyRemittance extends Model
     {
         return [
             'amount' => 'integer',
+            'expected_remittance_date' => 'date',
             'reminded_at' => 'datetime',
             'confirmed_at' => 'datetime',
         ];

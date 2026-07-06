@@ -170,7 +170,7 @@ class EmployeeReportSupport
 
         $collectedAmount = array_key_exists('collected_amount', $input)
             ? max(0, (int) $input['collected_amount'])
-            : $summary['cleaning_price'];
+            : ($paidToCompany ? 0 : $summary['cleaning_price']);
 
         if ($paidToCompany && $collectedAmount > 0) {
             throw new \InvalidArgumentException('客戶匯款給公司時，實際收取金額請填 0');

@@ -41,6 +41,11 @@ class CompanyRemittanceSupport
 
         if (! $remittance->exists) {
             $remittance->status = CompanyRemittance::STATUS_PENDING;
+            $workDate = $report->dailySchedule->work_date;
+
+            if ($workDate !== null && $remittance->expected_remittance_date === null) {
+                $remittance->expected_remittance_date = Carbon::parse($workDate)->toDateString();
+            }
         }
 
         $remittance->save();
@@ -48,6 +53,8 @@ class CompanyRemittanceSupport
 
     public static function syncForMonth(int $year, int $month): void
     {
+        self::healProjectRemittanceReports($year, $month);
+
         DailyReport::query()
             ->with(['dailySchedule', 'companyRemittance'])
             ->where('paid_to_company', true)
@@ -56,6 +63,24 @@ class CompanyRemittanceSupport
             })
             ->get()
             ->each(fn (DailyReport $report) => self::syncForReport($report));
+    }
+
+    public static function healProjectRemittanceReports(int $year, int $month): void
+    {
+        DailyReport::query()
+            ->with(['dailySchedule.cleaningProject'])
+            ->where('paid_to_company', false)
+            ->whereHas('dailySchedule', function ($query) use ($year, $month) {
+                $query->whereYear('work_date', $year)
+                    ->whereMonth('work_date', $month)
+                    ->whereHas('cleaningProject', fn ($project) => $project->where('expects_company_remittance', true));
+            })
+            ->get()
+            ->each(fn (DailyReport $report) => EmployeeReportSupport::resyncFromSchedule(
+                $report,
+                ['paid_to_company' => true],
+                false,
+            ));
     }
 
     /**
@@ -128,6 +153,15 @@ class CompanyRemittanceSupport
         return $report->companyRemittance?->status === CompanyRemittance::STATUS_CONFIRMED;
     }
 
+    public static function expectedRemittanceAnchor(CompanyRemittance $remittance): ?Carbon
+    {
+        if ($remittance->expected_remittance_date !== null) {
+            return Carbon::parse($remittance->expected_remittance_date)->startOfDay();
+        }
+
+        return $remittance->created_at?->copy()->startOfDay();
+    }
+
     public static function isOverdue(CompanyRemittance $remittance): bool
     {
         if ($remittance->status === CompanyRemittance::STATUS_CONFIRMED) {
@@ -137,14 +171,16 @@ class CompanyRemittanceSupport
         $now = now();
 
         if ($remittance->status === CompanyRemittance::STATUS_REMINDED) {
-            $anchor = $remittance->reminded_at ?? $remittance->created_at;
+            $anchor = $remittance->reminded_at ?? self::expectedRemittanceAnchor($remittance);
 
             return $anchor !== null
                 && $anchor->copy()->addDays(self::REMIND_SNOOZE_DAYS)->lte($now);
         }
 
-        return $remittance->created_at !== null
-            && $remittance->created_at->copy()->addDays(self::OVERDUE_DAYS)->lte($now);
+        $anchor = self::expectedRemittanceAnchor($remittance);
+
+        return $anchor !== null
+            && $anchor->copy()->addDays(self::OVERDUE_DAYS)->lte($now);
     }
 
     /**
@@ -153,7 +189,7 @@ class CompanyRemittanceSupport
     public static function overdueQuery(): Builder
     {
         $now = now();
-        $pendingCutoff = $now->copy()->subDays(self::OVERDUE_DAYS);
+        $pendingCutoff = $now->copy()->subDays(self::OVERDUE_DAYS)->toDateString();
         $remindedCutoff = $now->copy()->subDays(self::REMIND_SNOOZE_DAYS);
 
         return CompanyRemittance::query()
@@ -163,7 +199,7 @@ class CompanyRemittanceSupport
             ->where(function (Builder $query) use ($pendingCutoff, $remindedCutoff) {
                 $query->where(function (Builder $pending) use ($pendingCutoff) {
                     $pending->where('status', CompanyRemittance::STATUS_PENDING)
-                        ->where('created_at', '<=', $pendingCutoff);
+                        ->whereRaw('COALESCE(expected_remittance_date, date(created_at)) <= ?', [$pendingCutoff]);
                 })->orWhere(function (Builder $reminded) use ($remindedCutoff) {
                     $reminded->where('status', CompanyRemittance::STATUS_REMINDED)
                         ->where('reminded_at', '<=', $remindedCutoff);
@@ -174,7 +210,7 @@ class CompanyRemittanceSupport
     public static function statusLabel(string $status): string
     {
         return match ($status) {
-            CompanyRemittance::STATUS_PENDING => '待入帳',
+            CompanyRemittance::STATUS_PENDING => '待匯款',
             CompanyRemittance::STATUS_REMINDED => '已催繳',
             CompanyRemittance::STATUS_CONFIRMED => '已入帳',
             default => $status,
@@ -197,6 +233,7 @@ class CompanyRemittanceSupport
             'status' => $remittance->status,
             'status_label' => self::statusLabel($remittance->status),
             'is_overdue' => self::isOverdue($remittance),
+            'expected_remittance_date' => $remittance->expected_remittance_date?->format('Y-m-d'),
             'reminded_at' => $remittance->reminded_at?->toDateTimeString(),
             'confirmed_at' => $remittance->confirmed_at?->toDateTimeString(),
             'created_at' => $remittance->created_at?->toDateTimeString(),

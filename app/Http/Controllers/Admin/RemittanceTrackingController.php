@@ -4,10 +4,10 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\CompanyRemittance;
-use App\Models\DailyReport;
 use App\Support\CompanyRemittanceSupport;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 
 class RemittanceTrackingController extends Controller
 {
@@ -102,7 +102,40 @@ class RemittanceTrackingController extends Controller
 
         return $this->success(
             CompanyRemittanceSupport::payload($remittance->fresh()),
-            '已確認入帳，金額已列入宏逸帳戶'
+            '已確認入帳'
+        );
+    }
+
+    public function update(Request $request, CompanyRemittance $remittance): JsonResponse
+    {
+        $validated = $request->validate([
+            'expected_remittance_date' => ['nullable', 'date'],
+            'confirmed_at' => ['nullable', 'date'],
+        ]);
+
+        if (array_key_exists('expected_remittance_date', $validated)) {
+            $remittance->expected_remittance_date = $validated['expected_remittance_date'];
+        }
+
+        if (array_key_exists('confirmed_at', $validated)) {
+            $confirmedAt = $validated['confirmed_at']
+                ? Carbon::parse($validated['confirmed_at'])->startOfDay()
+                : null;
+
+            $remittance->confirmed_at = $confirmedAt;
+
+            if ($confirmedAt !== null) {
+                $remittance->status = CompanyRemittance::STATUS_CONFIRMED;
+            } elseif ($remittance->status === CompanyRemittance::STATUS_CONFIRMED) {
+                $remittance->status = CompanyRemittance::STATUS_PENDING;
+            }
+        }
+
+        $remittance->save();
+
+        return $this->success(
+            CompanyRemittanceSupport::payload($remittance->fresh()),
+            '匯款紀錄已更新'
         );
     }
 }

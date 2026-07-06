@@ -445,6 +445,10 @@ class AcCleaningApi {
     return this.request('PATCH', `/admin/remittance-tracking/${remittanceId}/confirm`);
   }
 
+  updateRemittance(remittanceId, payload) {
+    return this.request('PATCH', `/admin/remittance-tracking/${remittanceId}`, { body: payload });
+  }
+
   async exportReports(filters = {}) {
     const response = await this.request('GET', '/admin/reports/export', {
       params: filters,
