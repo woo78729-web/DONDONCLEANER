@@ -2,10 +2,12 @@
 
 namespace App\Support;
 
+use App\Models\CleaningProject;
 use App\Models\CompanyRemittance;
 use App\Models\DailyReport;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 
 class CompanyRemittanceSupport
 {
@@ -15,58 +17,115 @@ class CompanyRemittanceSupport
 
     public static function syncForReport(DailyReport $report): void
     {
-        $report->loadMissing('dailySchedule');
+        $report->loadMissing('dailySchedule.cleaningProject');
 
-        if (! $report->dailySchedule) {
-            return;
-        }
+        $project = $report->dailySchedule?->cleaningProject;
 
-        if (! $report->paid_to_company) {
-            CompanyRemittance::query()->where('report_id', $report->id)->delete();
+        if ($project && (bool) $project->expects_company_remittance) {
+            self::syncForProject($project);
 
             return;
         }
 
-        $breakdown = self::financialBreakdown($report);
-        $amount = (int) ($breakdown['company_inbound_amount'] ?? 0);
+        self::syncStandaloneReport($report);
+    }
+
+    public static function syncForProject(CleaningProject $project): void
+    {
+        $project->loadMissing(['schedules.dailyReport', 'schedules.user']);
+
+        if (! (bool) $project->expects_company_remittance) {
+            self::purgeProjectRemittances($project);
+
+            return;
+        }
+
+        $reports = self::projectReports($project);
+
+        if ($reports->isEmpty()) {
+            self::purgeProjectRemittances($project);
+
+            return;
+        }
+
+        if (self::shouldPreserveProjectSplit($reports, $project)) {
+            return;
+        }
+
+        $amount = self::projectRemittanceAmount($project);
 
         if ($amount <= 0) {
-            CompanyRemittance::query()->where('report_id', $report->id)->delete();
+            self::purgeProjectRemittances($project);
 
             return;
         }
 
-        $remittance = CompanyRemittance::query()->firstOrNew(['report_id' => $report->id]);
+        $canonical = self::canonicalProjectReport($reports);
+        $expectedDate = $project->planned_end_date
+            ?? $canonical->dailySchedule?->work_date
+            ?? now()->toDateString();
+
+        $remittance = CompanyRemittance::query()->firstOrNew(['report_id' => $canonical->id]);
         $remittance->amount = $amount;
 
         if (! $remittance->exists) {
             $remittance->status = CompanyRemittance::STATUS_PENDING;
-            $workDate = $report->dailySchedule->work_date;
+        }
 
-            if ($workDate !== null && $remittance->expected_remittance_date === null) {
-                $remittance->expected_remittance_date = Carbon::parse($workDate)->toDateString();
-            }
+        if ($remittance->expected_remittance_date === null) {
+            $remittance->expected_remittance_date = Carbon::parse($expectedDate)->toDateString();
         }
 
         $remittance->save();
+
+        $siblingReportIds = $reports
+            ->pluck('id')
+            ->filter(fn (int $reportId) => $reportId !== $canonical->id)
+            ->values();
+
+        if ($siblingReportIds->isNotEmpty()) {
+            CompanyRemittance::query()
+                ->whereIn('report_id', $siblingReportIds)
+                ->delete();
+        }
     }
 
     public static function syncForMonth(int $year, int $month): void
     {
         self::healProjectRemittanceReports($year, $month);
 
-        DailyReport::query()
-            ->with(['dailySchedule', 'companyRemittance'])
+        $reports = DailyReport::query()
+            ->with(['dailySchedule.cleaningProject'])
             ->where('paid_to_company', true)
             ->whereHas('dailySchedule', function ($query) use ($year, $month) {
                 $query->whereYear('work_date', $year)->whereMonth('work_date', $month);
             })
+            ->get();
+
+        $projectIds = collect();
+
+        foreach ($reports as $report) {
+            $projectId = $report->dailySchedule?->cleaning_project_id;
+
+            if ($projectId) {
+                $projectIds->push($projectId);
+
+                continue;
+            }
+
+            self::syncStandaloneReport($report);
+        }
+
+        CleaningProject::query()
+            ->whereIn('id', $projectIds->unique()->values())
             ->get()
-            ->each(fn (DailyReport $report) => self::syncForReport($report));
+            ->each(fn (CleaningProject $project) => self::syncForProject($project));
     }
 
     public static function healProjectRemittanceReports(int $year, int $month): void
     {
+        $projectIds = collect();
+
         DailyReport::query()
             ->with(['dailySchedule.cleaningProject'])
             ->where('paid_to_company', false)
@@ -76,11 +135,65 @@ class CompanyRemittanceSupport
                     ->whereHas('cleaningProject', fn ($project) => $project->where('expects_company_remittance', true));
             })
             ->get()
-            ->each(fn (DailyReport $report) => EmployeeReportSupport::resyncFromSchedule(
-                $report,
-                ['paid_to_company' => true],
-                false,
-            ));
+            ->each(function (DailyReport $report) use ($projectIds) {
+                EmployeeReportSupport::resyncFromSchedule(
+                    $report,
+                    ['paid_to_company' => true],
+                    false,
+                );
+
+                if ($report->dailySchedule?->cleaning_project_id) {
+                    $projectIds->push($report->dailySchedule->cleaning_project_id);
+                }
+            });
+
+        CleaningProject::query()
+            ->whereIn('id', $projectIds->unique()->values())
+            ->get()
+            ->each(fn (CleaningProject $project) => self::syncForProject($project));
+    }
+
+    /**
+     * @return array{original: CompanyRemittance, split: CompanyRemittance}
+     */
+    public static function split(CompanyRemittance $remittance, int $splitAmount): array
+    {
+        if ($remittance->status === CompanyRemittance::STATUS_CONFIRMED) {
+            throw new \InvalidArgumentException('已入帳的匯款紀錄不可拆帳');
+        }
+
+        if ($splitAmount < 1 || $splitAmount >= (int) $remittance->amount) {
+            throw new \InvalidArgumentException('拆分金額需大於 0 且小於原匯款金額');
+        }
+
+        $remittance->loadMissing('report.dailySchedule.cleaningProject');
+        $targetReportId = self::resolveSplitReportId($remittance);
+
+        $remittance->amount = (int) $remittance->amount - $splitAmount;
+        $remittance->save();
+
+        $split = CompanyRemittance::query()->create([
+            'report_id' => $targetReportId,
+            'amount' => $splitAmount,
+            'status' => CompanyRemittance::STATUS_PENDING,
+            'expected_remittance_date' => $remittance->expected_remittance_date,
+        ]);
+
+        return [
+            'original' => $remittance->fresh(),
+            'split' => $split->fresh(),
+        ];
+    }
+
+    public static function projectRemittanceAmount(CleaningProject $project): int
+    {
+        $lines = SchedulePricing::normalizeLines(
+            $project->pricing_lines,
+            (int) $project->ac_units,
+            (int) $project->unit_price,
+        );
+
+        return (int) SchedulePricing::summarizeLines($lines, (bool) $project->needs_invoice)['cleaning_price'];
     }
 
     /**
@@ -222,13 +335,33 @@ class CompanyRemittanceSupport
      */
     public static function payload(CompanyRemittance $remittance): array
     {
-        $remittance->loadMissing('report.dailySchedule.user:id,name,account');
+        $remittance->loadMissing([
+            'report.dailySchedule.user:id,name,account',
+            'report.dailySchedule.cleaningProject.schedules.user:id,name',
+        ]);
+
         $report = $remittance->report;
         $schedule = $report?->dailySchedule;
+        $project = $schedule?->cleaningProject;
+        $isProjectTotal = $project !== null && (bool) $project->expects_company_remittance;
+
+        $employeeName = $schedule?->user?->name;
+
+        if ($isProjectTotal && $project) {
+            $employeeName = $project->schedules
+                ->pluck('user.name')
+                ->filter()
+                ->unique()
+                ->values()
+                ->join('、') ?: $employeeName;
+        }
 
         return [
             'id' => $remittance->id,
             'report_id' => $remittance->report_id,
+            'cleaning_project_id' => $project?->id,
+            'project_code' => $project?->project_code,
+            'is_project_total' => $isProjectTotal,
             'amount' => (int) $remittance->amount,
             'status' => $remittance->status,
             'status_label' => self::statusLabel($remittance->status),
@@ -237,11 +370,13 @@ class CompanyRemittanceSupport
             'reminded_at' => $remittance->reminded_at?->toDateTimeString(),
             'confirmed_at' => $remittance->confirmed_at?->toDateTimeString(),
             'created_at' => $remittance->created_at?->toDateTimeString(),
-            'work_date' => $schedule?->work_date?->format('Y-m-d') ?? (string) $schedule?->work_date,
-            'employee_name' => $schedule?->user?->name,
-            'customer_name' => $schedule?->customer_name,
-            'customer_address' => $schedule?->customer_address,
-            'customer_phone' => $schedule?->customer_phone,
+            'work_date' => $isProjectTotal
+                ? ($project?->planned_end_date?->format('Y-m-d') ?? (string) $project?->planned_end_date)
+                : ($schedule?->work_date?->format('Y-m-d') ?? (string) $schedule?->work_date),
+            'employee_name' => $employeeName,
+            'customer_name' => $project?->customer_name ?? $schedule?->customer_name,
+            'customer_address' => $project?->customer_address ?? $schedule?->customer_address,
+            'customer_phone' => $project?->customer_phone ?? $schedule?->customer_phone,
         ];
     }
 
@@ -254,7 +389,29 @@ class CompanyRemittanceSupport
             return null;
         }
 
-        $report->loadMissing('companyRemittance');
+        $report->loadMissing(['companyRemittance', 'dailySchedule.cleaningProject']);
+
+        if ($report->dailySchedule?->cleaningProject?->expects_company_remittance) {
+            $project = $report->dailySchedule->cleaningProject;
+            $project->loadMissing(['schedules.dailyReport']);
+            $canonical = self::canonicalProjectReport(self::projectReports($project));
+            $canonical?->loadMissing('companyRemittance');
+            $remittance = $canonical?->companyRemittance;
+
+            if (! $remittance) {
+                return null;
+            }
+
+            return [
+                'id' => $remittance->id,
+                'amount' => (int) $remittance->amount,
+                'status' => $remittance->status,
+                'status_label' => self::statusLabel($remittance->status),
+                'is_overdue' => self::isOverdue($remittance),
+                'confirmed_at' => $remittance->confirmed_at?->toDateTimeString(),
+            ];
+        }
+
         $remittance = $report->companyRemittance;
 
         if (! $remittance) {
@@ -269,5 +426,142 @@ class CompanyRemittanceSupport
             'is_overdue' => self::isOverdue($remittance),
             'confirmed_at' => $remittance->confirmed_at?->toDateTimeString(),
         ];
+    }
+
+    /**
+     * @return Builder<CompanyRemittance>
+     */
+    public static function monthQuery(int $year, int $month): Builder
+    {
+        return CompanyRemittance::query()
+            ->where(function (Builder $query) use ($year, $month) {
+                $query->where(function (Builder $dated) use ($year, $month) {
+                    $dated->whereYear('expected_remittance_date', $year)
+                        ->whereMonth('expected_remittance_date', $month);
+                })->orWhere(function (Builder $fallback) use ($year, $month) {
+                    $fallback->whereNull('expected_remittance_date')
+                        ->whereHas('report.dailySchedule', function ($schedule) use ($year, $month) {
+                            $schedule->whereYear('work_date', $year)
+                                ->whereMonth('work_date', $month);
+                        });
+                });
+            });
+    }
+
+    private static function syncStandaloneReport(DailyReport $report): void
+    {
+        $report->loadMissing('dailySchedule');
+
+        if (! $report->dailySchedule) {
+            return;
+        }
+
+        if (! $report->paid_to_company) {
+            CompanyRemittance::query()->where('report_id', $report->id)->delete();
+
+            return;
+        }
+
+        $breakdown = self::financialBreakdown($report);
+        $amount = (int) ($breakdown['company_inbound_amount'] ?? 0);
+
+        if ($amount <= 0) {
+            CompanyRemittance::query()->where('report_id', $report->id)->delete();
+
+            return;
+        }
+
+        $remittance = CompanyRemittance::query()->firstOrNew(['report_id' => $report->id]);
+        $remittance->amount = $amount;
+
+        if (! $remittance->exists) {
+            $remittance->status = CompanyRemittance::STATUS_PENDING;
+            $workDate = $report->dailySchedule->work_date;
+
+            if ($workDate !== null && $remittance->expected_remittance_date === null) {
+                $remittance->expected_remittance_date = Carbon::parse($workDate)->toDateString();
+            }
+        }
+
+        $remittance->save();
+    }
+
+    /**
+     * @param  Collection<int, DailyReport>  $reports
+     */
+    private static function canonicalProjectReport(Collection $reports): ?DailyReport
+    {
+        return $reports
+            ->sortBy(function (DailyReport $report) {
+                $workDate = $report->dailySchedule?->work_date?->format('Y-m-d') ?? '9999-99-99';
+
+                return $workDate.'-'.str_pad((string) $report->id, 10, '0', STR_PAD_LEFT);
+            })
+            ->first();
+    }
+
+    /**
+     * @return Collection<int, DailyReport>
+     */
+    private static function projectReports(CleaningProject $project): Collection
+    {
+        return $project->schedules
+            ->map(fn ($schedule) => $schedule->dailyReport)
+            ->filter()
+            ->values();
+    }
+
+    private static function purgeProjectRemittances(CleaningProject $project): void
+    {
+        $reportIds = DailyReport::query()
+            ->whereHas('dailySchedule', fn ($query) => $query->where('cleaning_project_id', $project->id))
+            ->pluck('id');
+
+        if ($reportIds->isEmpty()) {
+            return;
+        }
+
+        CompanyRemittance::query()->whereIn('report_id', $reportIds)->delete();
+    }
+
+    /**
+     * @param  Collection<int, DailyReport>  $reports
+     */
+    private static function shouldPreserveProjectSplit(Collection $reports, CleaningProject $project): bool
+    {
+        $remittances = CompanyRemittance::query()
+            ->whereIn('report_id', $reports->pluck('id'))
+            ->get();
+
+        if ($remittances->count() <= 1) {
+            return false;
+        }
+
+        $projectTotal = self::projectRemittanceAmount($project);
+        $existingSum = (int) $remittances->sum('amount');
+
+        return $existingSum <= $projectTotal;
+    }
+
+    private static function resolveSplitReportId(CompanyRemittance $remittance): int
+    {
+        $report = $remittance->report;
+        $projectId = $report?->dailySchedule?->cleaning_project_id;
+
+        if ($projectId) {
+            $targetReportId = DailyReport::query()
+                ->where('paid_to_company', true)
+                ->where('id', '!=', $report->id)
+                ->whereHas('dailySchedule', fn ($query) => $query->where('cleaning_project_id', $projectId))
+                ->whereDoesntHave('companyRemittance')
+                ->orderBy('id')
+                ->value('id');
+
+            if ($targetReportId) {
+                return (int) $targetReportId;
+            }
+        }
+
+        throw new \InvalidArgumentException('此工單沒有可用的派班回報建立拆分紀錄，請確認專案有多筆派班');
     }
 }

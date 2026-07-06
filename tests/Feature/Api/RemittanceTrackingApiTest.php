@@ -341,7 +341,7 @@ class RemittanceTrackingApiTest extends TestCase
             ->assertJsonPath('data.status', 'confirmed')
             ->assertJsonPath('data.confirmed_at', fn ($value) => str_starts_with((string) $value, $confirmedDate));
 
-        $this->getJson('/api/admin/remittance-tracking?year_month='.$yearMonth)
+        $this->getJson('/api/admin/remittance-tracking?year_month='.substr($expectedDate, 0, 7))
             ->assertOk()
             ->assertJsonPath('data.confirmed.0.amount', 1000)
             ->assertJsonPath('data.totals.confirmed_amount', 1000);
@@ -374,5 +374,126 @@ class RemittanceTrackingApiTest extends TestCase
             ->assertJsonPath('data.pending.0.status', 'pending')
             ->assertJsonPath('data.pending.0.expected_remittance_date', $workDate)
             ->assertJsonPath('data.totals.pending_amount', 2000);
+    }
+
+    public function test_project_with_multiple_schedules_creates_single_remittance_total(): void
+    {
+        Sanctum::actingAs($this->admin);
+
+        $employeeTwo = User::query()->create([
+            'account' => 'emp2',
+            'password' => Hash::make('password123'),
+            'name' => '員工二',
+            'role' => 'employee',
+            'is_active' => true,
+            'rules_accepted_at' => now(),
+            'must_change_password' => false,
+        ]);
+
+        $start = now()->subDays(10)->toDateString();
+        $end = now()->subDays(8)->toDateString();
+        $yearMonth = substr($end, 0, 7);
+
+        $this->postJson('/api/admin/projects', [
+            'employee_ids' => [$this->employee->id, $employeeTwo->id],
+            'planned_start_date' => $start,
+            'planned_end_date' => $end,
+            'customer_name' => '多派班匯款客戶',
+            'customer_phone' => '0912345678',
+            'customer_address' => '台東市',
+            'customer_source' => 'phone',
+            'expects_company_remittance' => true,
+            'pricing_lines' => [
+                ['ac_units' => 4, 'unit_price' => 1000],
+            ],
+        ])->assertCreated();
+
+        $response = $this->getJson('/api/admin/remittance-tracking?year_month='.$yearMonth)
+            ->assertOk();
+
+        $this->assertCount(1, $response->json('data.pending'));
+        $this->assertSame('多派班匯款客戶', $response->json('data.pending.0.customer_name'));
+        $this->assertSame(4000, $response->json('data.pending.0.amount'));
+        $this->assertSame(4000, $response->json('data.totals.pending_amount'));
+    }
+
+    public function test_admin_can_split_project_remittance_into_two_records(): void
+    {
+        Sanctum::actingAs($this->admin);
+
+        $employeeTwo = User::query()->create([
+            'account' => 'emp2split',
+            'password' => Hash::make('password123'),
+            'name' => '員工二',
+            'role' => 'employee',
+            'is_active' => true,
+            'rules_accepted_at' => now(),
+            'must_change_password' => false,
+        ]);
+
+        $workDate = now()->subDays(10)->toDateString();
+        $yearMonth = substr($workDate, 0, 7);
+
+        $this->postJson('/api/admin/projects', [
+            'employee_ids' => [$this->employee->id, $employeeTwo->id],
+            'planned_start_date' => $workDate,
+            'planned_end_date' => $workDate,
+            'customer_name' => '拆帳客戶',
+            'customer_phone' => '0912345678',
+            'customer_address' => '台東市',
+            'customer_source' => 'phone',
+            'expects_company_remittance' => true,
+            'pricing_lines' => [
+                ['ac_units' => 4, 'unit_price' => 1000],
+            ],
+        ])->assertCreated();
+
+        $remittanceId = $this->getJson('/api/admin/remittance-tracking?year_month='.$yearMonth)
+            ->assertOk()
+            ->json('data.pending.0.id');
+
+        $this->postJson("/api/admin/remittance-tracking/{$remittanceId}/split", [
+            'split_amount' => 1500,
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.original.amount', 2500)
+            ->assertJsonPath('data.split.amount', 1500);
+
+        $this->getJson('/api/admin/remittance-tracking?year_month='.$yearMonth)
+            ->assertOk()
+            ->assertJsonPath('data.totals.pending_amount', 4000)
+            ->assertJsonCount(2, 'data.pending');
+    }
+
+    public function test_admin_can_update_remittance_amount(): void
+    {
+        Sanctum::actingAs($this->admin);
+
+        $schedule = DailySchedule::query()->create($this->scheduleAttributes([
+            'user_id' => $this->employee->id,
+            'work_date' => now()->toDateString(),
+            'pricing_lines' => [
+                ['ac_units' => 2, 'unit_price' => 1000],
+            ],
+            'ac_units' => 2,
+            'cleaning_price' => 2000,
+            'unit_price' => 1000,
+        ]));
+
+        $report = DailyReport::query()->create([
+            'schedule_id' => $schedule->id,
+            'planned_units' => 2,
+            'completed_units' => 2,
+            'collected_amount' => 0,
+            'paid_to_company' => true,
+        ]);
+        CompanyRemittanceSupport::syncForReport($report);
+        $remittanceId = $report->fresh()->companyRemittance->id;
+
+        $this->patchJson("/api/admin/remittance-tracking/{$remittanceId}", [
+            'amount' => 1800,
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.amount', 1800);
     }
 }

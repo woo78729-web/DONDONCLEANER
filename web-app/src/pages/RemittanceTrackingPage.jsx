@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { Layout } from '../components/Layout';
 import { PageAlert } from '../components/PageAlert';
 import { api } from '../api/client';
+import '../components/schedule-calendar.css';
 
 function currentYearMonth() {
   const now = new Date();
@@ -22,8 +23,15 @@ export default function RemittanceTrackingPage() {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [editItem, setEditItem] = useState(null);
-  const [editDraft, setEditDraft] = useState({ expected_remittance_date: '', confirmed_at: '' });
+  const [editDraft, setEditDraft] = useState({
+    expected_remittance_date: '',
+    confirmed_at: '',
+    amount: '',
+  });
+  const [splitItem, setSplitItem] = useState(null);
+  const [splitAmount, setSplitAmount] = useState('');
   const [savingEdit, setSavingEdit] = useState(false);
+  const [savingSplit, setSavingSplit] = useState(false);
 
   async function loadTracking(nextYearMonth = yearMonth) {
     setLoading(true);
@@ -60,12 +68,23 @@ export default function RemittanceTrackingPage() {
     setEditDraft({
       expected_remittance_date: item.expected_remittance_date || item.work_date || '',
       confirmed_at: item.confirmed_at ? item.confirmed_at.slice(0, 10) : '',
+      amount: String(item.amount || ''),
     });
   }
 
   function closeEditModal() {
     setEditItem(null);
-    setEditDraft({ expected_remittance_date: '', confirmed_at: '' });
+    setEditDraft({ expected_remittance_date: '', confirmed_at: '', amount: '' });
+  }
+
+  function openSplitModal(item) {
+    setSplitItem(item);
+    setSplitAmount('');
+  }
+
+  function closeSplitModal() {
+    setSplitItem(null);
+    setSplitAmount('');
   }
 
   async function handleSaveEdit(event) {
@@ -83,6 +102,7 @@ export default function RemittanceTrackingPage() {
       await api.updateRemittance(editItem.id, {
         expected_remittance_date: editDraft.expected_remittance_date || null,
         confirmed_at: editDraft.confirmed_at || null,
+        amount: Number(editDraft.amount || editItem.amount),
       });
       setMessage('匯款紀錄已更新');
       closeEditModal();
@@ -91,6 +111,29 @@ export default function RemittanceTrackingPage() {
       setError(err.message);
     } finally {
       setSavingEdit(false);
+    }
+  }
+
+  async function handleSplitSubmit(event) {
+    event.preventDefault();
+
+    if (!splitItem) {
+      return;
+    }
+
+    setSavingSplit(true);
+    setError('');
+    setMessage('');
+
+    try {
+      await api.splitRemittance(splitItem.id, Number(splitAmount));
+      setMessage('匯款紀錄已拆分');
+      closeSplitModal();
+      await loadTracking(yearMonth);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSavingSplit(false);
     }
   }
 
@@ -141,7 +184,12 @@ export default function RemittanceTrackingPage() {
             {items.map((item) => (
               <tr key={item.id} className={item.is_overdue ? 'row-warning' : ''}>
                 <td>{item.work_date}</td>
-                <td>{item.employee_name || '-'}</td>
+                <td>
+                  {item.employee_name || '-'}
+                  {item.is_project_total && item.project_code && (
+                    <div className="hint">專案 {item.project_code}</div>
+                  )}
+                </td>
                 <td>{item.customer_name || '-'}</td>
                 <td>{item.customer_address || '-'}</td>
                 <td>{item.expected_remittance_date || item.work_date || '-'}</td>
@@ -165,6 +213,13 @@ export default function RemittanceTrackingPage() {
                       </button>
                       {item.status !== 'confirmed' && (
                         <>
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-sm"
+                            onClick={() => openSplitModal(item)}
+                          >
+                            拆帳
+                          </button>
                           <button
                             type="button"
                             className="btn btn-secondary btn-sm"
@@ -202,7 +257,7 @@ export default function RemittanceTrackingPage() {
       <section className="card">
         <div className="card-header">
           <h2 className="card-title">月份查詢</h2>
-          <p className="hint">師傅回報或專案勾選「客戶報帳匯款」後會列入待匯款；營業額與宏逸 8% 代墊依工單日期計入當月，不受入帳狀態影響。</p>
+          <p className="hint">專案工單只會產生一筆匯款（總尾款）；營業額與宏逸 8% 代墊依工單日期計入當月，不受入帳狀態影響。</p>
         </div>
         <div className="filter-toolbar">
           <label className="field field-compact">
@@ -250,13 +305,36 @@ export default function RemittanceTrackingPage() {
       )}
 
       {editItem && (
-        <div className="modal-backdrop" onClick={closeEditModal}>
-          <form className="modal-card" onClick={(event) => event.stopPropagation()} onSubmit={handleSaveEdit}>
-            <div className="card-header">
-              <h2 className="card-title">編輯匯款紀錄</h2>
-              <p className="hint">{editItem.customer_name} · {editItem.work_date}</p>
+        <div className="modal-overlay schedule-form-overlay" role="presentation" onClick={closeEditModal}>
+          <form
+            className="modal-panel modal-panel--wide"
+            role="dialog"
+            aria-modal="true"
+            onClick={(event) => event.stopPropagation()}
+            onSubmit={handleSaveEdit}
+          >
+            <div className="modal-header">
+              <div>
+                <h2 className="modal-title">編輯匯款紀錄</h2>
+                <p className="hint">{editItem.customer_name} · {editItem.work_date}</p>
+              </div>
+              <button type="button" className="modal-close" onClick={closeEditModal} aria-label="關閉">×</button>
             </div>
             <div className="form-grid">
+              <label className="field">
+                <span className="field-label">匯款金額</span>
+                <input
+                  className="field-control"
+                  type="number"
+                  min="1"
+                  value={editDraft.amount}
+                  onChange={(event) => setEditDraft((draft) => ({
+                    ...draft,
+                    amount: event.target.value,
+                  }))}
+                  required
+                />
+              </label>
               <label className="field">
                 <span className="field-label">預計匯款日期</span>
                 <input
@@ -289,6 +367,50 @@ export default function RemittanceTrackingPage() {
               </button>
               <button type="submit" className="btn btn-primary" disabled={savingEdit}>
                 {savingEdit ? '儲存中...' : '儲存'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {splitItem && (
+        <div className="modal-overlay schedule-form-overlay" role="presentation" onClick={closeSplitModal}>
+          <form
+            className="modal-panel"
+            role="dialog"
+            aria-modal="true"
+            onClick={(event) => event.stopPropagation()}
+            onSubmit={handleSplitSubmit}
+          >
+            <div className="modal-header">
+              <div>
+                <h2 className="modal-title">拆帳</h2>
+                <p className="hint">
+                  {splitItem.customer_name} · 原金額 {formatMoney(splitItem.amount)} 元
+                </p>
+              </div>
+              <button type="button" className="modal-close" onClick={closeSplitModal} aria-label="關閉">×</button>
+            </div>
+            <label className="field">
+              <span className="field-label">拆分金額</span>
+              <input
+                className="field-control"
+                type="number"
+                min="1"
+                max={Math.max(1, Number(splitItem.amount || 1) - 1)}
+                value={splitAmount}
+                onChange={(event) => setSplitAmount(event.target.value)}
+                placeholder="請輸入要獨立拆分出來的匯款金額"
+                required
+              />
+              <span className="hint">原紀錄會扣除此金額，並新增一筆待匯款紀錄供分次入帳。</span>
+            </label>
+            <div className="toolbar-actions" style={{ marginTop: 16 }}>
+              <button type="button" className="btn btn-secondary" onClick={closeSplitModal} disabled={savingSplit}>
+                取消
+              </button>
+              <button type="submit" className="btn btn-primary" disabled={savingSplit}>
+                {savingSplit ? '處理中...' : '確認拆帳'}
               </button>
             </div>
           </form>

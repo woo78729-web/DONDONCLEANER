@@ -22,26 +22,19 @@ class RemittanceTrackingController extends Controller
 
         CompanyRemittanceSupport::syncForMonth((int) $year, (int) $month);
 
-        $pending = CompanyRemittance::query()
-            ->with(['report.dailySchedule.user:id,name,account'])
+        $pending = CompanyRemittanceSupport::monthQuery((int) $year, (int) $month)
+            ->with(['report.dailySchedule.user:id,name,account', 'report.dailySchedule.cleaningProject'])
             ->whereIn('status', [CompanyRemittance::STATUS_PENDING, CompanyRemittance::STATUS_REMINDED])
-            ->whereHas('report.dailySchedule', function ($query) use ($year, $month) {
-                $query->whereYear('work_date', (int) $year)
-                    ->whereMonth('work_date', (int) $month);
-            })
+            ->orderBy('expected_remittance_date')
             ->orderBy('created_at')
             ->orderBy('id')
             ->get()
             ->map(fn (CompanyRemittance $item) => CompanyRemittanceSupport::payload($item))
             ->values();
 
-        $confirmed = CompanyRemittance::query()
-            ->with(['report.dailySchedule.user:id,name,account'])
+        $confirmed = CompanyRemittanceSupport::monthQuery((int) $year, (int) $month)
+            ->with(['report.dailySchedule.user:id,name,account', 'report.dailySchedule.cleaningProject'])
             ->where('status', CompanyRemittance::STATUS_CONFIRMED)
-            ->whereHas('report.dailySchedule', function ($query) use ($year, $month) {
-                $query->whereYear('work_date', (int) $year)
-                    ->whereMonth('work_date', (int) $month);
-            })
             ->orderByDesc('confirmed_at')
             ->orderByDesc('id')
             ->get()
@@ -111,10 +104,15 @@ class RemittanceTrackingController extends Controller
         $validated = $request->validate([
             'expected_remittance_date' => ['nullable', 'date'],
             'confirmed_at' => ['nullable', 'date'],
+            'amount' => ['nullable', 'integer', 'min:1'],
         ]);
 
         if (array_key_exists('expected_remittance_date', $validated)) {
             $remittance->expected_remittance_date = $validated['expected_remittance_date'];
+        }
+
+        if (array_key_exists('amount', $validated) && $validated['amount'] !== null) {
+            $remittance->amount = (int) $validated['amount'];
         }
 
         if (array_key_exists('confirmed_at', $validated)) {
@@ -137,5 +135,23 @@ class RemittanceTrackingController extends Controller
             CompanyRemittanceSupport::payload($remittance->fresh()),
             '匯款紀錄已更新'
         );
+    }
+
+    public function split(Request $request, CompanyRemittance $remittance): JsonResponse
+    {
+        $validated = $request->validate([
+            'split_amount' => ['required', 'integer', 'min:1'],
+        ]);
+
+        try {
+            $result = CompanyRemittanceSupport::split($remittance, (int) $validated['split_amount']);
+        } catch (\InvalidArgumentException $exception) {
+            return $this->error($exception->getMessage(), 422);
+        }
+
+        return $this->success([
+            'original' => CompanyRemittanceSupport::payload($result['original']),
+            'split' => CompanyRemittanceSupport::payload($result['split']),
+        ], '匯款紀錄已拆分');
     }
 }
