@@ -2,6 +2,6 @@
     "php": {
         "version": "8.3"
     },
-    "build_command": "npm install && npm run build",
+    "build_command": "npm run build",
     "start_command": "php artisan migrate --force && (php artisan storage:link --force || true) && _startup"
 }
