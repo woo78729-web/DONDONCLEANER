@@ -113,6 +113,38 @@ class CleaningProjectController extends Controller
         );
     }
 
+    public function updateUnits(Request $request, CleaningProject $project): JsonResponse
+    {
+        $validated = $request->validate([
+            'total_ac_units' => ['required', 'integer', 'min:1', 'max:9999'],
+            'pricing_lines' => ['nullable', 'array', 'min:1', 'max:10'],
+            'pricing_lines.*.ac_units' => ['required_with:pricing_lines', 'integer', 'min:1', 'max:9999'],
+            'pricing_lines.*.unit_price' => ['required_with:pricing_lines', 'integer', Rule::in(SchedulePricing::unitPrices())],
+        ]);
+
+        try {
+            $project = CleaningProjectSupport::updateProjectUnits(
+                $project,
+                (int) $validated['total_ac_units'],
+                $validated['pricing_lines'] ?? null,
+            );
+        } catch (\InvalidArgumentException $exception) {
+            return $this->error($exception->getMessage(), 422);
+        }
+
+        return $this->success(
+            CleaningProjectSupport::payload($project, detailed: true),
+            '專案台數已更新'
+        );
+    }
+
+    public function destroy(CleaningProject $project): JsonResponse
+    {
+        CleaningProjectSupport::deleteProject($project);
+
+        return $this->success(null, '專案已刪除');
+    }
+
     public function storeSupplement(Request $request, CleaningProject $project): JsonResponse
     {
         $validated = $request->validate([
@@ -121,7 +153,7 @@ class CleaningProjectController extends Controller
             'start_time' => ['nullable', 'date_format:H:i'],
             'end_time' => ['nullable', 'date_format:H:i'],
             'pricing_lines' => ['required', 'array', 'min:1', 'max:10'],
-            'pricing_lines.*.ac_units' => ['required', 'integer', 'min:1', 'max:99'],
+            'pricing_lines.*.ac_units' => ['required', 'integer', 'min:1', 'max:9999'],
             'pricing_lines.*.unit_price' => ['required', 'integer', Rule::in(SchedulePricing::unitPrices())],
             'notes' => ['nullable', 'string', 'max:500'],
         ]);
@@ -167,9 +199,13 @@ class CleaningProjectController extends Controller
             'fb_display_name' => ['nullable', 'string', 'max:255'],
             'line_display_name' => ['nullable', 'string', 'max:255'],
             'pricing_lines' => ['required', 'array', 'min:1', 'max:10'],
-            'pricing_lines.*.ac_units' => ['required', 'integer', 'min:1', 'max:99'],
+            'pricing_lines.*.ac_units' => ['required', 'integer', 'min:1', 'max:9999'],
             'pricing_lines.*.unit_price' => ['required', 'integer', Rule::in(SchedulePricing::unitPrices())],
             'needs_invoice' => ['nullable', 'boolean'],
+            'needs_receipt' => ['nullable', 'boolean'],
+            'expects_company_remittance' => ['nullable', 'boolean'],
+            'invoice_tax_id' => ['nullable', 'string', 'max:20'],
+            'invoice_title' => ['nullable', 'string', 'max:255'],
             'notes' => ['nullable', 'string', 'max:500'],
         ];
     }

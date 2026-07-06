@@ -7,6 +7,7 @@ export function PricingLineEditor({
   showTax = true,
   showAdd = false,
   showRemove = true,
+  maxUnits = 99,
   className = '',
 }) {
   const safeLines = Array.isArray(lines) && lines.length > 0 ? lines : [createPricingLine()];
@@ -46,7 +47,7 @@ export function PricingLineEditor({
                 className="field-control"
                 type="number"
                 min="1"
-                max="99"
+                max={maxUnits}
                 value={line.ac_units}
                 onChange={(event) => updateLine(line.id, { ac_units: event.target.value })}
                 required

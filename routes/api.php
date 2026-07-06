@@ -35,6 +35,8 @@ Route::middleware(['auth:sanctum', 'role:admin|customer_service'])->prefix('admi
     Route::post('/projects', [AdminCleaningProjectController::class, 'store']);
     Route::get('/projects/{project}', [AdminCleaningProjectController::class, 'show']);
     Route::patch('/projects/{project}/status', [AdminCleaningProjectController::class, 'updateStatus']);
+    Route::patch('/projects/{project}/units', [AdminCleaningProjectController::class, 'updateUnits']);
+    Route::delete('/projects/{project}', [AdminCleaningProjectController::class, 'destroy']);
     Route::post('/projects/{project}/supplements', [AdminCleaningProjectController::class, 'storeSupplement']);
     Route::get('/schedules', [AdminScheduleController::class, 'index']);
     Route::get('/planning/availability', [AdminSchedulePlanningController::class, 'availability']);

@@ -1,3 +1,5 @@
+import { Link } from 'react-router-dom';
+import { InvoiceTaxIdFields } from './InvoiceTaxIdFields';
 import { PricingLineEditor } from './PricingLineEditor';
 import {
   applyPriceCalculation,
@@ -6,8 +8,11 @@ import {
   DEFAULT_FIRST_SHIFT_START,
   DEFAULT_SECOND_SHIFT_START,
   getMinScheduleWorkDate,
+  isTriplicateInvoice,
   patchScheduleForm,
   PROJECT_STATUS_LABELS,
+  resolveMailContactFields,
+  syncInvoiceTaxFlags,
 } from '../utils/scheduleCalendar';
 import { TAITUNG_SERVICE_AREAS } from '../utils/taitungAreas';
 import { AddressAutocompleteInput } from './AddressAutocompleteInput';
@@ -51,6 +56,11 @@ export function emptyProjectForm() {
     ac_units: '1',
     unit_price: '1500',
     needs_invoice: false,
+    needs_receipt: false,
+    expects_company_remittance: false,
+    invoice_tax_id: '',
+    invoice_title: '',
+    invoice_charge_customer_tax: false,
     cleaning_price: '1500',
     notes: '',
   });
@@ -73,6 +83,73 @@ export function ProjectFormModal({
   function handleChange(partial) {
     onChange(applyPriceCalculation(patchScheduleForm(form, partial)));
   }
+
+  function toggleNeedsMail(checked) {
+    if (!checked) {
+      handleChange({
+        needs_mail: false,
+        mail_same_as_customer: false,
+        mail_recipient: '',
+        mail_phone: '',
+        mail_address: '',
+      });
+      return;
+    }
+
+    const contact = resolveMailContactFields(form);
+
+    handleChange({
+      needs_mail: true,
+      mail_same_as_customer: true,
+      mail_phone: contact.phone,
+      mail_address: contact.address,
+    });
+  }
+
+  function toggleMailSameAsCustomer(checked) {
+    if (checked) {
+      const contact = resolveMailContactFields(form);
+      handleChange({
+        mail_same_as_customer: true,
+        mail_phone: contact.phone,
+        mail_address: contact.address,
+      });
+      return;
+    }
+
+    handleChange({ mail_same_as_customer: false });
+  }
+
+  function toggleNeedsInvoice(checked) {
+    const patch = checked
+      ? { needs_invoice: true, needs_receipt: false }
+      : {
+        needs_invoice: false,
+        invoice_tax_id: '',
+        invoice_title: '',
+        invoice_charge_customer_tax: false,
+      };
+
+    handleChange(applyPriceCalculation(syncInvoiceTaxFlags(patchScheduleForm(form, patch))));
+  }
+
+  function toggleNeedsReceipt(checked) {
+    handleChange(patchScheduleForm(form, {
+      needs_receipt: checked,
+      ...(checked ? {
+        needs_invoice: false,
+        invoice_tax_id: '',
+        invoice_title: '',
+        invoice_charge_customer_tax: false,
+      } : {}),
+    }));
+  }
+
+  function handleInvoiceFieldChange(partial) {
+    handleChange(applyPriceCalculation(syncInvoiceTaxFlags(patchScheduleForm(form, partial))));
+  }
+
+  const triplicateInvoice = isTriplicateInvoice(form);
 
   return (
     <div className="modal-overlay schedule-form-overlay" role="presentation" onClick={onClose}>
@@ -178,18 +255,19 @@ export function ProjectFormModal({
             <input className="field-control" value={form.customer_phone} onChange={(event) => handleChange({ customer_phone: event.target.value })} required />
           </label>
 
-          <label className="field" style={{ gridColumn: '1 / -1' }}>
+          <label className="field service-address-row__address-field" style={{ gridColumn: '1 / -1' }}>
             <span className="field-label">清洗地址</span>
-            <div className="field-action-row">
-              <AddressAutocompleteInput
-                value={form.customer_address}
-                onChange={(address) => handleChange({ customer_address: address })}
-                placeholder="請輸入完整地址"
-                required
-                showFallbackHint={false}
-              />
-              <GoogleMapsLink address={form.customer_address} />
-            </div>
+            <AddressAutocompleteInput
+              value={form.customer_address}
+              onChange={(address) => handleChange({ customer_address: address })}
+              placeholder="請輸入完整地址"
+              required
+              showFallbackHint={false}
+            />
+            <GoogleMapsLink
+              address={form.customer_address}
+              className="btn btn-secondary btn-sm map-link-btn service-address-row__map-link"
+            />
           </label>
 
           <div className="field" style={{ gridColumn: '1 / -1' }}>
@@ -214,6 +292,7 @@ export function ProjectFormModal({
               onChange={(pricing_lines) => handleChange({ pricing_lines })}
               showTax={false}
               showRemove={false}
+              maxUnits={9999}
             />
           </div>
 
@@ -224,10 +303,137 @@ export function ProjectFormModal({
             </div>
           </div>
 
-          <label className="field field-checkbox" style={{ gridColumn: '1 / -1' }}>
-            <input type="checkbox" checked={Boolean(form.needs_invoice)} onChange={(event) => handleChange({ needs_invoice: event.target.checked })} />
-            <span>是否開發票（統編，加 5%）</span>
-          </label>
+          <div className="form-options-row" style={{ gridColumn: '1 / -1' }}>
+            <label className="field field-checkbox">
+              <input
+                type="checkbox"
+                checked={Boolean(form.needs_mail)}
+                onChange={(event) => toggleNeedsMail(event.target.checked)}
+              />
+              <span>郵寄</span>
+            </label>
+
+            <label className="field field-checkbox">
+              <input
+                type="checkbox"
+                checked={Boolean(form.needs_invoice)}
+                disabled={Boolean(form.needs_receipt)}
+                onChange={(event) => toggleNeedsInvoice(event.target.checked)}
+              />
+              <span>發票（二聯／三聯）</span>
+            </label>
+
+            <label className="field field-checkbox">
+              <input
+                type="checkbox"
+                checked={Boolean(form.needs_receipt)}
+                disabled={Boolean(form.needs_invoice)}
+                onChange={(event) => toggleNeedsReceipt(event.target.checked)}
+              />
+              <span>收據</span>
+            </label>
+
+            <label className="field field-checkbox">
+              <input
+                type="checkbox"
+                checked={Boolean(form.expects_company_remittance)}
+                onChange={(event) => handleChange({ expects_company_remittance: event.target.checked })}
+              />
+              <span>客戶報帳匯款</span>
+            </label>
+          </div>
+
+          {form.expects_company_remittance && (
+            <p className="hint" style={{ gridColumn: '1 / -1' }}>
+              建立專案後將導向
+              {' '}
+              <Link to="/admin/remittance-tracking">匯款追查</Link>
+              ，員工回報時請勾選「客戶已匯款至公司帳戶」。
+            </p>
+          )}
+
+          {form.needs_invoice && (
+            <div className="form-section" style={{ gridColumn: '1 / -1' }}>
+              <div className="form-section__body form-section__body--flush">
+                <InvoiceTaxIdFields
+                  invoiceTitle={form.invoice_title}
+                  invoiceTaxId={form.invoice_tax_id}
+                  onChange={handleInvoiceFieldChange}
+                />
+                {!triplicateInvoice && (
+                  <>
+                    <p className="hint" style={{ marginTop: 12 }}>
+                      不填抬頭／統編即為二聯；若要向客戶加收 5% 再勾選下方選項。
+                    </p>
+                    <label className="field field-checkbox" style={{ marginTop: 8 }}>
+                      <input
+                        type="checkbox"
+                        checked={Boolean(form.invoice_charge_customer_tax)}
+                        onChange={(event) => handleChange(
+                          applyPriceCalculation(syncInvoiceTaxFlags(patchScheduleForm(form, {
+                            invoice_charge_customer_tax: event.target.checked,
+                          }))),
+                        )}
+                      />
+                      <span>向客戶加收 5% 稅金（二聯）</span>
+                    </label>
+                  </>
+                )}
+                {triplicateInvoice && (
+                  <p className="hint" style={{ marginTop: 12 }}>三聯發票已自動向客戶加收 5% 稅金。</p>
+                )}
+              </div>
+            </div>
+          )}
+
+          {form.needs_mail && (
+            <div className="form-section" style={{ gridColumn: '1 / -1' }}>
+              <div className="form-section__body">
+                <label className="field field-checkbox field-checkbox--sub">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(form.mail_same_as_customer)}
+                    onChange={(event) => toggleMailSameAsCustomer(event.target.checked)}
+                  />
+                  <span>同清洗電話、地址</span>
+                </label>
+
+                <div className="form-grid cols-2">
+                  <label className="field">
+                    <span className="field-label">寄信聯絡人</span>
+                    <input
+                      className="field-control"
+                      value={form.mail_recipient}
+                      onChange={(event) => handleChange({ mail_recipient: event.target.value })}
+                      placeholder="收件人姓名"
+                    />
+                  </label>
+
+                  <label className="field">
+                    <span className="field-label">寄信電話</span>
+                    <input
+                      className="field-control"
+                      value={form.mail_phone}
+                      onChange={(event) => handleChange({ mail_phone: event.target.value, mail_same_as_customer: false })}
+                      disabled={form.mail_same_as_customer}
+                      placeholder="聯絡電話"
+                    />
+                  </label>
+
+                  <label className="field" style={{ gridColumn: '1 / -1' }}>
+                    <span className="field-label">寄信地址</span>
+                    <input
+                      className="field-control"
+                      value={form.mail_address}
+                      onChange={(event) => handleChange({ mail_address: event.target.value, mail_same_as_customer: false })}
+                      disabled={form.mail_same_as_customer}
+                      placeholder="寄送地址"
+                    />
+                  </label>
+                </div>
+              </div>
+            </div>
+          )}
 
           <label className="field" style={{ gridColumn: '1 / -1' }}>
             <span className="field-label">備註</span>

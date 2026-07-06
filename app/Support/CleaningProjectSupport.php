@@ -79,6 +79,8 @@ class CleaningProjectSupport
                 'unit_price' => $summary['unit_price'],
                 'cleaning_price' => $summary['cleaning_price'],
                 'needs_invoice' => $needsInvoice,
+                'needs_receipt' => (bool) ($payload['needs_receipt'] ?? false),
+                'expects_company_remittance' => (bool) ($payload['expects_company_remittance'] ?? false),
                 'needs_mail' => (bool) ($payload['needs_mail'] ?? false),
                 'mail_recipient' => $payload['mail_recipient'] ?? null,
                 'mail_phone' => $payload['mail_phone'] ?? null,
@@ -173,6 +175,8 @@ class CleaningProjectSupport
                     'cleaning_price' => $summary['cleaning_price'],
                     'task_details' => $summary['task_details'],
                     'needs_invoice' => $needsInvoice,
+                    'needs_receipt' => (bool) $project->needs_receipt,
+                    'needs_mail' => $project->needs_mail,
                     'invoice_tax_id' => $project->invoice_tax_id,
                     'invoice_title' => $project->invoice_title,
                     'notes' => $project->notes,
@@ -236,6 +240,8 @@ class CleaningProjectSupport
                 'cleaning_price' => $summary['cleaning_price'],
                 'task_details' => $summary['task_details'],
                 'needs_invoice' => $needsInvoice,
+                'needs_receipt' => (bool) $project->needs_receipt,
+                'needs_mail' => $project->needs_mail,
                 'invoice_tax_id' => $project->invoice_tax_id,
                 'invoice_title' => $project->invoice_title,
                 'notes' => $payload['notes'] ?? '補台數',
@@ -314,7 +320,14 @@ class CleaningProjectSupport
             'cleaning_price' => (int) $project->cleaning_price,
             'pricing_lines' => $project->pricing_lines,
             'needs_invoice' => (bool) $project->needs_invoice,
+            'needs_receipt' => (bool) $project->needs_receipt,
+            'expects_company_remittance' => (bool) $project->expects_company_remittance,
             'needs_mail' => (bool) $project->needs_mail,
+            'mail_recipient' => $project->mail_recipient,
+            'mail_phone' => $project->mail_phone,
+            'mail_address' => $project->mail_address,
+            'invoice_tax_id' => $project->invoice_tax_id,
+            'invoice_title' => $project->invoice_title,
             'planned_start_date' => $project->planned_start_date?->format('Y-m-d'),
             'planned_end_date' => $project->planned_end_date?->format('Y-m-d'),
             'completed_at' => $project->completed_at?->toIso8601String(),
@@ -374,5 +387,82 @@ class CleaningProjectSupport
     public static function generateProjectCode(): string
     {
         return 'P'.now()->format('ymd').'-'.Str::upper(Str::random(4));
+    }
+
+    /**
+     * @param  list<array{ac_units:int, unit_price:int}>|null  $pricingLines
+     */
+    public static function updateProjectUnits(CleaningProject $project, int $totalUnits, ?array $pricingLines = null): CleaningProject
+    {
+        if ($totalUnits < 1) {
+            throw new \InvalidArgumentException('總台數至少需 1 台');
+        }
+
+        return DB::transaction(function () use ($project, $totalUnits, $pricingLines) {
+            $needsInvoice = (bool) $project->needs_invoice;
+            $lines = SchedulePricing::normalizeLines($pricingLines ?? $project->pricing_lines ?? []);
+            $projectLines = self::linesForUnits($lines, $totalUnits);
+            $summary = SchedulePricing::summarizeLines($projectLines, $needsInvoice);
+
+            $project->total_ac_units = $totalUnits;
+            $project->pricing_lines = $projectLines;
+            $project->ac_units = $totalUnits;
+            $project->unit_price = $summary['unit_price'];
+            $project->cleaning_price = $summary['cleaning_price'];
+            $project->save();
+
+            $regularSchedules = $project->schedules()
+                ->where('schedule_kind', CleaningProject::SCHEDULE_KIND_REGULAR)
+                ->orderBy('work_date')
+                ->orderBy('start_time')
+                ->orderBy('id')
+                ->get();
+
+            if ($regularSchedules->isNotEmpty()) {
+                $slotCount = $regularSchedules->count();
+                $baseUnits = intdiv($totalUnits, $slotCount);
+                $remainder = $totalUnits % $slotCount;
+
+                foreach ($regularSchedules as $index => $schedule) {
+                    $units = max(1, $baseUnits + ($index < $remainder ? 1 : 0));
+                    $scheduleLines = self::linesForUnits($lines, $units);
+                    $scheduleSummary = SchedulePricing::summarizeLines($scheduleLines, $needsInvoice);
+
+                    $schedule->update([
+                        'units_allocated' => $units,
+                        'pricing_lines' => $scheduleLines,
+                        'ac_units' => $scheduleSummary['ac_units'],
+                        'unit_price' => $scheduleSummary['unit_price'],
+                        'cleaning_price' => $scheduleSummary['cleaning_price'],
+                        'task_details' => $scheduleSummary['task_details'],
+                        'needs_invoice' => $needsInvoice,
+                        'needs_receipt' => (bool) $project->needs_receipt,
+                        'needs_mail' => (bool) $project->needs_mail,
+                        'invoice_tax_id' => $project->invoice_tax_id,
+                        'invoice_title' => $project->invoice_title,
+                    ]);
+
+                    if ($schedule->dailyReport) {
+                        EmployeeReportSupport::resyncFromSchedule($schedule->dailyReport);
+                    }
+                }
+            }
+
+            self::recalculateProjectTotals($project);
+
+            return $project->fresh(['employees', 'schedules.user', 'schedules.dailyReport']);
+        });
+    }
+
+    public static function deleteProject(CleaningProject $project): void
+    {
+        DB::transaction(function () use ($project) {
+            $project->schedules()->orderByDesc('id')->each(function (DailySchedule $schedule) {
+                ScheduleDeletionSupport::deleteWithDependents($schedule);
+            });
+
+            $project->employees()->detach();
+            $project->delete();
+        });
     }
 }

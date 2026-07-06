@@ -76,6 +76,70 @@ class CleaningProjectApiTest extends TestCase
         $this->assertSame(3, CleaningProject::query()->first()->schedules()->count());
     }
 
+    public function test_admin_can_create_project_with_over_99_units(): void
+    {
+        Sanctum::actingAs($this->admin);
+
+        $start = now()->addDays(3)->toDateString();
+        $end = now()->addDays(4)->toDateString();
+
+        $this->postJson('/api/admin/projects', [
+            'title' => '大案',
+            'employee_ids' => [$this->employee->id],
+            'planned_start_date' => $start,
+            'planned_end_date' => $end,
+            'customer_name' => '測試客戶',
+            'customer_phone' => '0912345678',
+            'customer_address' => '台東市',
+            'customer_source' => 'phone',
+            'needs_receipt' => true,
+            'expects_company_remittance' => true,
+            'pricing_lines' => [
+                ['ac_units' => 107, 'unit_price' => 1000],
+            ],
+        ])
+            ->assertCreated()
+            ->assertJsonPath('data.progress.total_units', 107)
+            ->assertJsonPath('data.expects_company_remittance', true)
+            ->assertJsonPath('data.needs_receipt', true);
+    }
+
+    public function test_admin_can_update_project_units_and_delete_project(): void
+    {
+        Sanctum::actingAs($this->admin);
+
+        $start = now()->addDays(3)->toDateString();
+        $end = now()->addDays(4)->toDateString();
+
+        $projectId = $this->postJson('/api/admin/projects', [
+            'employee_ids' => [$this->employee->id],
+            'planned_start_date' => $start,
+            'planned_end_date' => $end,
+            'customer_name' => '測試客戶',
+            'customer_phone' => '0912345678',
+            'customer_address' => '台東市',
+            'customer_source' => 'phone',
+            'pricing_lines' => [
+                ['ac_units' => 99, 'unit_price' => 1500],
+            ],
+        ])->json('data.id');
+
+        $this->patchJson('/api/admin/projects/'.$projectId.'/units', [
+            'total_ac_units' => 120,
+            'pricing_lines' => [
+                ['ac_units' => 120, 'unit_price' => 1500],
+            ],
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.progress.total_units', 120);
+
+        $this->deleteJson('/api/admin/projects/'.$projectId)
+            ->assertOk();
+
+        $this->assertSoftDeleted('cleaning_projects', ['id' => $projectId]);
+        $this->assertSame(0, DailySchedule::query()->where('cleaning_project_id', $projectId)->count());
+    }
+
     public function test_admin_can_add_supplement_and_update_status(): void
     {
         Sanctum::actingAs($this->admin);

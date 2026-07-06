@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Layout } from '../components/Layout';
 import { PageAlert } from '../components/PageAlert';
 import { PageErrorBoundary } from '../components/PageErrorBoundary';
 import { emptyProjectForm, ProjectFormModal, ProjectStatusBadge } from '../components/ProjectFormModal';
+import { useAuth } from '../context/AuthContext';
 import { api } from '../api/client';
 import {
   createPricingLine,
@@ -31,17 +32,25 @@ function buildProjectPayload(form) {
     pricing_lines: form.pricing_lines.map((line) => ({
       ac_units: Number(line.ac_units),
       unit_price: Number(line.unit_price),
+      is_taxable: Boolean(line.is_taxable),
     })),
     needs_invoice: Boolean(form.needs_invoice),
+    needs_receipt: Boolean(form.needs_receipt),
+    expects_company_remittance: Boolean(form.expects_company_remittance),
     needs_mail: Boolean(form.needs_mail),
     mail_recipient: form.mail_recipient || null,
     mail_phone: form.mail_phone || null,
     mail_address: form.mail_address || null,
+    invoice_tax_id: form.invoice_tax_id || null,
+    invoice_title: form.invoice_title || null,
     notes: form.notes || null,
   };
 }
 
 export default function AdminProjectsPage() {
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const canManageProject = user?.role === 'admin' || user?.role === 'customer_service';
   const [searchParams, setSearchParams] = useSearchParams();
   const [projects, setProjects] = useState([]);
   const [employees, setEmployees] = useState([]);
@@ -56,6 +65,7 @@ export default function AdminProjectsPage() {
     unit_price: '1500',
     notes: '補台數',
   });
+  const [unitsForm, setUnitsForm] = useState({ total_ac_units: '', unit_price: '1500' });
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
@@ -94,6 +104,10 @@ export default function AdminProjectsPage() {
     try {
       const result = await api.getProject(projectId);
       setSelectedProject(result.data);
+      setUnitsForm({
+        total_ac_units: String(result.data.progress?.total_units || result.data.total_ac_units || ''),
+        unit_price: String(result.data.pricing_lines?.[0]?.unit_price || result.data.unit_price || '1500'),
+      });
     } catch (err) {
       setError(err.message);
     }
@@ -110,12 +124,16 @@ export default function AdminProjectsPage() {
     }
 
     try {
+      const redirectToRemittance = Boolean(form.expects_company_remittance);
       await api.createProject(buildProjectPayload(form));
       setMessage('專案建立成功，行事曆已同步顯示');
       setFormOpen(false);
       setForm(emptyProjectForm());
       setSearchParams({});
       await loadProjects();
+      if (redirectToRemittance) {
+        navigate('/admin/remittance-tracking');
+      }
     } catch (err) {
       setError(err.message);
     }
@@ -131,6 +149,50 @@ export default function AdminProjectsPage() {
       const result = await api.updateProjectStatus(selectedProject.id, status);
       setSelectedProject(result.data);
       setMessage(`專案狀態已更新為「${getProjectStatusLabel(status)}」`);
+      await loadProjects();
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  async function handleUpdateUnits(event) {
+    event.preventDefault();
+
+    if (!selectedProject || !canManageProject) {
+      return;
+    }
+
+    setError('');
+    try {
+      const result = await api.updateProjectUnits(selectedProject.id, {
+        total_ac_units: Number(unitsForm.total_ac_units),
+        pricing_lines: [{
+          ac_units: Number(unitsForm.total_ac_units),
+          unit_price: Number(unitsForm.unit_price),
+        }],
+      });
+      setSelectedProject(result.data);
+      setMessage('專案總台數與金額已更新，相關班表與回報已同步');
+      await loadProjects();
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  async function handleDeleteProject() {
+    if (!selectedProject || !canManageProject) {
+      return;
+    }
+
+    if (!window.confirm('確定刪除此專案？所有相關班表、回報、匯款與郵資紀錄將一併刪除。')) {
+      return;
+    }
+
+    setError('');
+    try {
+      await api.deleteProject(selectedProject.id);
+      setSelectedProject(null);
+      setMessage('專案已刪除');
       await loadProjects();
     } catch (err) {
       setError(err.message);
@@ -261,7 +323,56 @@ export default function AdminProjectsPage() {
                 <div><dt>地址</dt><dd>{selectedProject.customer_address}</dd></div>
                 <div><dt>總台數</dt><dd>{selectedProject.progress?.total_units} 台（已完成 {selectedProject.progress?.completed_units} 台）</dd></div>
                 <div><dt>金額</dt><dd>{selectedProject.cleaning_price} 元</dd></div>
+                {selectedProject.expects_company_remittance && (
+                  <div>
+                    <dt>匯款</dt>
+                    <dd>
+                      客戶報帳匯款
+                      {' · '}
+                      <Link to="/admin/remittance-tracking">前往匯款追查</Link>
+                    </dd>
+                  </div>
+                )}
               </dl>
+
+              {canManageProject && (
+                <form className="form-grid cols-2 admin-projects-page__units-form" onSubmit={handleUpdateUnits}>
+                  <h3 className="card-subtitle" style={{ gridColumn: '1 / -1' }}>調整總台數</h3>
+                  <p className="hint" style={{ gridColumn: '1 / -1' }}>
+                    修正整筆專案台數與金額，會重新分配每日派班並同步回報、匯款資料。
+                  </p>
+                  <label className="field">
+                    <span className="field-label">總台數</span>
+                    <input
+                      className="field-control"
+                      type="number"
+                      min="1"
+                      max="9999"
+                      value={unitsForm.total_ac_units}
+                      onChange={(event) => setUnitsForm({ ...unitsForm, total_ac_units: event.target.value })}
+                      required
+                    />
+                  </label>
+                  <label className="field">
+                    <span className="field-label">單價</span>
+                    <select
+                      className="field-control"
+                      value={unitsForm.unit_price}
+                      onChange={(event) => setUnitsForm({ ...unitsForm, unit_price: event.target.value })}
+                    >
+                      <option value="1500">1500</option>
+                      <option value="1300">1300</option>
+                      <option value="1000">1000</option>
+                    </select>
+                  </label>
+                  <div className="form-actions" style={{ gridColumn: '1 / -1' }}>
+                    <button type="submit" className="btn btn-primary btn-sm">更新台數與金額</button>
+                    <button type="button" className="btn btn-danger btn-sm" onClick={handleDeleteProject}>
+                      刪除整筆專案
+                    </button>
+                  </div>
+                </form>
+              )}
 
               <h3 className="card-subtitle">每日派班</h3>
               <div className="admin-projects-page__list">
@@ -294,7 +405,7 @@ export default function AdminProjectsPage() {
                 </label>
                 <label className="field">
                   <span className="field-label">台數</span>
-                  <input className="field-control" type="number" min="1" value={supplementForm.ac_units} onChange={(event) => setSupplementForm({ ...supplementForm, ac_units: event.target.value })} required />
+                  <input className="field-control" type="number" min="1" max="9999" value={supplementForm.ac_units} onChange={(event) => setSupplementForm({ ...supplementForm, ac_units: event.target.value })} required />
                 </label>
                 <label className="field">
                   <span className="field-label">單價</span>
