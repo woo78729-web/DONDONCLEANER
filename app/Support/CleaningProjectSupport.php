@@ -454,6 +454,48 @@ class CleaningProjectSupport
         });
     }
 
+    /**
+     * @param  list<array{ac_units:int, unit_price:int}>|null  $pricingLines
+     */
+    public static function updateScheduleUnits(
+        CleaningProject $project,
+        DailySchedule $schedule,
+        int $units,
+        ?array $pricingLines = null,
+    ): CleaningProject {
+        if ((int) $schedule->cleaning_project_id !== (int) $project->id) {
+            throw new \InvalidArgumentException('班表不屬於此專案');
+        }
+
+        if ($units < 1) {
+            throw new \InvalidArgumentException('台數至少需 1 台');
+        }
+
+        return DB::transaction(function () use ($project, $schedule, $units, $pricingLines) {
+            $needsInvoice = (bool) $project->needs_invoice;
+            $lines = SchedulePricing::normalizeLines($pricingLines ?? $schedule->pricing_lines ?? $project->pricing_lines ?? []);
+            $scheduleLines = self::linesForUnits($lines, $units);
+            $scheduleSummary = SchedulePricing::summarizeLines($scheduleLines, $needsInvoice);
+
+            $schedule->update([
+                'units_allocated' => $units,
+                'pricing_lines' => $scheduleLines,
+                'ac_units' => $scheduleSummary['ac_units'],
+                'unit_price' => $scheduleSummary['unit_price'],
+                'cleaning_price' => $scheduleSummary['cleaning_price'],
+                'task_details' => $scheduleSummary['task_details'],
+            ]);
+
+            if ($schedule->dailyReport) {
+                EmployeeReportSupport::resyncFromSchedule($schedule->dailyReport);
+            }
+
+            self::recalculateProjectTotals($project);
+
+            return $project->fresh(['employees', 'schedules.user', 'schedules.dailyReport']);
+        });
+    }
+
     public static function deleteProject(CleaningProject $project): void
     {
         DB::transaction(function () use ($project) {

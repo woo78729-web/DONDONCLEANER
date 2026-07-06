@@ -345,8 +345,14 @@ function MailTrackingTable({
               </td>
               <td>
                 {formatDateOnly(row.date)}
+                {row.dateEnd && (
+                  <div className="hint">至 {formatDateOnly(row.dateEnd)}</div>
+                )}
                 {row.plannedDate && (
                   <div className="hint">預開 {formatDateOnly(row.plannedDate)}</div>
+                )}
+                {row.cleaningProjectId && (
+                  <div className="hint">專案合併</div>
                 )}
               </td>
               <td>{row.contactId || '-'}</td>

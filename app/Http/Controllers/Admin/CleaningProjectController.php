@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\CleaningProject;
+use App\Models\DailySchedule;
 use App\Models\User;
 use App\Support\CleaningProjectSupport;
 use App\Support\CustomerSource;
@@ -135,6 +136,39 @@ class CleaningProjectController extends Controller
         return $this->success(
             CleaningProjectSupport::payload($project, detailed: true),
             '專案台數已更新'
+        );
+    }
+
+    public function updateScheduleUnits(Request $request, CleaningProject $project, DailySchedule $schedule): JsonResponse
+    {
+        $validated = $request->validate([
+            'ac_units' => ['required', 'integer', 'min:1', 'max:9999'],
+            'unit_price' => ['nullable', 'integer', Rule::in(SchedulePricing::unitPrices())],
+        ]);
+
+        $pricingLines = null;
+
+        if (array_key_exists('unit_price', $validated) && $validated['unit_price'] !== null) {
+            $pricingLines = [[
+                'ac_units' => (int) $validated['ac_units'],
+                'unit_price' => (int) $validated['unit_price'],
+            ]];
+        }
+
+        try {
+            $project = CleaningProjectSupport::updateScheduleUnits(
+                $project,
+                $schedule,
+                (int) $validated['ac_units'],
+                $pricingLines,
+            );
+        } catch (\InvalidArgumentException $exception) {
+            return $this->error($exception->getMessage(), 422);
+        }
+
+        return $this->success(
+            CleaningProjectSupport::payload($project, detailed: true),
+            '師傅派班台數已更新'
         );
     }
 

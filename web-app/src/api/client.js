@@ -399,6 +399,10 @@ class AcCleaningApi {
     return this.request('PATCH', `/admin/projects/${projectId}/units`, { body: payload });
   }
 
+  updateProjectScheduleUnits(projectId, scheduleId, payload) {
+    return this.request('PATCH', `/admin/projects/${projectId}/schedules/${scheduleId}/units`, { body: payload });
+  }
+
   deleteProject(projectId) {
     return this.request('DELETE', `/admin/projects/${projectId}`);
   }

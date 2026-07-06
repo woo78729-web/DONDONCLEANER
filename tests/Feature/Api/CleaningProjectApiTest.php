@@ -195,4 +195,42 @@ class CleaningProjectApiTest extends TestCase
         ])->assertOk()
             ->assertJsonPath('data.status', CleaningProject::STATUS_PENDING_INVOICE);
     }
+
+    public function test_admin_can_update_individual_schedule_units(): void
+    {
+        Sanctum::actingAs($this->admin);
+
+        $start = now()->addDays(3)->toDateString();
+        $end = now()->addDays(4)->toDateString();
+
+        $projectId = $this->postJson('/api/admin/projects', [
+            'employee_ids' => [$this->employee->id],
+            'planned_start_date' => $start,
+            'planned_end_date' => $end,
+            'customer_name' => '測試客戶',
+            'customer_phone' => '0912345678',
+            'customer_address' => '台東市',
+            'customer_source' => 'phone',
+            'pricing_lines' => [
+                ['ac_units' => 20, 'unit_price' => 1500],
+            ],
+        ])->json('data.id');
+
+        $schedule = DailySchedule::query()
+            ->where('cleaning_project_id', $projectId)
+            ->orderBy('id')
+            ->firstOrFail();
+
+        $this->patchJson('/api/admin/projects/'.$projectId.'/schedules/'.$schedule->id.'/units', [
+            'ac_units' => 25,
+            'unit_price' => 1300,
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.progress.total_units', 35);
+
+        $schedule->refresh();
+
+        $this->assertSame(25, (int) $schedule->ac_units);
+        $this->assertSame(1300, (int) $schedule->unit_price);
+    }
 }

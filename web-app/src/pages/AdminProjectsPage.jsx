@@ -47,6 +47,18 @@ function buildProjectPayload(form) {
   };
 }
 
+function buildScheduleUnitsDraft(project) {
+  return Object.fromEntries(
+    (project?.schedules || []).map((schedule) => [
+      schedule.id,
+      {
+        ac_units: String(schedule.ac_units || ''),
+        unit_price: String(schedule.unit_price || schedule.pricing_lines?.[0]?.unit_price || '1500'),
+      },
+    ]),
+  );
+}
+
 export default function AdminProjectsPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -66,6 +78,8 @@ export default function AdminProjectsPage() {
     notes: '補台數',
   });
   const [unitsForm, setUnitsForm] = useState({ total_ac_units: '', unit_price: '1500' });
+  const [scheduleUnitsDraft, setScheduleUnitsDraft] = useState({});
+  const [savingScheduleId, setSavingScheduleId] = useState(null);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
@@ -108,6 +122,7 @@ export default function AdminProjectsPage() {
         total_ac_units: String(result.data.progress?.total_units || result.data.total_ac_units || ''),
         unit_price: String(result.data.pricing_lines?.[0]?.unit_price || result.data.unit_price || '1500'),
       });
+      setScheduleUnitsDraft(buildScheduleUnitsDraft(result.data));
     } catch (err) {
       setError(err.message);
     }
@@ -125,15 +140,18 @@ export default function AdminProjectsPage() {
 
     try {
       const redirectToRemittance = Boolean(form.expects_company_remittance);
-      await api.createProject(buildProjectPayload(form));
-      setMessage('專案建立成功，行事曆已同步顯示');
+      const result = await api.createProject(buildProjectPayload(form));
       setFormOpen(false);
       setForm(emptyProjectForm());
       setSearchParams({});
-      await loadProjects();
-      if (redirectToRemittance) {
-        navigate('/admin/remittance-tracking');
+
+      if (redirectToRemittance || result.data?.expects_company_remittance) {
+        navigate('/admin/remittance-tracking', { replace: true });
+        return;
       }
+
+      setMessage('專案建立成功，行事曆已同步顯示');
+      await loadProjects();
     } catch (err) {
       setError(err.message);
     }
@@ -172,6 +190,7 @@ export default function AdminProjectsPage() {
         }],
       });
       setSelectedProject(result.data);
+      setScheduleUnitsDraft(buildScheduleUnitsDraft(result.data));
       setMessage('專案總台數與金額已更新，相關班表與回報已同步');
       await loadProjects();
     } catch (err) {
@@ -199,6 +218,40 @@ export default function AdminProjectsPage() {
     }
   }
 
+  async function handleUpdateScheduleUnits(scheduleId) {
+    if (!selectedProject || !canManageProject) {
+      return;
+    }
+
+    const draft = scheduleUnitsDraft[scheduleId];
+
+    if (!draft) {
+      return;
+    }
+
+    setError('');
+    setSavingScheduleId(scheduleId);
+
+    try {
+      const result = await api.updateProjectScheduleUnits(selectedProject.id, scheduleId, {
+        ac_units: Number(draft.ac_units),
+        unit_price: Number(draft.unit_price),
+      });
+      setSelectedProject(result.data);
+      setScheduleUnitsDraft(buildScheduleUnitsDraft(result.data));
+      setUnitsForm({
+        total_ac_units: String(result.data.progress?.total_units || result.data.total_ac_units || ''),
+        unit_price: String(result.data.pricing_lines?.[0]?.unit_price || result.data.unit_price || '1500'),
+      });
+      setMessage('師傅清洗台數已更新');
+      await loadProjects();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSavingScheduleId(null);
+    }
+  }
+
   async function handleSupplement(event) {
     event.preventDefault();
 
@@ -218,6 +271,7 @@ export default function AdminProjectsPage() {
         notes: supplementForm.notes,
       });
       setSelectedProject(result.data.project);
+      setScheduleUnitsDraft(buildScheduleUnitsDraft(result.data.project));
       setMessage('補台數派班成功，已併入同一專案帳');
       await loadProjects();
     } catch (err) {
@@ -375,17 +429,74 @@ export default function AdminProjectsPage() {
               )}
 
               <h3 className="card-subtitle">每日派班</h3>
+              <p className="hint">可個別調整每位師傅每天的清洗台數，儲存後會同步回報與專案總額。</p>
               <div className="admin-projects-page__list">
-                {(selectedProject.schedules || []).map((schedule) => (
-                  <div key={schedule.id} className="admin-project-card">
-                    <strong>{formatDateOnly(schedule.work_date)} · {schedule.user?.name}</strong>
-                    <span className="hint">
-                      {schedule.schedule_kind === 'supplement' ? '補台數 · ' : ''}
-                      排 {schedule.ac_units} 台
-                      {schedule.daily_report ? ` · 已回報 ${schedule.daily_report.completed_units} 台` : ' · 待回報'}
-                    </span>
-                  </div>
-                ))}
+                {(selectedProject.schedules || []).map((schedule) => {
+                  const draft = scheduleUnitsDraft[schedule.id] || {
+                    ac_units: String(schedule.ac_units || ''),
+                    unit_price: String(schedule.unit_price || '1500'),
+                  };
+
+                  return (
+                    <div key={schedule.id} className="admin-project-card admin-project-card--schedule">
+                      <div className="admin-project-card__schedule-header">
+                        <div>
+                          <strong>{formatDateOnly(schedule.work_date)} · {schedule.user?.name}</strong>
+                          <span className="hint">
+                            {schedule.schedule_kind === 'supplement' ? '補台數 · ' : ''}
+                            {schedule.daily_report ? `已回報 ${schedule.daily_report.completed_units} 台` : '待回報'}
+                          </span>
+                        </div>
+                      </div>
+                      {canManageProject && (
+                        <div className="form-grid cols-3 admin-projects-page__schedule-units">
+                          <label className="field">
+                            <span className="field-label">師傅清洗總台數</span>
+                            <input
+                              className="field-control"
+                              type="number"
+                              min="1"
+                              max="9999"
+                              value={draft.ac_units}
+                              onChange={(event) => setScheduleUnitsDraft({
+                                ...scheduleUnitsDraft,
+                                [schedule.id]: { ...draft, ac_units: event.target.value },
+                              })}
+                            />
+                          </label>
+                          <label className="field">
+                            <span className="field-label">單價</span>
+                            <select
+                              className="field-control"
+                              value={draft.unit_price}
+                              onChange={(event) => setScheduleUnitsDraft({
+                                ...scheduleUnitsDraft,
+                                [schedule.id]: { ...draft, unit_price: event.target.value },
+                              })}
+                            >
+                              <option value="1500">1500</option>
+                              <option value="1300">1300</option>
+                              <option value="1000">1000</option>
+                            </select>
+                          </label>
+                          <div className="form-actions">
+                            <button
+                              type="button"
+                              className="btn btn-primary btn-sm"
+                              disabled={savingScheduleId === schedule.id}
+                              onClick={() => handleUpdateScheduleUnits(schedule.id)}
+                            >
+                              {savingScheduleId === schedule.id ? '儲存中…' : '儲存此筆'}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                      {!canManageProject && (
+                        <span className="hint">排 {schedule.ac_units} 台</span>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
 
               <form className="form-grid cols-2" style={{ marginTop: 16 }} onSubmit={handleSupplement}>

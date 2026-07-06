@@ -504,6 +504,7 @@ class MaintenanceRecordController extends Controller
     {
         return [
             'id' => $schedule->id,
+            'cleaning_project_id' => $schedule->cleaning_project_id,
             'work_date' => $schedule->work_date?->format('Y-m-d'),
             'customer_name' => $schedule->customer_name,
             'customer_phone' => $schedule->customer_phone,
@@ -544,6 +545,7 @@ class MaintenanceRecordController extends Controller
             'needs_receipt_and_mail' => (bool) $report->needs_receipt_and_mail,
             'daily_schedule' => $schedule ? [
                 'id' => $schedule->id,
+                'cleaning_project_id' => $schedule->cleaning_project_id,
                 'work_date' => $schedule->work_date?->format('Y-m-d'),
                 'customer_name' => $schedule->customer_name,
                 'customer_phone' => $schedule->customer_phone,
