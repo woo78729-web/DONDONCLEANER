@@ -187,6 +187,44 @@ class MailTrackingDedupTest extends TestCase
         $this->assertFalse(MailTrackingSupport::scheduleRequiresMailTracking($schedule));
     }
 
+    public function test_store_preserves_invoiced_pricing_line_on_multi_address_follow_up_station(): void
+    {
+        Sanctum::actingAs($this->admin);
+
+        $response = $this->postJson('/api/admin/schedules', [
+            'user_id' => $this->employee->id,
+            'work_date' => now()->addDay()->toDateString(),
+            'start_time' => '14:00',
+            'end_time' => '18:00',
+            'customer_name' => '多站測試',
+            'customer_phone' => '0911000222',
+            'customer_address' => '950臺東市第二站',
+            'customer_source' => 'phone',
+            'needs_invoice' => true,
+            'pricing_lines' => [[
+                'ac_units' => 4,
+                'unit_price' => 1000,
+                'invoice_type' => SchedulePricing::INVOICE_TYPE_DUPLICATE,
+                'charge_customer_tax' => true,
+            ]],
+            'multi_address_part' => [
+                'index' => 2,
+                'total' => 2,
+                'segment_units' => 4,
+                'group_units' => 7,
+                'group_price' => 7350,
+            ],
+            'notes' => '[多址 2/2·共7離7350]',
+        ])->assertCreated();
+
+        $schedule = DailySchedule::query()->find($response->json('data.id'));
+
+        $this->assertNotNull($schedule);
+        $this->assertSame(SchedulePricing::INVOICE_TYPE_DUPLICATE, $schedule->pricing_lines[0]['invoice_type'] ?? null);
+        $this->assertTrue((bool) ($schedule->pricing_lines[0]['charge_customer_tax'] ?? false));
+        $this->assertStringContainsString('含5%', (string) $schedule->task_details);
+    }
+
     public function test_store_primary_schedule_with_mail_and_invoice_creates_single_mail_contact(): void
     {
         Sanctum::actingAs($this->admin);

@@ -403,22 +403,14 @@ class ScheduleController extends Controller
                     'task_details' => $segmentUnits.'台'.($primaryLine['unit_price'] ?? 1500).'·共'.$groupUnits.'台'.$groupPrice,
                 ];
             } else {
-                $lines = [[
-                    'ac_units' => $segmentUnits,
-                    'unit_price' => (int) ($primaryLine['unit_price'] ?? 1500),
-                    'is_taxable' => false,
-                    'invoice_type' => SchedulePricing::INVOICE_TYPE_NONE,
-                    'invoice_title' => null,
-                    'invoice_tax_id' => null,
-                    'charge_customer_tax' => false,
-                ]];
+                $segmentSummary = SchedulePricing::summarizeLines($lines, $needsInvoice);
                 $summary = [
                     'ac_units' => $segmentUnits,
-                    'unit_price' => (int) ($primaryLine['unit_price'] ?? 1500),
+                    'unit_price' => (int) ($lines[0]['unit_price'] ?? 1500),
                     'cleaning_price' => 0,
                     'hongyi_fee' => 0,
                     'needs_invoice' => false,
-                    'task_details' => $segmentUnits.'台'.($primaryLine['unit_price'] ?? 1500),
+                    'task_details' => $segmentSummary['task_details'],
                 ];
                 $payload['needs_mail'] = false;
                 $payload['needs_invoice'] = false;

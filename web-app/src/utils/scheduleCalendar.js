@@ -34,6 +34,16 @@ export function createPricingLine(overrides = {}) {
   };
 }
 
+export function resolveSegmentPricingLine(lines, index) {
+  const normalized = normalizePricingLines(lines);
+
+  if (normalized.length === 0) {
+    return createPricingLine();
+  }
+
+  return normalized[index] ?? normalized[normalized.length - 1];
+}
+
 export function clonePricingLineInvoiceSettings(line) {
   const invoiceType = line?.invoice_type || INVOICE_TYPE_NONE;
   const chargeCustomerTax = line?.charge_customer_tax !== false;
@@ -994,6 +1004,31 @@ export function getScheduleSegmentTotal(schedule) {
   return 0;
 }
 
+export function getScheduleSegmentDisplayPrice(schedule) {
+  const multi = parseMultiAddressNote(schedule?.notes);
+  const lines = normalizePricingLines(schedule?.pricing_lines);
+
+  if (lines.length > 0) {
+    const segmentTotal = Number(summarizePricingLines(lines).cleaning_price) || 0;
+
+    if (segmentTotal > 0) {
+      return segmentTotal;
+    }
+  }
+
+  const stored = Number(schedule?.cleaning_price);
+
+  if (Number.isFinite(stored) && stored > 0) {
+    if (multi?.index === 1 && multi.groupPrice != null && stored === multi.groupPrice) {
+      return 0;
+    }
+
+    return stored;
+  }
+
+  return getScheduleSegmentTotal(schedule);
+}
+
 export function buildScheduleUnitsPriceTag(schedule, { hidePrice = false } = {}) {
   const units = getScheduleDisplayUnits(schedule);
   const multi = parseMultiAddressNote(schedule?.notes);
@@ -1003,9 +1038,12 @@ export function buildScheduleUnitsPriceTag(schedule, { hidePrice = false } = {})
       return units ? `[${units}台]` : '';
     }
 
-    const localTag = `[${units || '-'}離]`;
+    const segmentPrice = getScheduleSegmentDisplayPrice(schedule);
+    const localTag = segmentPrice > 0
+      ? `[${units || '-'}離${segmentPrice}]`
+      : `[${units || '-'}離]`;
 
-    if (multi.index === 1 && multi.groupUnits && multi.groupPrice != null) {
+    if (multi.groupUnits && multi.groupPrice != null) {
       return `${localTag}[共${multi.groupUnits}離${multi.groupPrice}]`;
     }
 
@@ -1812,7 +1850,7 @@ export function slotToForm(slot, { schedules = [], userId = '', userRole = 'admi
 }
 
 export function appendMultiAddressNote(notes, index, total, { groupUnits = null, groupPrice = null } = {}) {
-  const groupPart = index === 0 && groupUnits && groupPrice != null
+  const groupPart = groupUnits && groupPrice != null
     ? `·共${groupUnits}離${groupPrice}`
     : '';
   const marker = `[多址 ${index + 1}/${total}${groupPart}]`;
@@ -2142,8 +2180,9 @@ export function buildSchedulePayloads(form, options = {}) {
   const summary = summarizePricingLines(synced.pricing_lines);
   const totalUnits = getTotalPricingUnits(synced);
   const groupPrice = Number(summary.cleaning_price) || 0;
-  const primaryLine = normalizePricingLines(synced.pricing_lines)[0] || createPricingLine();
-  const primaryUnitPrice = Number(primaryLine.unit_price) || 1500;
+  const normalizedLines = normalizePricingLines(synced.pricing_lines);
+  const needsInvoice = deriveNeedsInvoice(synced);
+  const triplicateLine = normalizedLines.find((line) => line.invoice_type === INVOICE_TYPE_TRIPLICATE);
 
   if (addresses.length <= 1) {
     const row = addresses[0];
@@ -2166,6 +2205,7 @@ export function buildSchedulePayloads(form, options = {}) {
     const units = Math.max(1, Number(row.ac_units) || 1);
     const endTime = calculateEndTimeFromUnits(currentStart, units);
     const isFirst = index === 0;
+    const segmentLine = resolveSegmentPricingLine(normalizedLines, index);
 
     payloads.push(buildSchedulePayload({
       ...form,
@@ -2174,22 +2214,21 @@ export function buildSchedulePayloads(form, options = {}) {
       customer_address: row.address,
       customer_phone: row.same_as_customer ? form.customer_phone : (row.phone || form.customer_phone),
       pricing_lines: [{
+        ...segmentLine,
         ac_units: String(units),
-        unit_price: String(primaryUnitPrice),
-        is_taxable: isFirst ? Boolean(primaryLine.is_taxable) : false,
-        invoice_type: isFirst ? (primaryLine.invoice_type || INVOICE_TYPE_NONE) : INVOICE_TYPE_NONE,
-        invoice_title: isFirst ? (primaryLine.invoice_title || '') : '',
-        invoice_tax_id: isFirst ? (primaryLine.invoice_tax_id || '') : '',
-        charge_customer_tax: isFirst ? primaryLine.charge_customer_tax !== false : false,
       }],
       needs_mail: isFirst ? form.needs_mail : false,
-      needs_invoice: isFirst ? form.needs_invoice : false,
+      needs_invoice: isFirst ? needsInvoice : false,
       needs_receipt: isFirst ? form.needs_receipt : false,
       invoice_pre_issue: isFirst ? form.invoice_pre_issue : false,
       invoice_planned_date: isFirst ? form.invoice_planned_date : '',
       invoice_charge_customer_tax: isFirst ? form.invoice_charge_customer_tax : false,
-      invoice_tax_id: isFirst ? form.invoice_tax_id : '',
-      invoice_title: isFirst ? form.invoice_title : '',
+      invoice_tax_id: isFirst && needsInvoice
+        ? (triplicateLine?.invoice_tax_id?.trim() || form.invoice_tax_id?.trim() || '')
+        : '',
+      invoice_title: isFirst && needsInvoice
+        ? (triplicateLine?.invoice_title?.trim() || form.invoice_title?.trim() || '')
+        : '',
       multi_address_part: {
         index: index + 1,
         total: addresses.length,

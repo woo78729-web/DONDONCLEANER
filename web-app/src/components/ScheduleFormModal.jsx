@@ -1,6 +1,7 @@
 import { PricingLineEditor } from './PricingLineEditor';
 import {
   applyPriceCalculation,
+  clonePricingLineInvoiceSettings,
   createPricingLine,
   createServiceAddress,
   DEFAULT_FIRST_SHIFT_START,
@@ -12,6 +13,7 @@ import {
   hasScheduleReport,
   hasInvoicedPricingLine,
   isTriplicateInvoice,
+  normalizePricingLines,
   resolveMailContactFields,
   patchFormContactId,
   patchScheduleForm,
@@ -221,25 +223,62 @@ export function ScheduleFormModal({
     const nextRows = serviceAddresses.map((row) => (
       row.id === rowId ? { ...row, ...partial } : row
     ));
-
-    handleChange({
+    const changedIndex = nextRows.findIndex((row) => row.id === rowId);
+    const patch = {
       service_addresses: nextRows,
       customer_address: nextRows[0]?.address || '',
-    });
+    };
+
+    if (partial.ac_units != null && hasMultipleAddresses && changedIndex >= 0) {
+      const pricingLines = normalizePricingLines(form.pricing_lines);
+
+      if (pricingLines[changedIndex]) {
+        patch.pricing_lines = pricingLines.map((line, index) => (
+          index === changedIndex
+            ? { ...line, ac_units: partial.ac_units }
+            : line
+        ));
+      }
+    }
+
+    handleChange(patch);
   }
 
   function addServiceAddress() {
     const totalUnits = pricingUnitsTotal || 1;
+    const pricingLines = normalizePricingLines(form.pricing_lines);
 
     if (serviceAddresses.length === 1) {
       const firstUnits = Math.max(1, Math.floor(totalUnits / 2));
       const secondUnits = Math.max(1, totalUnits - firstUnits);
+      let nextPricingLines = pricingLines;
+
+      if (pricingLines.length === 1) {
+        const inherited = clonePricingLineInvoiceSettings(pricingLines[0]);
+        nextPricingLines = [
+          { ...pricingLines[0], ac_units: String(firstUnits) },
+          createPricingLine({ ...inherited, ac_units: String(secondUnits) }),
+        ];
+      } else if (pricingLines.length >= 2) {
+        nextPricingLines = pricingLines.map((line, index) => {
+          if (index === 0) {
+            return { ...line, ac_units: String(firstUnits) };
+          }
+
+          if (index === 1) {
+            return { ...line, ac_units: String(secondUnits) };
+          }
+
+          return line;
+        });
+      }
 
       handleChange({
         service_addresses: [
           { ...serviceAddresses[0], ac_units: String(firstUnits) },
           createServiceAddress({ ac_units: String(secondUnits) }),
         ],
+        pricing_lines: nextPricingLines,
       });
       return;
     }
