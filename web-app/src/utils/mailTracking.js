@@ -2,6 +2,7 @@ import {
   formatDateOnly,
   getCustomerSourceOption,
   getScheduleContactId,
+  parseMultiAddressNote,
   resolveScheduleDocumentType,
 } from './scheduleCalendar';
 
@@ -13,16 +14,33 @@ function normalizeText(value) {
   return String(value || '').trim().toLowerCase();
 }
 
+export function mailOrderGroupKeyFromSchedule(schedule) {
+  if (!schedule) {
+    return '';
+  }
+
+  if (schedule.cleaning_project_id) {
+    return `project-${schedule.cleaning_project_id}-${formatDateOnly(schedule.work_date) || ''}`;
+  }
+
+  const multi = parseMultiAddressNote(schedule.notes);
+
+  if (multi) {
+    const phone = normalizePhone(schedule.customer_phone);
+    const name = normalizeText(schedule.customer_name);
+
+    return `multi-${formatDateOnly(schedule.work_date) || ''}-${phone}-${name}-${multi.total}`;
+  }
+
+  return `schedule-${schedule.id}`;
+}
+
 export function mailRecipientKeyFromSchedule(schedule) {
   if (!schedule) {
     return '';
   }
 
-  const date = formatDateOnly(schedule.work_date) || '';
-  const phone = normalizePhone(schedule.mail_phone || schedule.customer_phone);
-  const address = normalizeText(schedule.mail_address || schedule.customer_address);
-
-  return [date, phone, address].join('|');
+  return mailOrderGroupKeyFromSchedule(schedule);
 }
 
 export function mailRecipientKeyFromRow(row) {
@@ -37,7 +55,13 @@ export function mailRecipientKeyFromRow(row) {
   }
 
   if (row.kind === 'schedule') {
-    return `schedule-${row.source.id}`;
+    return mailOrderGroupKeyFromSchedule(row.source);
+  }
+
+  const schedule = row.source?.daily_schedule;
+
+  if (schedule) {
+    return `report-${mailOrderGroupKeyFromSchedule(schedule)}`;
   }
 
   return `report-${row.source.id}`;
@@ -302,7 +326,7 @@ function mapScheduleRow(schedule) {
     phone: schedule.mail_phone || schedule.customer_phone,
     address: schedule.mail_address || schedule.customer_address,
     trackingNumber: schedule.mail_tracking_number,
-    sentAt: schedule.invoice_sent_at,
+    sentAt: schedule.mailed_at || schedule.invoice_sent_at,
     status: schedule.invoice_sent ? '已寄件完成' : '待處理',
   };
 }
@@ -332,7 +356,7 @@ function mapReportRow(report) {
     phone: schedule?.mail_phone || schedule?.customer_phone,
     address: schedule?.mail_address || schedule?.customer_address,
     trackingNumber: schedule?.mail_tracking_number,
-    sentAt: report.invoice_sent_at,
+    sentAt: report.mailed_at || report.invoice_sent_at,
     status: report.invoice_sent ? '已寄件完成' : '待處理',
   };
 }
@@ -344,7 +368,7 @@ export function mergePendingMailRows(schedules, reports) {
     ...(reports || []).map((report) => mapReportRow(report)),
   ];
 
-  return groupAllMailRows(rows);
+  return dedupeMailRowsByOrder(groupAllMailRows(rows));
 }
 
 function scheduleTypeLabel(schedule) {
@@ -412,10 +436,28 @@ export function mergeHistoryRows(schedules, reports) {
     return true;
   });
 
-  return groupAllMailRows([
+  return dedupeMailRowsByOrder(groupAllMailRows([
     ...filteredSchedules,
     ...reportRows,
-  ]).sort((left, right) => String(right.sentAt || '').localeCompare(String(left.sentAt || '')));
+  ])).sort((left, right) => String(right.sentAt || '').localeCompare(String(left.sentAt || '')));
+}
+
+function dedupeMailRowsByOrder(rows) {
+  const seen = new Set();
+  const deduped = [];
+
+  for (const row of rows) {
+    const key = mailRecipientKeyFromRow(row);
+
+    if (seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    deduped.push(row);
+  }
+
+  return deduped;
 }
 
 export function mailRowIsMerged(row) {

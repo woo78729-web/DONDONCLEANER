@@ -11,6 +11,7 @@ use App\Support\ScheduleCustomerServicePolicy;
 use App\Support\ScheduleDeletionSupport;
 use App\Support\ScheduleMutationPolicy;
 use App\Support\SchedulePricing;
+use App\Support\MailTrackingSupport;
 use App\Support\EmployeeReportSupport;
 use App\Support\TaitungServiceArea;
 use Illuminate\Http\JsonResponse;
@@ -496,7 +497,7 @@ class ScheduleController extends Controller
             ? trim((string) $payload['line_display_name'])
             : null;
 
-        return $payload;
+        return MailTrackingSupport::enforceStorageRules($payload);
     }
 
     private function validateScheduleTime(string $time): ?JsonResponse

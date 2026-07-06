@@ -10,6 +10,7 @@ use App\Models\MaintenanceRecordPhoto;
 use App\Models\User;
 use App\Support\MaintenanceRecordSupport;
 use App\Support\MailMergeSupport;
+use App\Support\MailTrackingSupport;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -228,48 +229,48 @@ class MaintenanceRecordController extends Controller
                 'user:id,name,account',
                 'dailyReport:id,schedule_id,needs_invoice_and_mail,needs_receipt_and_mail,invoice_sent,invoice_sent_at',
             ])
-            ->where(function ($builder) {
-                $builder
-                    ->where('needs_mail', true)
-                    ->orWhere('needs_invoice', true)
-                    ->orWhere('needs_receipt', true);
-            });
+            ->where('needs_mail', true);
 
-        $pendingSchedules = (clone $scheduleQuery)
-            ->where('invoice_sent', false)
-            ->orderByRaw('invoice_planned_date is null')
-            ->orderBy('invoice_planned_date')
-            ->orderByDesc('work_date')
-            ->limit(100)
-            ->get()
-            ->reject(function (DailySchedule $schedule) {
-                $report = $schedule->dailyReport;
+        $pendingSchedules = MailTrackingSupport::uniqueMailTrackingSchedules(
+            (clone $scheduleQuery)
+                ->where('invoice_sent', false)
+                ->orderByRaw('invoice_planned_date is null')
+                ->orderBy('invoice_planned_date')
+                ->orderByDesc('work_date')
+                ->limit(200)
+                ->get()
+                ->reject(function (DailySchedule $schedule) {
+                    $report = $schedule->dailyReport;
 
-                if (! $report || $report->invoice_sent) {
-                    return false;
-                }
+                    if (! $report || $report->invoice_sent) {
+                        return false;
+                    }
 
-                return (bool) $report->needs_invoice_and_mail || (bool) $report->needs_receipt_and_mail;
-            })
-            ->values()
+                    return MailTrackingSupport::reportRequiresMailTracking($report);
+                })
+        )
+            ->take(100)
             ->map(fn (DailySchedule $schedule) => $this->scheduleMailPayload($schedule));
 
-        $sentThisMonthSchedules = (clone $scheduleQuery)
-            ->where('invoice_sent', true)
-            ->where('invoice_sent_at', '>=', $monthStart)
-            ->orderByDesc('invoice_sent_at')
-            ->limit(100)
-            ->get()
-            ->reject(function (DailySchedule $schedule) {
-                $report = $schedule->dailyReport;
+        $sentThisMonthSchedules = MailTrackingSupport::uniqueMailTrackingSchedules(
+            (clone $scheduleQuery)
+                ->where('invoice_sent', true)
+                ->where('invoice_sent_at', '>=', $monthStart)
+                ->orderByDesc('invoice_sent_at')
+                ->orderByDesc('id')
+                ->limit(200)
+                ->get()
+                ->reject(function (DailySchedule $schedule) {
+                    $report = $schedule->dailyReport;
 
-                if (! $report || ! $report->invoice_sent) {
-                    return false;
-                }
+                    if (! $report || ! $report->invoice_sent) {
+                        return false;
+                    }
 
-                return (bool) $report->needs_invoice_and_mail || (bool) $report->needs_receipt_and_mail;
-            })
-            ->values()
+                    return MailTrackingSupport::reportRequiresMailTracking($report);
+                })
+        )
+            ->take(100)
             ->map(fn (DailySchedule $schedule) => $this->scheduleMailPayload($schedule));
 
         $reportQuery = DailyReport::query()
@@ -282,20 +283,23 @@ class MaintenanceRecordController extends Controller
                     ->orWhere('needs_receipt_and_mail', true);
             });
 
-        $pendingReports = (clone $reportQuery)
-            ->where('invoice_sent', false)
-            ->orderByDesc('created_at')
-            ->limit(100)
-            ->get()
-            ->map(fn (DailyReport $report) => $this->reportMailPayload($report));
+        $pendingReports = MailTrackingSupport::uniqueMailTrackingReports(
+            (clone $reportQuery)
+                ->where('invoice_sent', false)
+                ->orderByDesc('created_at')
+                ->limit(100)
+                ->get()
+        )->map(fn (DailyReport $report) => $this->reportMailPayload($report));
 
-        $sentThisMonthReports = (clone $reportQuery)
-            ->where('invoice_sent', true)
-            ->where('invoice_sent_at', '>=', $monthStart)
-            ->orderByDesc('invoice_sent_at')
-            ->limit(100)
-            ->get()
-            ->map(fn (DailyReport $report) => $this->reportMailPayload($report));
+        $sentThisMonthReports = MailTrackingSupport::uniqueMailTrackingReports(
+            (clone $reportQuery)
+                ->where('invoice_sent', true)
+                ->where('invoice_sent_at', '>=', $monthStart)
+                ->orderByDesc('invoice_sent_at')
+                ->orderByDesc('id')
+                ->limit(100)
+                ->get()
+        )->map(fn (DailyReport $report) => $this->reportMailPayload($report));
 
         return $this->success([
             'pending' => [
@@ -376,7 +380,9 @@ class MaintenanceRecordController extends Controller
 
     public function updateScheduleMailTracking(Request $request, DailySchedule $schedule): JsonResponse
     {
-        if (! $schedule->needs_mail && ! $schedule->needs_invoice && ! $schedule->needs_receipt) {
+        if (! MailTrackingSupport::scheduleRequiresMailTracking($schedule)
+            && ! $schedule->invoice_sent
+            && ! ((bool) $schedule->needs_invoice || (bool) $schedule->needs_receipt)) {
             return $this->error('此班表不需寄件追蹤', 422);
         }
 

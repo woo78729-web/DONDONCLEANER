@@ -49,7 +49,13 @@ class MailTrackingApiTest extends TestCase
             'user_id' => $employee->id,
             'work_date' => now()->toDateString(),
             'needs_invoice' => true,
-            'needs_mail' => false,
+            'needs_mail' => true,
+            'pricing_lines' => [[
+                'ac_units' => 1,
+                'unit_price' => 1500,
+                'invoice_type' => \App\Support\SchedulePricing::INVOICE_TYPE_DUPLICATE,
+                'charge_customer_tax' => true,
+            ]],
         ]));
 
         $this->getJson('/api/admin/mail-tracking')
@@ -82,6 +88,13 @@ class MailTrackingApiTest extends TestCase
             'user_id' => $employee->id,
             'work_date' => now()->toDateString(),
             'needs_invoice' => true,
+            'needs_mail' => true,
+            'pricing_lines' => [[
+                'ac_units' => 1,
+                'unit_price' => 1500,
+                'invoice_type' => \App\Support\SchedulePricing::INVOICE_TYPE_DUPLICATE,
+                'charge_customer_tax' => true,
+            ]],
         ]));
 
         $this->patchJson("/api/admin/schedules/{$schedule->id}/mail-tracking", [
@@ -258,10 +271,16 @@ class MailTrackingApiTest extends TestCase
             'work_date' => now()->toDateString(),
             'ac_units' => 7,
             'unit_price' => 1000,
-            'pricing_lines' => [['ac_units' => 7, 'unit_price' => 1000, 'is_taxable' => true]],
+            'pricing_lines' => [[
+                'ac_units' => 7,
+                'unit_price' => 1000,
+                'invoice_type' => \App\Support\SchedulePricing::INVOICE_TYPE_DUPLICATE,
+                'charge_customer_tax' => true,
+            ]],
             'cleaning_price' => 7350,
             'task_details' => '7台1000(含稅)=7350',
             'needs_invoice' => true,
+            'needs_mail' => true,
             'invoice_charge_customer_tax' => true,
         ]));
 
@@ -289,6 +308,13 @@ class MailTrackingApiTest extends TestCase
             'user_id' => $employee->id,
             'work_date' => now()->toDateString(),
             'needs_invoice' => true,
+            'needs_mail' => true,
+            'pricing_lines' => [[
+                'ac_units' => 1,
+                'unit_price' => 1500,
+                'invoice_type' => \App\Support\SchedulePricing::INVOICE_TYPE_DUPLICATE,
+                'charge_customer_tax' => true,
+            ]],
         ]));
 
         $schedule->forceFill([
