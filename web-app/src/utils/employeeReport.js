@@ -1,38 +1,64 @@
 import {
+  calculatePricingLineTotals,
   createPricingLine,
   EMPLOYEE_POSTAGE_AMOUNT,
+  migratePricingLineFields,
 } from './scheduleCalendar';
 
 export const EMPLOYEE_INVOICE_TAX_RATE = 0.08;
+
+function enrichLineForReportPricing(line, needsInvoice) {
+  if (line.invoice_type && line.invoice_type !== 'none') {
+    return line;
+  }
+
+  if (!needsInvoice) {
+    return {
+      ...line,
+      invoice_type: 'none',
+      charge_customer_tax: false,
+    };
+  }
+
+  return {
+    ...line,
+    invoice_type: 'duplicate',
+    charge_customer_tax: line.charge_customer_tax !== false,
+  };
+}
 
 export function cloneSchedulePricingLines(schedule) {
   const lines = schedule?.pricing_lines;
 
   if (Array.isArray(lines) && lines.length > 0) {
-    return lines.map((line, index) => createPricingLine({
+    return lines.map((line, index) => migratePricingLineFields({
       id: `line-${index}`,
       ac_units: String(line.ac_units ?? 1),
       unit_price: String(line.unit_price ?? 1500),
       is_taxable: Boolean(line.is_taxable),
-    }));
+      invoice_type: line.invoice_type,
+      charge_customer_tax: line.charge_customer_tax,
+      invoice_title: line.invoice_title ?? '',
+      invoice_tax_id: line.invoice_tax_id ?? '',
+    }, schedule));
   }
 
-  return [createPricingLine({
+  return [migratePricingLineFields(createPricingLine({
     ac_units: String(schedule?.ac_units ?? 1),
     unit_price: String(schedule?.unit_price ?? 1500),
     is_taxable: Boolean(schedule?.needs_invoice),
-  })];
+  }), schedule)];
 }
 
 export function scalePricingLinesForCompleted(lines, completedUnits, plannedUnits) {
   const normalized = Array.isArray(lines) && lines.length > 0
     ? lines.map((line, index) => ({
+      ...line,
       id: line.id || `line-${index}`,
       ac_units: String(line.ac_units ?? 1),
       unit_price: String(line.unit_price ?? 1500),
-      is_taxable: Boolean(line.is_taxable),
     }))
-    : [{ id: 'line-0', ac_units: String(completedUnits || 1), unit_price: '1500', is_taxable: false }];
+    : [{ id: 'line-0', ac_units: String(completedUnits || 1), unit_price: '1500', invoice_type: 'none', charge_customer_tax: false }];
 
   if (plannedUnits < 1 || completedUnits === plannedUnits) {
     return normalized;
@@ -57,22 +83,17 @@ export function scalePricingLinesForCompleted(lines, completedUnits, plannedUnit
   }).filter((line) => Number(line.ac_units) > 0);
 }
 
-function summarizePricingLineTotals(lines, needsInvoice) {
+function summarizePricingLineTotals(lines, needsInvoice, schedule = null) {
   let untaxedBase = 0;
   let collectedAmount = 0;
 
-  for (const line of lines) {
-    const units = Number(line.ac_units || 0);
-    const unitPrice = Number(line.unit_price || 0);
-    const lineBase = units * unitPrice;
-    const taxable = Boolean(line.is_taxable);
+  for (const rawLine of lines) {
+    const migrated = migratePricingLineFields(rawLine, schedule);
+    const pricingLine = enrichLineForReportPricing(migrated, needsInvoice);
+    const totals = calculatePricingLineTotals(pricingLine);
 
-    untaxedBase += lineBase;
-    collectedAmount += taxable ? Math.round(lineBase * 1.05) : lineBase;
-  }
-
-  if (needsInvoice && !lines.some((line) => Boolean(line.is_taxable))) {
-    collectedAmount = Math.round(untaxedBase * 1.05);
+    untaxedBase += totals.subtotal;
+    collectedAmount += totals.customerAmount;
   }
 
   return { untaxedBase, collectedAmount };
@@ -80,7 +101,10 @@ function summarizePricingLineTotals(lines, needsInvoice) {
 
 function getEffectivePricingLines(schedule, draft, completedUnits, plannedUnits) {
   if (Array.isArray(draft.pricing_lines) && draft.pricing_lines.length > 0) {
-    return draft.pricing_lines;
+    return draft.pricing_lines.map((line, index) => migratePricingLineFields({
+      ...line,
+      id: line.id || `line-${index}`,
+    }, schedule));
   }
 
   return scalePricingLinesForCompleted(
@@ -102,7 +126,7 @@ export function calculateEmployeeReportDraft(schedule, draft) {
   const needsMail = needsInvoiceAndMail || needsReceiptAndMail || Boolean(schedule?.needs_mail);
 
   const pricingLines = getEffectivePricingLines(schedule, draft, completedUnits, plannedUnits);
-  const { untaxedBase, collectedAmount } = summarizePricingLineTotals(pricingLines, needsInvoice);
+  const { untaxedBase, collectedAmount } = summarizePricingLineTotals(pricingLines, needsInvoice, schedule);
   const temporaryPostage = needsMail ? EMPLOYEE_POSTAGE_AMOUNT : 0;
   const reportInvoiceTaxCost = (hasTax || needsInvoiceAndMail)
     ? Math.round(untaxedBase * EMPLOYEE_INVOICE_TAX_RATE)
@@ -143,6 +167,8 @@ export function buildReportPayload(schedule, draft) {
       ac_units: Number(line.ac_units || 0),
       unit_price: Number(line.unit_price || 0),
       is_taxable: Boolean(line.is_taxable),
+      invoice_type: line.invoice_type,
+      charge_customer_tax: line.charge_customer_tax !== false,
     }));
   }
 

@@ -19,6 +19,14 @@ class ScheduleBackfillSupport
             return false;
         }
 
+        if ($schedule->schedule_kind === \App\Models\CleaningProject::SCHEDULE_KIND_CALENDAR_BLOCK) {
+            return false;
+        }
+
+        if ((int) $schedule->ac_units < 1) {
+            return false;
+        }
+
         $workDate = $schedule->work_date?->format('Y-m-d') ?? (string) $schedule->work_date;
 
         return self::isStrictlyPastWorkDate($workDate, $now);

@@ -83,8 +83,8 @@ class EmployeeRemittance
     }
 
     /**
-     * @param  list<array{ac_units:int, unit_price:int}>  $lines
-     * @return list<array{ac_units:int, unit_price:int}>
+     * @param  list<array<string, mixed>>  $lines
+     * @return list<array<string, mixed>>
      */
     public static function scaleLines(array $lines, int $completedUnits, int $scheduledUnits): array
     {
@@ -112,24 +112,56 @@ class EmployeeRemittance
                 continue;
             }
 
-            $scaled[] = [
-                'ac_units' => $units,
-                'unit_price' => (int) $line['unit_price'],
-            ];
+            $scaled[] = self::carryPricingMetadata($line, $units);
         }
 
         if ($scaled === [] && $completedUnits > 0) {
-            $scaled[] = [
-                'ac_units' => $completedUnits,
-                'unit_price' => (int) $lines[0]['unit_price'],
-            ];
+            $scaled[] = self::carryPricingMetadata($lines[0], $completedUnits);
         }
 
         return $scaled;
     }
 
     /**
-     * @param  list<array{ac_units:int, unit_price:int}>  $lines
+     * @param  array<string, mixed>  $line
+     * @return array<string, mixed>
+     */
+    private static function carryPricingMetadata(array $line, int $units): array
+    {
+        return [
+            'ac_units' => $units,
+            'unit_price' => (int) $line['unit_price'],
+            'invoice_type' => $line['invoice_type'] ?? SchedulePricing::INVOICE_TYPE_NONE,
+            'charge_customer_tax' => $line['charge_customer_tax'] ?? true,
+            'is_taxable' => (bool) ($line['is_taxable'] ?? false),
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $line
+     * @return array<string, mixed>
+     */
+    private static function resolvePricingLine(array $line, bool $needsInvoice): array
+    {
+        if (SchedulePricing::lineHasInvoice($line)) {
+            return $line;
+        }
+
+        if (! $needsInvoice) {
+            return $line + [
+                'invoice_type' => SchedulePricing::INVOICE_TYPE_NONE,
+                'charge_customer_tax' => false,
+            ];
+        }
+
+        return $line + [
+            'invoice_type' => SchedulePricing::INVOICE_TYPE_DUPLICATE,
+            'charge_customer_tax' => true,
+        ];
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $lines
      * @return array{
      *     collect_from_employee:int,
      *     advance_to_employee:int,
@@ -160,11 +192,15 @@ class EmployeeRemittance
         $unitsTotal = 0;
 
         foreach ($scaledLines as $line) {
-            $units = (int) $line['ac_units'];
-            $unitPrice = (int) $line['unit_price'];
+            $pricingLine = self::resolvePricingLine($line, $needsInvoice);
+            $totals = SchedulePricing::calculateLineTotals($pricingLine);
+            $units = (int) $pricingLine['ac_units'];
+            $unitPrice = (int) $pricingLine['unit_price'];
             $unitsTotal += $units;
 
-            $base = $units * $unitPrice;
+            $base = $totals['subtotal'];
+            $customerAmount = $totals['customer_amount'];
+            $surcharge = max(0, $customerAmount - $base);
             $companyShare = $units * self::remittancePerUnit($unitPrice);
             $companyShareDue += $companyShare;
 
@@ -172,16 +208,11 @@ class EmployeeRemittance
                 $remittanceCompanyShare += $companyShare;
             }
 
-            $customerAmount = $needsInvoice
-                ? (int) round($base * (1 + self::INVOICE_SURCHARGE_RATE))
-                : $base;
-
-            if ($needsInvoice) {
-                $surcharge = (int) round($base * self::INVOICE_SURCHARGE_RATE);
+            if ($totals['has_invoice']) {
                 $invoiceSurchargeDue += $surcharge;
-                $invoiceTaxCost += (int) round($base * self::INVOICE_TAX_RATE);
+                $invoiceTaxCost += $totals['hongyi_fee'];
 
-                if (! $paidToCompany) {
+                if (! $paidToCompany && $totals['charge_customer_tax']) {
                     $collectFromEmployee += $surcharge;
                 }
             }

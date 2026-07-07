@@ -3,6 +3,7 @@
 namespace Tests\Unit;
 
 use App\Support\EmployeeRemittance;
+use App\Support\SchedulePricing;
 use PHPUnit\Framework\TestCase;
 
 class EmployeeRemittanceTest extends TestCase
@@ -57,7 +58,12 @@ class EmployeeRemittanceTest extends TestCase
     public function test_invoice_surcharge_is_included_in_company_transfer_not_cash_collect(): void
     {
         $summary = EmployeeRemittance::summarizeReport(
-            [['ac_units' => 10, 'unit_price' => 1000]],
+            [[
+                'ac_units' => 10,
+                'unit_price' => 1000,
+                'invoice_type' => SchedulePricing::INVOICE_TYPE_DUPLICATE,
+                'charge_customer_tax' => true,
+            ]],
             10,
             10,
             true,
@@ -69,5 +75,24 @@ class EmployeeRemittanceTest extends TestCase
         $this->assertSame(4000, $summary['remittance_company_share']);
         $this->assertSame(10500, $summary['company_transfer']);
         $this->assertSame(0, $summary['collect_from_employee']);
+    }
+
+    public function test_company_transfer_respects_charge_customer_tax_false(): void
+    {
+        $summary = EmployeeRemittance::summarizeReport(
+            [[
+                'ac_units' => 13,
+                'unit_price' => 1000,
+                'invoice_type' => SchedulePricing::INVOICE_TYPE_DUPLICATE,
+                'charge_customer_tax' => false,
+            ]],
+            13,
+            13,
+            true,
+            true,
+        );
+
+        $this->assertSame(0, $summary['invoice_surcharge_due']);
+        $this->assertSame(13000, $summary['company_transfer']);
     }
 }

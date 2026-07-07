@@ -16,15 +16,28 @@ import {
   PROJECT_STATUS_LABELS,
 } from '../utils/scheduleCalendar';
 
-function buildScheduleUnitsDraft(project) {
+function buildAssignmentDraft(project) {
   return Object.fromEntries(
-    (project?.schedules || []).map((schedule) => [
-      schedule.id,
+    (project?.employee_assignments || project?.employees || []).map((assignment) => [
+      assignment.user_id || assignment.id,
       {
-        ac_units: String(schedule.ac_units || ''),
-        unit_price: String(schedule.unit_price || schedule.pricing_lines?.[0]?.unit_price || '1500'),
+        assigned_units: String(assignment.assigned_units ?? assignment.assignedUnits ?? ''),
       },
     ]),
+  );
+}
+
+function buildSupplementDraft(project) {
+  return Object.fromEntries(
+    (project?.schedules || [])
+      .filter((schedule) => schedule.schedule_kind === 'supplement')
+      .map((schedule) => [
+        schedule.id,
+        {
+          ac_units: String(schedule.ac_units || ''),
+          unit_price: String(schedule.unit_price || schedule.pricing_lines?.[0]?.unit_price || '1500'),
+        },
+      ]),
   );
 }
 
@@ -47,8 +60,9 @@ export default function AdminProjectsPage() {
     notes: '補台數',
   });
   const [unitsForm, setUnitsForm] = useState({ total_ac_units: '', unit_price: '1500' });
-  const [scheduleUnitsDraft, setScheduleUnitsDraft] = useState({});
-  const [savingScheduleId, setSavingScheduleId] = useState(null);
+  const [assignmentDraft, setAssignmentDraft] = useState({});
+  const [supplementDraft, setSupplementDraft] = useState({});
+  const [savingAssignmentUserId, setSavingAssignmentUserId] = useState(null);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
@@ -91,7 +105,8 @@ export default function AdminProjectsPage() {
         total_ac_units: String(result.data.progress?.total_units || result.data.total_ac_units || ''),
         unit_price: String(result.data.pricing_lines?.[0]?.unit_price || result.data.unit_price || '1500'),
       });
-      setScheduleUnitsDraft(buildScheduleUnitsDraft(result.data));
+      setAssignmentDraft(buildAssignmentDraft(result.data));
+      setSupplementDraft(buildSupplementDraft(result.data));
     } catch (err) {
       setError(err.message);
     }
@@ -165,8 +180,9 @@ export default function AdminProjectsPage() {
         }],
       });
       setSelectedProject(result.data);
-      setScheduleUnitsDraft(buildScheduleUnitsDraft(result.data));
-      setMessage('專案總台數與金額已更新，相關班表與回報已同步');
+      setAssignmentDraft(buildAssignmentDraft(result.data));
+      setSupplementDraft(buildSupplementDraft(result.data));
+      setMessage('專案總台數與金額已更新，師傅分台與回報已同步');
       await loadProjects();
     } catch (err) {
       setError(err.message);
@@ -193,19 +209,58 @@ export default function AdminProjectsPage() {
     }
   }
 
-  async function handleUpdateScheduleUnits(scheduleId) {
+  async function handleUpdateAssignment(userId) {
     if (!selectedProject || !canManageProject) {
       return;
     }
 
-    const draft = scheduleUnitsDraft[scheduleId];
+    const draft = assignmentDraft[userId];
 
     if (!draft) {
       return;
     }
 
     setError('');
-    setSavingScheduleId(scheduleId);
+    setSavingAssignmentUserId(userId);
+
+    try {
+      const assignments = (selectedProject.employee_assignments || selectedProject.employees || []).map((assignment) => ({
+        user_id: assignment.user_id || assignment.id,
+        assigned_units: Number(assignment.user_id === userId || assignment.id === userId
+          ? draft.assigned_units
+          : (assignmentDraft[assignment.user_id || assignment.id]?.assigned_units ?? assignment.assigned_units)),
+      }));
+
+      const result = await api.updateProjectAssignments(selectedProject.id, { assignments });
+      setSelectedProject(result.data);
+      setAssignmentDraft(buildAssignmentDraft(result.data));
+      setSupplementDraft(buildSupplementDraft(result.data));
+      setUnitsForm({
+        total_ac_units: String(result.data.progress?.total_units || result.data.total_ac_units || ''),
+        unit_price: String(result.data.pricing_lines?.[0]?.unit_price || result.data.unit_price || '1500'),
+      });
+      setMessage('師傅分台已更新，個人結算與專案匯款已同步');
+      await loadProjects();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSavingAssignmentUserId(null);
+    }
+  }
+
+  async function handleUpdateSupplementUnits(scheduleId) {
+    if (!selectedProject || !canManageProject) {
+      return;
+    }
+
+    const draft = supplementDraft[scheduleId];
+
+    if (!draft) {
+      return;
+    }
+
+    setError('');
+    setSavingAssignmentUserId(scheduleId);
 
     try {
       const result = await api.updateProjectScheduleUnits(selectedProject.id, scheduleId, {
@@ -213,7 +268,8 @@ export default function AdminProjectsPage() {
         unit_price: Number(draft.unit_price),
       });
       setSelectedProject(result.data);
-      setScheduleUnitsDraft(buildScheduleUnitsDraft(result.data));
+      setAssignmentDraft(buildAssignmentDraft(result.data));
+      setSupplementDraft(buildSupplementDraft(result.data));
       setUnitsForm({
         total_ac_units: String(result.data.progress?.total_units || result.data.total_ac_units || ''),
         unit_price: String(result.data.pricing_lines?.[0]?.unit_price || result.data.unit_price || '1500'),
@@ -223,7 +279,33 @@ export default function AdminProjectsPage() {
     } catch (err) {
       setError(err.message);
     } finally {
-      setSavingScheduleId(null);
+      setSavingAssignmentUserId(null);
+    }
+  }
+
+  async function handleConsolidateSettlement() {
+    if (!selectedProject || !canManageProject) {
+      return;
+    }
+
+    if (!window.confirm('將此專案整理為「整張工單 + 師傅分台」？\n逐日結算班表會合併，匯款仍以專案總額計算。')) {
+      return;
+    }
+
+    setError('');
+    try {
+      const result = await api.consolidateProjectSettlement(selectedProject.id);
+      setSelectedProject(result.data);
+      setAssignmentDraft(buildAssignmentDraft(result.data));
+      setSupplementDraft(buildSupplementDraft(result.data));
+      setUnitsForm({
+        total_ac_units: String(result.data.progress?.total_units || result.data.total_ac_units || ''),
+        unit_price: String(result.data.pricing_lines?.[0]?.unit_price || result.data.unit_price || '1500'),
+      });
+      setMessage('專案已整理為整張工單分台，師傅個人結算與專案匯款已同步');
+      await loadProjects();
+    } catch (err) {
+      setError(err.message);
     }
   }
 
@@ -246,7 +328,8 @@ export default function AdminProjectsPage() {
         notes: supplementForm.notes,
       });
       setSelectedProject(result.data.project);
-      setScheduleUnitsDraft(buildScheduleUnitsDraft(result.data.project));
+      setAssignmentDraft(buildAssignmentDraft(result.data.project));
+      setSupplementDraft(buildSupplementDraft(result.data.project));
       setMessage('補台數派班成功，已併入同一專案帳');
       await loadProjects();
     } catch (err) {
@@ -261,7 +344,7 @@ export default function AdminProjectsPage() {
           <div className="card-header">
             <div>
               <h2 className="card-title">大案件 / 專案管理</h2>
-              <p className="hint">多天期工程集中管理。行事曆仍會顯示各日派班，員工每日回報後可追蹤總台數。</p>
+              <p className="hint">多天期工程集中管理。匯款、郵寄、稅金以整筆專案計；師傅分台各自計入個人結算。</p>
             </div>
             <div className="button-row">
               <Link to="/admin/schedules" className="btn btn-secondary btn-sm">返回行事曆</Link>
@@ -371,7 +454,7 @@ export default function AdminProjectsPage() {
                 <form className="form-grid cols-2 admin-projects-page__units-form" onSubmit={handleUpdateUnits}>
                   <h3 className="card-subtitle" style={{ gridColumn: '1 / -1' }}>調整總台數</h3>
                   <p className="hint" style={{ gridColumn: '1 / -1' }}>
-                    修正整筆專案台數與金額，會重新分配每日派班並同步回報、匯款資料。
+                    修正整筆專案台數與金額，會依師傅人數重新分台（例如 107 台兩人 → 54 / 53），並同步回報、匯款。
                   </p>
                   <label className="field">
                     <span className="field-label">總台數</span>
@@ -406,76 +489,147 @@ export default function AdminProjectsPage() {
                 </form>
               )}
 
-              <h3 className="card-subtitle">每日派班</h3>
-              <p className="hint">可個別調整每位師傅每天的清洗台數，儲存後會同步回報與專案總額。</p>
+              <h3 className="card-subtitle">師傅分台（整張工單）</h3>
+              <p className="hint">
+                依整筆專案分派給各師傅，每人一筆結算回報；個人應收/應退會計入該師傅月結。
+                {selectedProject.expects_company_remittance && ' 客戶匯款、郵資、發票稅金仍以專案總額處理。'}
+              </p>
+              {canManageProject && (
+                <div className="button-row" style={{ marginBottom: 12 }}>
+                  <button type="button" className="btn btn-secondary btn-sm" onClick={handleConsolidateSettlement}>
+                    整理為整張工單分台
+                  </button>
+                  <span className="hint">舊案若仍是逐日多筆回報，按此合併成每位師傅一筆。</span>
+                </div>
+              )}
               <div className="admin-projects-page__list">
-                {(selectedProject.schedules || []).map((schedule) => {
-                  const draft = scheduleUnitsDraft[schedule.id] || {
-                    ac_units: String(schedule.ac_units || ''),
-                    unit_price: String(schedule.unit_price || '1500'),
+                {(selectedProject.employee_assignments || []).map((assignment) => {
+                  const userId = assignment.user_id;
+                  const draft = assignmentDraft[userId] || {
+                    assigned_units: String(assignment.assigned_units || ''),
                   };
 
                   return (
-                    <div key={schedule.id} className="admin-project-card admin-project-card--schedule">
+                    <div key={userId} className="admin-project-card admin-project-card--schedule">
                       <div className="admin-project-card__schedule-header">
                         <div>
-                          <strong>{formatDateOnly(schedule.work_date)} · {schedule.user?.name}</strong>
+                          <strong>{assignment.name}</strong>
                           <span className="hint">
-                            {schedule.schedule_kind === 'supplement' ? '補台數 · ' : ''}
-                            {schedule.daily_report ? `已回報 ${schedule.daily_report.completed_units} 台` : '待回報'}
+                            分派 {assignment.assigned_units} 台
+                            {assignment.supplement_units > 0 ? ` · 另含補台 ${assignment.supplement_units} 台` : ''}
+                            {assignment.completed_units > 0 ? ` · 已回報 ${assignment.completed_units} 台` : ' · 待回報'}
                           </span>
                         </div>
                       </div>
                       {canManageProject && (
-                        <div className="form-grid cols-3 admin-projects-page__schedule-units">
+                        <div className="form-grid cols-2 admin-projects-page__schedule-units">
                           <label className="field">
-                            <span className="field-label">師傅清洗總台數</span>
+                            <span className="field-label">此師傅台數</span>
                             <input
                               className="field-control"
                               type="number"
-                              min="1"
+                              min="0"
                               max="9999"
-                              value={draft.ac_units}
-                              onChange={(event) => setScheduleUnitsDraft({
-                                ...scheduleUnitsDraft,
-                                [schedule.id]: { ...draft, ac_units: event.target.value },
+                              value={draft.assigned_units}
+                              onChange={(event) => setAssignmentDraft({
+                                ...assignmentDraft,
+                                [userId]: { ...draft, assigned_units: event.target.value },
                               })}
                             />
-                          </label>
-                          <label className="field">
-                            <span className="field-label">單價</span>
-                            <select
-                              className="field-control"
-                              value={draft.unit_price}
-                              onChange={(event) => setScheduleUnitsDraft({
-                                ...scheduleUnitsDraft,
-                                [schedule.id]: { ...draft, unit_price: event.target.value },
-                              })}
-                            >
-                              <option value="1500">1500</option>
-                              <option value="1300">1300</option>
-                              <option value="1000">1000</option>
-                            </select>
                           </label>
                           <div className="form-actions">
                             <button
                               type="button"
                               className="btn btn-primary btn-sm"
-                              disabled={savingScheduleId === schedule.id}
-                              onClick={() => handleUpdateScheduleUnits(schedule.id)}
+                              disabled={savingAssignmentUserId === userId}
+                              onClick={() => handleUpdateAssignment(userId)}
                             >
-                              {savingScheduleId === schedule.id ? '儲存中…' : '儲存此筆'}
+                              {savingAssignmentUserId === userId ? '儲存中…' : '儲存分台'}
                             </button>
                           </div>
                         </div>
-                      )}
-                      {!canManageProject && (
-                        <span className="hint">排 {schedule.ac_units} 台</span>
                       )}
                     </div>
                   );
                 })}
               </div>
+
+              {(selectedProject.schedules || []).filter((schedule) => schedule.schedule_kind === 'supplement').length > 0 && (
+                <>
+                  <h3 className="card-subtitle">補台明細</h3>
+                  <p className="hint">補台仍另列，會併入同一專案帳與該師傅個人結算。</p>
+                  <div className="admin-projects-page__list">
+                    {(selectedProject.schedules || [])
+                      .filter((schedule) => schedule.schedule_kind === 'supplement')
+                      .map((schedule) => {
+                        const draft = supplementDraft[schedule.id] || {
+                          ac_units: String(schedule.ac_units || ''),
+                          unit_price: String(schedule.unit_price || '1500'),
+                        };
+
+                        return (
+                          <div key={schedule.id} className="admin-project-card admin-project-card--schedule">
+                            <div className="admin-project-card__schedule-header">
+                              <div>
+                                <strong>{formatDateOnly(schedule.work_date)} · {schedule.user?.name}</strong>
+                                <span className="hint">
+                                  補台數 · {schedule.daily_report ? `已回報 ${schedule.daily_report.completed_units} 台` : '待回報'}
+                                </span>
+                              </div>
+                            </div>
+                            {canManageProject && (
+                              <div className="form-grid cols-3 admin-projects-page__schedule-units">
+                                <label className="field">
+                                  <span className="field-label">補洗台數</span>
+                                  <input
+                                    className="field-control"
+                                    type="number"
+                                    min="1"
+                                    max="9999"
+                                    value={draft.ac_units}
+                                    onChange={(event) => setSupplementDraft({
+                                      ...supplementDraft,
+                                      [schedule.id]: { ...draft, ac_units: event.target.value },
+                                    })}
+                                  />
+                                </label>
+                                <label className="field">
+                                  <span className="field-label">單價</span>
+                                  <select
+                                    className="field-control"
+                                    value={draft.unit_price}
+                                    onChange={(event) => setSupplementDraft({
+                                      ...supplementDraft,
+                                      [schedule.id]: { ...draft, unit_price: event.target.value },
+                                    })}
+                                  >
+                                    <option value="1500">1500</option>
+                                    <option value="1300">1300</option>
+                                    <option value="1000">1000</option>
+                                  </select>
+                                </label>
+                                <div className="form-actions">
+                                  <button
+                                    type="button"
+                                    className="btn btn-primary btn-sm"
+                                    disabled={savingAssignmentUserId === schedule.id}
+                                    onClick={() => handleUpdateSupplementUnits(schedule.id)}
+                                  >
+                                    {savingAssignmentUserId === schedule.id ? '儲存中…' : '儲存補台'}
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                  </div>
+                </>
+              )}
+
+              <p className="hint" style={{ marginTop: 12 }}>
+                工期 {formatDateOnly(selectedProject.planned_start_date)} – {formatDateOnly(selectedProject.planned_end_date)} 仍會在行事曆占位，但記帳以本頁師傅分台為準。
+              </p>
 
               <form className="form-grid cols-2" style={{ marginTop: 16 }} onSubmit={handleSupplement}>
                 <h3 className="card-subtitle" style={{ gridColumn: '1 / -1' }}>補台數（另排一般單，併入本專案帳）</h3>

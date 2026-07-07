@@ -290,15 +290,18 @@ export default function EmployeeDailyReportPage() {
   }
 
   const confirmSummary = confirmSchedule && confirmDraft
-    ? {
-      ...calculateEmployeeReportDraft(confirmSchedule, confirmDraft),
-      skipReason: confirmDraft.skip_reason,
-      paidToCompany: Boolean(confirmDraft.paid_to_company),
-      totalAmount: calculateEmployeeReportDraft(confirmSchedule, confirmDraft).collectedAmount,
-      collectedAmount: confirmDraft.paid_to_company
-        ? 0
-        : Number(confirmDraft.collected_amount ?? 0),
-    }
+    ? (() => {
+      const calculated = calculateEmployeeReportDraft(confirmSchedule, confirmDraft);
+      const paidToCompany = Boolean(confirmDraft.paid_to_company);
+
+      return {
+        ...calculated,
+        skipReason: confirmDraft.skip_reason,
+        paidToCompany,
+        totalAmount: calculated.collectedAmount,
+        collectedAmount: paidToCompany ? 0 : Number(confirmDraft.collected_amount ?? calculated.collectedAmount),
+      };
+    })()
     : null;
 
   return (

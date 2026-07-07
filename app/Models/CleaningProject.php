@@ -57,6 +57,10 @@ class CleaningProject extends Model
 
     public const SCHEDULE_KIND_REGULAR = 'regular';
 
+    public const SCHEDULE_KIND_ASSIGNMENT = 'assignment';
+
+    public const SCHEDULE_KIND_CALENDAR_BLOCK = 'calendar_block';
+
     public const SCHEDULE_KIND_SUPPLEMENT = 'supplement';
 
     public function creator(): BelongsTo
@@ -67,7 +71,7 @@ class CleaningProject extends Model
     public function employees(): BelongsToMany
     {
         return $this->belongsToMany(User::class, 'cleaning_project_user')
-            ->withPivot(['role'])
+            ->withPivot(['role', 'assigned_units'])
             ->withTimestamps();
     }
 

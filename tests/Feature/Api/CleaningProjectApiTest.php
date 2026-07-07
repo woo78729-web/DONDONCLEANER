@@ -266,7 +266,7 @@ class CleaningProjectApiTest extends TestCase
             'unit_price' => 1300,
         ])
             ->assertOk()
-            ->assertJsonPath('data.progress.total_units', 35);
+            ->assertJsonPath('data.progress.total_units', 25);
 
         $schedule->refresh();
 
@@ -320,5 +320,124 @@ class CleaningProjectApiTest extends TestCase
         $this->assertSame(16, (int) $schedule->ac_units);
         $this->assertSame(16, (int) $report->completed_units);
         $this->assertFalse((bool) $report->unit_mismatch);
+    }
+
+    public function test_project_splits_total_units_between_employees(): void
+    {
+        Sanctum::actingAs($this->admin);
+
+        $employeeTwo = User::query()->create([
+            'account' => 'emp2',
+            'password' => Hash::make('password123'),
+            'name' => '員工二',
+            'role' => 'employee',
+            'is_active' => true,
+            'rules_accepted_at' => now(),
+            'must_change_password' => false,
+        ]);
+
+        $start = now()->addDays(3)->toDateString();
+        $end = now()->addDays(6)->toDateString();
+
+        $response = $this->postJson('/api/admin/projects', [
+            'employee_ids' => [$this->employee->id, $employeeTwo->id],
+            'planned_start_date' => $start,
+            'planned_end_date' => $end,
+            'customer_name' => '測試客戶',
+            'customer_phone' => '0912345678',
+            'customer_address' => '台東市',
+            'customer_source' => 'phone',
+            'expects_company_remittance' => true,
+            'pricing_lines' => [
+                ['ac_units' => 107, 'unit_price' => 1000],
+            ],
+        ])->assertCreated();
+
+        $assignments = collect($response->json('data.employee_assignments'))
+            ->sortBy('user_id')
+            ->values();
+
+        $this->assertEqualsCanonicalizing([54, 53], $assignments->pluck('assigned_units')->all());
+        $this->assertSame(2, DailySchedule::query()
+            ->where('cleaning_project_id', $response->json('data.id'))
+            ->where('schedule_kind', CleaningProject::SCHEDULE_KIND_ASSIGNMENT)
+            ->count());
+    }
+
+    public function test_consolidate_settlement_merges_daily_schedules_into_single_assignment(): void
+    {
+        Sanctum::actingAs($this->admin);
+
+        $start = now()->subDays(10)->toDateString();
+        $end = now()->subDays(7)->toDateString();
+
+        $project = CleaningProject::query()->create([
+            'project_code' => 'PLEGACY-001',
+            'status' => CleaningProject::STATUS_IN_PROGRESS,
+            'customer_name' => '馬蘭專案',
+            'customer_phone' => '0912345678',
+            'customer_address' => '台東市',
+            'customer_source' => 'phone',
+            'total_ac_units' => 52,
+            'ac_units' => 52,
+            'cleaning_price' => 54600,
+            'pricing_lines' => [['ac_units' => 52, 'unit_price' => 1000]],
+            'needs_invoice' => true,
+            'expects_company_remittance' => true,
+            'planned_start_date' => $start,
+            'planned_end_date' => $end,
+        ]);
+
+        $project->employees()->sync([
+            $this->employee->id => ['role' => 'member', 'assigned_units' => 0],
+        ]);
+
+        foreach ([13, 12, 13, 14] as $index => $units) {
+            $schedule = DailySchedule::query()->create([
+                'cleaning_project_id' => $project->id,
+                'schedule_kind' => CleaningProject::SCHEDULE_KIND_REGULAR,
+                'user_id' => $this->employee->id,
+                'work_date' => now()->subDays(10 - $index)->toDateString(),
+                'start_time' => '09:00',
+                'end_time' => '21:00',
+                'customer_name' => '馬蘭專案',
+                'customer_phone' => '0912345678',
+                'customer_address' => '台東市',
+                'customer_source' => 'phone',
+                'pricing_lines' => [['ac_units' => $units, 'unit_price' => 1000]],
+                'ac_units' => $units,
+                'unit_price' => 1000,
+                'cleaning_price' => $units * 1000,
+                'task_details' => "{$units}台",
+                'needs_invoice' => true,
+            ]);
+
+            \App\Models\DailyReport::query()->create([
+                'schedule_id' => $schedule->id,
+                'planned_units' => $units,
+                'completed_units' => $units,
+                'collected_amount' => 0,
+                'paid_to_company' => true,
+                'has_tax' => true,
+            ]);
+        }
+
+        $this->artisan('project:consolidate-settlement', ['project' => 'PLEGACY-001'])
+            ->assertExitCode(0);
+
+        $this->assertSame(1, DailySchedule::query()
+            ->where('cleaning_project_id', $project->id)
+            ->where('schedule_kind', CleaningProject::SCHEDULE_KIND_ASSIGNMENT)
+            ->count());
+
+        $this->assertSame(52, (int) $project->employees()->first()->pivot->assigned_units);
+
+        $assignment = DailySchedule::query()
+            ->where('cleaning_project_id', $project->id)
+            ->where('schedule_kind', CleaningProject::SCHEDULE_KIND_ASSIGNMENT)
+            ->firstOrFail();
+
+        $this->assertSame(52, (int) $assignment->ac_units);
+        $this->assertSame(52, (int) $assignment->dailyReport?->completed_units);
     }
 }

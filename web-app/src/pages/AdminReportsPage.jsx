@@ -6,6 +6,10 @@ import { AdminReportEditModal } from '../components/AdminReportEditModal';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../api/client';
 
+function formatMoney(value) {
+  return Number(value || 0).toLocaleString('zh-TW');
+}
+
 export default function AdminReportsPage() {
   const { user } = useAuth();
   const [filters, setFilters] = useState({ date_from: '', date_to: '', user_id: '', page: 1, per_page: 15 });
@@ -83,7 +87,7 @@ export default function AdminReportsPage() {
           <section className="summary-row">
             <span className="stat-badge">總筆數 {data.summary.total_reports}</span>
             <span className="stat-badge">總台數 {data.summary.total_completed_units}</span>
-            <span className="stat-badge">總金額 {data.summary.total_collected_amount}</span>
+            <span className="stat-badge">總金額 {formatMoney(data.summary.total_collected_amount)}</span>
           </section>
 
           <section className="card table-card">
@@ -127,13 +131,25 @@ export default function AdminReportsPage() {
                           report.completed_units
                         )}
                       </td>
-                      <td className="num">{report.total_amount ?? report.collected_amount}</td>
-                      <td className="num">{report.employee_received ?? report.collected_amount}</td>
+                      <td className="num">
+                        {formatMoney(report.total_amount ?? report.collected_amount)}
+                        {report.paid_to_company && (
+                          <div className="hint">客戶匯款</div>
+                        )}
+                      </td>
+                      <td className="num">
+                        {report.paid_to_company
+                          ? '0'
+                          : formatMoney(report.employee_received ?? report.collected_amount)}
+                        {report.paid_to_company && (
+                          <div className="hint">現金實收</div>
+                        )}
+                      </td>
                       <td className="num">
                         {report.paid_to_company
                           ? (
                             <>
-                              {report.company_inbound_amount ?? 0}
+                              {formatMoney(report.company_inbound_amount ?? 0)}
                               {report.company_remittance?.status_label && (
                                 <span className="hint">（{report.company_remittance.status_label}）</span>
                               )}

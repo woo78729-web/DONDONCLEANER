@@ -150,6 +150,10 @@ class CleaningProjectController extends Controller
 
     public function updateScheduleUnits(Request $request, CleaningProject $project, DailySchedule $schedule): JsonResponse
     {
+        if ($schedule->schedule_kind === CleaningProject::SCHEDULE_KIND_CALENDAR_BLOCK) {
+            return $this->error('行事曆占位班表不可調整台數', 422);
+        }
+
         $validated = $request->validate([
             'ac_units' => ['required', 'integer', 'min:1', 'max:9999'],
             'unit_price' => ['nullable', 'integer', Rule::in(SchedulePricing::unitPrices())],
@@ -178,6 +182,43 @@ class CleaningProjectController extends Controller
         return $this->success(
             CleaningProjectSupport::payload($project, detailed: true),
             '師傅派班台數已更新'
+        );
+    }
+
+    public function updateAssignments(Request $request, CleaningProject $project): JsonResponse
+    {
+        $validated = $request->validate([
+            'assignments' => ['required', 'array', 'min:1'],
+            'assignments.*.user_id' => ['required', 'integer', 'exists:users,id'],
+            'assignments.*.assigned_units' => ['required', 'integer', 'min:0'],
+        ]);
+
+        try {
+            $project = CleaningProjectSupport::updateEmployeeAssignments(
+                $project,
+                $validated['assignments'],
+            );
+        } catch (\InvalidArgumentException $exception) {
+            return $this->error($exception->getMessage(), 422);
+        }
+
+        return $this->success(
+            CleaningProjectSupport::payload($project, detailed: true),
+            '師傅分台已更新'
+        );
+    }
+
+    public function consolidateSettlement(CleaningProject $project): JsonResponse
+    {
+        try {
+            CleaningProjectSupport::consolidateProjectSettlement($project);
+        } catch (\InvalidArgumentException $exception) {
+            return $this->error($exception->getMessage(), 422);
+        }
+
+        return $this->success(
+            CleaningProjectSupport::payload($project->fresh(['employees', 'schedules.user', 'schedules.dailyReport']), detailed: true),
+            '專案已整理為整張工單分台'
         );
     }
 

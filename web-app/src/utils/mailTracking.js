@@ -342,6 +342,10 @@ function scheduleHasPendingReportMail(schedule) {
   return Boolean(report.needs_invoice_and_mail || report.needs_receipt_and_mail);
 }
 
+function resolveMailRecipient(schedule) {
+  return String(schedule?.mail_recipient || schedule?.customer_name || '').trim() || null;
+}
+
 function mapScheduleRow(schedule) {
   const sourceOption = getCustomerSourceOption(schedule.customer_source);
   const billing = billingFromRow({ kind: 'schedule', source: schedule });
@@ -360,7 +364,7 @@ function mapScheduleRow(schedule) {
     type: resolveScheduleDocumentType(schedule) || scheduleTypeLabel(schedule),
     billingUnits: billing.units,
     billingAmount: billing.amount,
-    recipient: schedule.mail_recipient,
+    recipient: resolveMailRecipient(schedule),
     invoiceTitle: schedule.invoice_title,
     taxId: schedule.invoice_tax_id,
     phone: schedule.mail_phone || schedule.customer_phone,
@@ -390,7 +394,7 @@ function mapReportRow(report) {
     type: reportTypeLabel(report),
     billingUnits: billing.units,
     billingAmount: billing.amount,
-    recipient: schedule?.mail_recipient,
+    recipient: resolveMailRecipient(schedule),
     invoiceTitle: schedule?.invoice_title,
     taxId: schedule?.invoice_tax_id,
     phone: schedule?.mail_phone || schedule?.customer_phone,
