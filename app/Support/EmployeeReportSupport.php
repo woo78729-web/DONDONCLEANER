@@ -65,6 +65,7 @@ class EmployeeReportSupport
         DailyReport $report,
         array $overrides = [],
         bool $requireSkipReason = false,
+        bool $recalculateCollectedAmount = false,
     ): DailyReport {
         $report->loadMissing('dailySchedule');
         $schedule = $report->dailySchedule;
@@ -73,18 +74,23 @@ class EmployeeReportSupport
             return $report;
         }
 
-        $payload = self::buildFromSchedule($schedule, [
+        $input = [
             'completed_units' => $report->completed_units,
             'skip_reason' => $report->skip_reason,
             'has_tax' => $report->has_tax,
             'needs_invoice_and_mail' => $report->needs_invoice_and_mail,
             'needs_receipt_and_mail' => $report->needs_receipt_and_mail,
             'temporary_request' => $report->temporary_request,
-            'collected_amount' => $report->collected_amount,
             'paid_to_company' => $report->paid_to_company,
             'travel_allowance' => $report->travel_allowance,
             ...$overrides,
-        ], $report, $requireSkipReason);
+        ];
+
+        if (! $recalculateCollectedAmount && ! array_key_exists('collected_amount', $overrides)) {
+            $input['collected_amount'] = $report->collected_amount;
+        }
+
+        $payload = self::buildFromSchedule($schedule, $input, $report, $requireSkipReason);
 
         return self::applyPayload($report, $payload);
     }

@@ -207,11 +207,25 @@ class ScheduleController extends Controller
             return $error;
         }
 
+        $oldPlannedUnits = (int) $schedule->ac_units;
         $schedule->fill($validated);
         $schedule->save();
 
         if ($hasReport) {
-            EmployeeReportSupport::resyncFromSchedule($schedule->dailyReport()->first());
+            $report = $schedule->dailyReport()->first();
+            $overrides = [];
+            $newPlannedUnits = (int) $schedule->ac_units;
+
+            if ((int) $report->completed_units === $oldPlannedUnits
+                || (int) $report->completed_units > $newPlannedUnits) {
+                $overrides['completed_units'] = $newPlannedUnits;
+            }
+
+            EmployeeReportSupport::resyncFromSchedule(
+                $report,
+                $overrides,
+                recalculateCollectedAmount: true,
+            );
         }
 
         return $this->success(

@@ -310,6 +310,46 @@ class AdminEnhancementApiTest extends TestCase
         $this->assertTrue($schedule->fresh()->needs_invoice);
     }
 
+    public function test_admin_schedule_update_recalculates_report_collected_amount(): void
+    {
+        Sanctum::actingAs($this->admin);
+
+        $schedule = DailySchedule::query()->create($this->scheduleAttributes([
+            'user_id' => $this->employee->id,
+            'work_date' => now()->toDateString(),
+            'ac_units' => 6,
+            'pricing_lines' => [
+                ['ac_units' => 6, 'unit_price' => 1000],
+            ],
+            'cleaning_price' => 6000,
+            'task_details' => '6台1000=6000',
+            'needs_invoice' => false,
+        ]));
+
+        DailyReport::query()->create([
+            'schedule_id' => $schedule->id,
+            'planned_units' => 6,
+            'completed_units' => 6,
+            'skipped_units' => 0,
+            'unit_mismatch' => false,
+            'has_tax' => false,
+            'collected_amount' => 6000,
+            'paid_to_company' => false,
+        ]);
+
+        $this->patchJson('/api/admin/schedules/'.$schedule->id, [
+            'pricing_lines' => [
+                ['ac_units' => 4, 'unit_price' => 1000],
+            ],
+        ])->assertOk()
+            ->assertJsonPath('data.cleaning_price', 4000);
+
+        $report = DailyReport::query()->where('schedule_id', $schedule->id)->first();
+
+        $this->assertSame(4, (int) $report->completed_units);
+        $this->assertSame(4000, (int) $report->collected_amount);
+    }
+
     public function test_admin_can_export_reports_csv(): void
     {
         Sanctum::actingAs($this->admin);

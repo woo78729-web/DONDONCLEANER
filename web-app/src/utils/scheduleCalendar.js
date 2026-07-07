@@ -1021,6 +1021,28 @@ export function getScheduleDisplayUnits(schedule) {
   return Number(schedule?.ac_units) || 0;
 }
 
+export function getSchedulePlannedPrice(schedule) {
+  const lines = normalizePricingLines(schedule?.pricing_lines);
+
+  if (lines.length > 0) {
+    const total = Number(summarizePricingLines(lines).cleaning_price) || 0;
+
+    if (total > 0) {
+      return total;
+    }
+  }
+
+  if (schedule?.cleaning_price != null && schedule.cleaning_price !== '') {
+    const stored = Number(schedule.cleaning_price);
+
+    if (Number.isFinite(stored) && stored > 0) {
+      return stored;
+    }
+  }
+
+  return parseTaskDetails(schedule?.task_details).cleaning_price;
+}
+
 export function getScheduleDisplayPrice(schedule) {
   const report = getScheduleReport(schedule);
 
@@ -1031,11 +1053,7 @@ export function getScheduleDisplayPrice(schedule) {
     }
   }
 
-  if (schedule?.cleaning_price != null && schedule.cleaning_price !== '') {
-    return schedule.cleaning_price;
-  }
-
-  return parseTaskDetails(schedule?.task_details).cleaning_price;
+  return getSchedulePlannedPrice(schedule);
 }
 
 export function getScheduleSegmentTotal(schedule) {
@@ -1125,7 +1143,7 @@ export function buildScheduleUnitsPriceTag(schedule, { hidePrice = false, relate
     return units ? `[${units}台]` : '';
   }
 
-  const total = getScheduleDisplayPrice(schedule);
+  const total = getSchedulePlannedPrice(schedule);
 
   if (units || total) {
     return `[${units || '-'}離${total || '-'}]`;
@@ -1142,7 +1160,7 @@ export function buildScheduleUnitsPriceTag(schedule, { hidePrice = false, relate
 
 export function formatScheduleUnitsAndTotal(schedule) {
   const units = getScheduleDisplayUnits(schedule);
-  const total = getScheduleDisplayPrice(schedule);
+  const total = getSchedulePlannedPrice(schedule);
 
   if (!units && !total) {
     return '';
@@ -1157,7 +1175,7 @@ export function formatScheduleAcUnits(schedule) {
 }
 
 export function formatScheduleTotalPrice(schedule) {
-  const total = getScheduleDisplayPrice(schedule);
+  const total = getSchedulePlannedPrice(schedule);
   return total ? `${total} 元` : '-';
 }
 
