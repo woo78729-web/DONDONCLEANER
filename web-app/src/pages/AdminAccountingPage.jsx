@@ -37,7 +37,7 @@ export default function AdminAccountingPage() {
     try {
       const result = await api.getAccounting(nextYearMonth);
       setData(result.data);
-      setExpenseDrafts(result.data.fixed_expenses.map((item) => ({ ...item })));
+      setExpenseDrafts((result.data.fixed_expense_drafts || result.data.fixed_expenses || []).map((item) => ({ ...item })));
     } catch (err) {
       setError(err.message);
     } finally {
@@ -71,11 +71,6 @@ export default function AdminAccountingPage() {
     [companyTransfers],
   );
 
-  const fixedExpenseDraftMap = useMemo(
-    () => Object.fromEntries(expenseDrafts.map((item) => [item.key, item])),
-    [expenseDrafts],
-  );
-
   async function saveFixedExpenses() {
     setSavingExpenses(true);
     setError('');
@@ -88,7 +83,7 @@ export default function AdminAccountingPage() {
         label: item.label,
       })));
       setData(result.data);
-      setExpenseDrafts(result.data.fixed_expenses.map((item) => ({ ...item })));
+      setExpenseDrafts((result.data.fixed_expense_drafts || result.data.fixed_expenses || []).map((item) => ({ ...item })));
       setMessage('固定開支已更新');
     } catch (err) {
       setError(err.message);
@@ -111,7 +106,7 @@ export default function AdminAccountingPage() {
         notes: advanceForm.notes.trim() || null,
       });
       setData(result.data.summary);
-      setExpenseDrafts(result.data.summary.fixed_expenses.map((item) => ({ ...item })));
+      setExpenseDrafts((result.data.summary.fixed_expense_drafts || result.data.summary.fixed_expenses || []).map((item) => ({ ...item })));
       setAdvanceForm(defaultAdvanceForm);
       setMessage('代墊款已新增');
     } catch (err) {
@@ -126,7 +121,7 @@ export default function AdminAccountingPage() {
     try {
       const result = await api.deleteAccountingAdvance(entryId);
       setData(result.data);
-      setExpenseDrafts(result.data.fixed_expenses.map((item) => ({ ...item })));
+      setExpenseDrafts((result.data.fixed_expense_drafts || result.data.fixed_expenses || []).map((item) => ({ ...item })));
       setMessage('代墊款已刪除');
     } catch (err) {
       setError(err.message);
@@ -230,6 +225,9 @@ export default function AdminAccountingPage() {
               <p className="hint">
                 固定開支、車馬費與其他代墊列入阿泰代墊；發票稅金 8% 為宏逸代墊，月底與宏逸軋差。
                 目前尚未區分公司帳戶或公帳，日後若有再另行分類。
+                {data.fixed_expenses_saved === false && (
+                  <> 此月份固定開支尚未存檔，報表結算以 0 計；下方輸入僅為草稿（{data.fixed_expenses_source === 'draft_previous_month' ? '沿用上月' : '預設值'}），儲存後才會計入分潤。</>
+                )}
               </p>
             </div>
 
@@ -282,11 +280,7 @@ export default function AdminAccountingPage() {
                             {entry.auto && !entry.fixed_expense ? '（自動）' : ''}
                             {entry.notes && !entry.fixed_expense ? `（${entry.notes}）` : ''}
                           </td>
-                          <td className="num">
-                            {entry.fixed_expense
-                              ? formatMoney(fixedExpenseDraftMap[entry.fixed_expense_key]?.amount ?? entry.amount)
-                              : formatMoney(entry.amount)}
-                          </td>
+                          <td className="num">{formatMoney(entry.amount)}</td>
                           <td>
                             {entry.auto ? (
                               <span className="hint">—</span>

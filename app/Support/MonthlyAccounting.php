@@ -72,7 +72,9 @@ class MonthlyAccounting
         $reports = self::reportsForMonth((int) $year, (int) $month);
 
         $employeeSummaries = self::summarizeEmployees($reports, $yearMonth);
-        $fixedExpenses = self::fixedExpensePayload();
+        $fixedExpenseDraft = MonthlyFixedExpenseSupport::draftPayload($yearMonth);
+        $fixedExpenses = MonthlyFixedExpenseSupport::amountsForSettlement($yearMonth);
+        $fixedExpensesSaved = MonthlyFixedExpenseSupport::findForMonth($yearMonth) !== null;
         $mailRecipientCount = MailPostageAccounting::countSentRecipientsForMonth((int) $year, (int) $month);
         $manualPostageEntries = MailPostageAccounting::manualPostageForMonthQuery((int) $year, (int) $month)
             ->orderByDesc('id')
@@ -137,6 +139,9 @@ class MonthlyAccounting
             'employees' => $employeeSummaries,
             'company_transfers' => $companyTransfers,
             'fixed_expenses' => $fixedExpenses,
+            'fixed_expense_drafts' => $fixedExpenseDraft['items'],
+            'fixed_expenses_saved' => $fixedExpensesSaved,
+            'fixed_expenses_source' => $fixedExpenseDraft['source'],
             'auto_charges' => $autoCharges,
             'manual_postage_entries' => $manualPostageEntries,
             'auto_advance_entries' => $autoAdvanceEntries,
@@ -577,28 +582,6 @@ class MonthlyAccounting
             'remittance_status' => $remittance->status,
             'remittance_status_label' => CompanyRemittanceSupport::statusLabel($remittance->status),
         ];
-    }
-
-    /**
-     * @return list<array{key:string, label:string, amount:int}>
-     */
-    private static function fixedExpensePayload(): array
-    {
-        $defaults = collect(self::defaultFixedExpenses())->keyBy('key');
-        $stored = AccountingSetting::query()
-            ->whereIn('key', $defaults->keys())
-            ->get()
-            ->keyBy('key');
-
-        return $defaults->map(function (array $default) use ($stored) {
-            $setting = $stored->get($default['key']);
-
-            return [
-                'key' => $default['key'],
-                'label' => $setting?->label ?? $default['label'],
-                'amount' => (int) ($setting?->amount ?? $default['amount']),
-            ];
-        })->values()->all();
     }
 
     /**

@@ -8,6 +8,7 @@ use App\Models\ManualPostageEntry;
 use App\Models\MonthlyAdvanceEntry;
 use App\Support\MailPostageAccounting;
 use App\Support\MonthlyAccounting;
+use App\Support\MonthlyFixedExpenseSupport;
 use App\Support\UnitPerformanceReport;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -50,6 +51,7 @@ class AccountingController extends Controller
         MonthlyAccounting::ensureDefaultSettings();
 
         $validated = $request->validate([
+            'year_month' => ['required', 'regex:/^\d{4}-\d{2}$/'],
             'expenses' => ['required', 'array', 'min:1'],
             'expenses.*.key' => ['required', 'string', Rule::exists('accounting_settings', 'key')],
             'expenses.*.amount' => ['required', 'integer', 'min:0'],
@@ -57,21 +59,22 @@ class AccountingController extends Controller
         ]);
 
         foreach ($validated['expenses'] as $expense) {
-            $payload = ['amount' => $expense['amount']];
-
-            if (array_key_exists('label', $expense)) {
-                $payload['label'] = $expense['label'];
+            if (! array_key_exists('label', $expense)) {
+                continue;
             }
 
             AccountingSetting::query()
                 ->where('key', $expense['key'])
-                ->update($payload);
+                ->update(['label' => $expense['label']]);
         }
 
-        $yearMonth = $request->input('year_month', now()->format('Y-m'));
+        MonthlyFixedExpenseSupport::saveForMonth(
+            $validated['year_month'],
+            $validated['expenses'],
+        );
 
         return $this->success(
-            MonthlyAccounting::buildSummary((string) $yearMonth),
+            MonthlyAccounting::buildSummary($validated['year_month']),
             '固定開支已更新'
         );
     }

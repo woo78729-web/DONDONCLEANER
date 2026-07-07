@@ -53,12 +53,16 @@ class AdminEnhancementApiTest extends TestCase
         $this->getJson('/api/admin/accounting?year_month='.now()->format('Y-m'))
             ->assertOk()
             ->assertJsonPath('data.fixed_expenses.0.key', 'expense_control')
-            ->assertJsonPath('data.auto_advance_entries.0.fixed_expense', true)
-            ->assertJsonPath('data.totals.atai_advance_fixed_total', fn ($value) => $value > 0)
+            ->assertJsonPath('data.fixed_expenses.0.amount', 0)
+            ->assertJsonPath('data.fixed_expenses_saved', false)
+            ->assertJsonPath('data.fixed_expense_drafts.0.key', 'expense_control')
+            ->assertJsonPath('data.totals.atai_advance_fixed_total', 0)
             ->assertJsonStructure([
                 'data' => [
                     'employees',
                     'fixed_expenses',
+                    'fixed_expense_drafts',
+                    'fixed_expenses_saved',
                     'advance_entries',
                     'partner_settlement' => [
                         'basis',
