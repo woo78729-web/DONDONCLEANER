@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Api;
 
+use App\Models\CleaningProject;
 use App\Models\DailyReport;
 use App\Models\DailySchedule;
 use App\Models\User;
@@ -429,5 +430,131 @@ class MailTrackingApiTest extends TestCase
         $this->getJson('/api/admin/mail-tracking')
             ->assertOk()
             ->assertJsonCount(0, 'data.sent_this_month.schedules');
+    }
+
+    public function test_project_mail_tracking_uses_project_total_units_and_remittance_amount(): void
+    {
+        Sanctum::actingAs($this->admin);
+
+        $employee = User::query()->create([
+            'account' => 'empproj',
+            'password' => Hash::make('password123'),
+            'name' => '師傅專案',
+            'role' => 'employee',
+            'is_active' => true,
+            'rules_accepted_at' => now(),
+            'must_change_password' => false,
+        ]);
+
+        $project = CleaningProject::query()->create([
+            'project_code' => 'PTEST-MAIL',
+            'status' => CleaningProject::STATUS_PENDING_INVOICE,
+            'customer_name' => '馬蘭國小',
+            'customer_phone' => '0915000081',
+            'customer_address' => '950台東市新社三街6號',
+            'customer_source' => 'line',
+            'total_ac_units' => 107,
+            'ac_units' => 107,
+            'cleaning_price' => 112350,
+            'needs_invoice' => true,
+            'expects_company_remittance' => true,
+            'pricing_lines' => [
+                ['ac_units' => 107, 'unit_price' => 1000, 'invoice_type' => 'duplicate', 'charge_customer_tax' => true],
+            ],
+            'planned_start_date' => '2026-06-04',
+            'planned_end_date' => '2026-06-07',
+            'invoice_title' => '臺東縣臺東市馬蘭國民小學',
+            'invoice_tax_id' => '08104078',
+        ]);
+
+        $schedule = DailySchedule::query()->create($this->scheduleAttributes([
+            'cleaning_project_id' => $project->id,
+            'schedule_kind' => CleaningProject::SCHEDULE_KIND_REGULAR,
+            'user_id' => $employee->id,
+            'work_date' => '2026-06-04',
+            'customer_name' => '丁源',
+            'customer_phone' => '0915000081',
+            'needs_invoice' => true,
+            'needs_mail' => true,
+            'invoice_title' => '臺東縣臺東市馬蘭國民小學',
+            'invoice_tax_id' => '08104078',
+            'pricing_lines' => [
+                ['ac_units' => 55, 'unit_price' => 1000, 'invoice_type' => 'duplicate', 'charge_customer_tax' => true],
+            ],
+            'ac_units' => 55,
+            'cleaning_price' => 57750,
+        ]));
+
+        DailyReport::query()->create([
+            'schedule_id' => $schedule->id,
+            'planned_units' => 55,
+            'completed_units' => 55,
+            'has_tax' => true,
+            'needs_invoice_and_mail' => true,
+            'collected_amount' => 0,
+            'paid_to_company' => true,
+        ]);
+
+        $response = $this->getJson('/api/admin/mail-tracking')
+            ->assertOk();
+
+        $reportPayload = collect($response->json('data.pending.reports'))
+            ->first(fn (array $item) => (int) ($item['daily_schedule']['cleaning_project_id'] ?? 0) === $project->id);
+
+        $this->assertNotNull($reportPayload);
+        $this->assertSame(107, $reportPayload['billing_units']);
+        $this->assertSame(112350, $reportPayload['billing_amount']);
+        $this->assertSame(55, $reportPayload['daily_schedule']['cleaning_project']['completed_units']);
+    }
+
+    public function test_mail_tracking_accepts_year_month_for_monthly_sent_history(): void
+    {
+        Sanctum::actingAs($this->admin);
+
+        $employee = User::query()->create([
+            'account' => 'emphist',
+            'password' => Hash::make('password123'),
+            'name' => '師傅歷史',
+            'role' => 'employee',
+            'is_active' => true,
+            'rules_accepted_at' => now(),
+            'must_change_password' => false,
+        ]);
+
+        $mailedAt = now()->subMonths(2)->startOfMonth()->addDays(3)->toDateString();
+        $yearMonth = substr($mailedAt, 0, 7);
+
+        $schedule = DailySchedule::query()->create($this->scheduleAttributes([
+            'user_id' => $employee->id,
+            'work_date' => $mailedAt,
+            'needs_invoice' => true,
+            'needs_mail' => true,
+            'invoice_sent' => true,
+            'invoice_sent_at' => $mailedAt,
+            'mailed_at' => $mailedAt,
+            'mail_recipient' => '歷史收件人',
+            'invoice_title' => '歷史測試公司',
+            'invoice_tax_id' => '87654321',
+            'pricing_lines' => [[
+                'ac_units' => 2,
+                'unit_price' => 1500,
+                'invoice_type' => \App\Support\SchedulePricing::INVOICE_TYPE_DUPLICATE,
+                'charge_customer_tax' => true,
+            ]],
+        ]));
+
+        $this->getJson('/api/admin/mail-tracking?year_month='.$yearMonth)
+            ->assertOk()
+            ->assertJsonPath('data.year_month', $yearMonth)
+            ->assertJsonPath('data.sent_month.schedules.0.id', $schedule->id)
+            ->assertJsonPath('data.totals.schedule_postage_count', 1);
+
+        $currentMonthResponse = $this->getJson('/api/admin/mail-tracking?year_month='.now()->format('Y-m'))
+            ->assertOk();
+
+        $currentMonthScheduleIds = collect($currentMonthResponse->json('data.sent_month.schedules'))
+            ->pluck('id');
+
+        $this->assertFalse($currentMonthScheduleIds->contains($schedule->id));
     }
 }

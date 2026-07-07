@@ -112,4 +112,49 @@ class MailPostageAccounting
 
         return $defaultToToday ? now()->toDateString() : null;
     }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    public static function manualPostageEntriesForMonth(int $year, int $month): array
+    {
+        return self::manualPostageForMonthQuery($year, $month)
+            ->orderByDesc('mailed_at')
+            ->orderByDesc('id')
+            ->get()
+            ->map(fn (ManualPostageEntry $entry) => [
+                'id' => $entry->id,
+                'year_month' => $entry->year_month,
+                'mailed_at' => $entry->mailed_at?->format('Y-m-d'),
+                'amount' => (int) $entry->amount,
+                'mail_recipient' => $entry->mail_recipient,
+                'mail_phone' => $entry->mail_phone,
+                'mail_address' => $entry->mail_address,
+                'notes' => $entry->notes,
+                'created_at' => $entry->created_at?->toDateTimeString(),
+            ])
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return array{
+     *     schedule_postage_count:int,
+     *     manual_postage_count:int,
+     *     postage_unit:int,
+     *     postage_total:int
+     * }
+     */
+    public static function postageTotalsForMonth(int $year, int $month, int $unitAmount = 28): array
+    {
+        $scheduleCount = self::countSentRecipientsForMonth($year, $month);
+        $manualCount = self::manualPostageForMonthQuery($year, $month)->count();
+
+        return [
+            'schedule_postage_count' => $scheduleCount,
+            'manual_postage_count' => $manualCount,
+            'postage_unit' => $unitAmount,
+            'postage_total' => ($scheduleCount + $manualCount) * $unitAmount,
+        ];
+    }
 }

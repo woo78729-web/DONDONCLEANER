@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Layout } from '../components/Layout';
 import { PageAlert } from '../components/PageAlert';
 import { api } from '../api/client';
@@ -29,6 +30,11 @@ function todayDateString() {
   const day = String(now.getDate()).padStart(2, '0');
 
   return `${year}-${month}-${day}`;
+}
+
+function currentYearMonth() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 }
 
 function resolveMailedAt(source) {
@@ -485,6 +491,7 @@ function MailTrackingTable({
 }
 
 export default function MailTrackingPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
@@ -501,31 +508,16 @@ export default function MailTrackingPage() {
   const [manualPostageSaving, setManualPostageSaving] = useState(false);
   const [selectedRowKeys, setSelectedRowKeys] = useState([]);
   const [mergeSaving, setMergeSaving] = useState(false);
+  const [yearMonth, setYearMonth] = useState(() => searchParams.get('year_month') || currentYearMonth());
 
-  const currentYearMonth = useMemo(() => {
-    const now = new Date();
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-  }, []);
-
-  async function loadManualPostage() {
-    try {
-      const result = await api.getAccounting(currentYearMonth);
-      setManualPostageEntries(result.data?.manual_postage_entries || []);
-    } catch {
-      setManualPostageEntries([]);
-    }
-  }
-
-  async function loadTracking() {
+  async function loadTracking(nextYearMonth = yearMonth) {
     setLoading(true);
     setError('');
 
     try {
-      const [trackingResult] = await Promise.all([
-        api.getMailTracking(),
-        loadManualPostage(),
-      ]);
+      const trackingResult = await api.getMailTracking({ year_month: nextYearMonth });
       setData(trackingResult.data);
+      setManualPostageEntries(trackingResult.data?.manual_postage_entries || []);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -534,8 +526,20 @@ export default function MailTrackingPage() {
   }
 
   useEffect(() => {
-    loadTracking();
-  }, []);
+    loadTracking(yearMonth);
+  }, [yearMonth]);
+
+  useEffect(() => {
+    const next = searchParams.get('year_month');
+    if (next && next !== yearMonth) {
+      setYearMonth(next);
+    }
+  }, [searchParams, yearMonth]);
+
+  function handleYearMonthChange(value) {
+    setYearMonth(value);
+    setSearchParams(value ? { year_month: value } : {}, { replace: true });
+  }
 
   async function handleSaveDraft(draft) {
     if (!editTarget) {
@@ -564,7 +568,7 @@ export default function MailTrackingPage() {
           : (mergedCount > 1 ? `已標記 ${mergedCount} 筆同天寄件完成` : '已標記寄出完成'),
       );
       setEditTarget(null);
-      await loadTracking();
+      await loadTracking(yearMonth);
 
       if (historySearched) {
         await refreshHistorySearch();
@@ -668,7 +672,12 @@ export default function MailTrackingPage() {
       });
       setManualPostageOpen(false);
       setMessage('補寄郵資已新增');
-      await loadManualPostage();
+      const mailedMonth = (draft.mailed_at || todayDateString()).slice(0, 7);
+      if (mailedMonth !== yearMonth) {
+        handleYearMonthChange(mailedMonth);
+      } else {
+        await loadTracking(yearMonth);
+      }
     } catch (err) {
       setError(err.message);
     } finally {
@@ -687,7 +696,7 @@ export default function MailTrackingPage() {
     try {
       await api.deleteManualPostage(entryId);
       setMessage('補寄郵資已刪除');
-      await loadManualPostage();
+      await loadTracking(yearMonth);
     } catch (err) {
       setError(err.message);
     }
@@ -717,8 +726,8 @@ export default function MailTrackingPage() {
         await api.deleteSchedule(scheduleId);
       }
 
-      setMessage(scheduleIds.length > 1 ? '工單與相關資料已刪除' : '工單與相關資料已刪除');
-      await loadTracking();
+      setMessage('工單與相關資料已刪除');
+      await loadTracking(yearMonth);
 
       if (historySearched) {
         await refreshHistorySearch();
@@ -761,7 +770,7 @@ export default function MailTrackingPage() {
       await api.mergeMailTracking({ schedule_ids: scheduleIds });
       setSelectedRowKeys([]);
       setMessage('已合併寄件，郵資僅計 28 元');
-      await loadTracking();
+      await loadTracking(yearMonth);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -784,7 +793,7 @@ export default function MailTrackingPage() {
       await api.unmergeMailTracking({ schedule_ids: scheduleIds });
       setSelectedRowKeys((previous) => previous.filter((key) => key !== row.key));
       setMessage('已取消合併寄件');
-      await loadTracking();
+      await loadTracking(yearMonth);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -794,7 +803,18 @@ export default function MailTrackingPage() {
 
   const pendingRows = mergePendingMailRows(data?.pending?.schedules, data?.pending?.reports);
 
-  const sentThisMonthRows = mergeHistoryRows(data?.sent_this_month?.schedules, data?.sent_this_month?.reports);
+  const sentMonthRows = mergeHistoryRows(
+    data?.sent_month?.schedules || data?.sent_this_month?.schedules,
+    data?.sent_month?.reports || data?.sent_this_month?.reports,
+  );
+
+  const postageTotals = data?.totals || {};
+  const isCurrentMonth = yearMonth === currentYearMonth();
+  const sentSectionTitle = isCurrentMonth ? '當月寄出紀錄' : `${yearMonth} 寄出紀錄`;
+  const sentEmptyText = isCurrentMonth ? '本月尚無寄出紀錄。' : `${yearMonth} 尚無寄出紀錄。`;
+  const manualPostageHint = isCurrentMonth
+    ? '填寫收件資料與原因；依「實際寄出時間」歸屬月份，每筆計 28 元郵資。'
+    : `以下為 ${yearMonth} 的補寄郵資紀錄；切換月份可查看其他月份。`;
 
   return (
     <Layout title="寄件追蹤">
@@ -804,9 +824,25 @@ export default function MailTrackingPage() {
             <h2 className="card-title">發票／收據寄信追蹤</h2>
             <p className="hint">郵寄、發票、收據項目會出現在此；同天同客戶（同電話）多址仍只計 28 元郵資。不同天同一客戶可勾選後「合併寄件」，也只計一次 28 元。</p>
           </div>
-          <button type="button" className="btn btn-secondary btn-sm" onClick={loadTracking} disabled={loading}>
+          <button type="button" className="btn btn-secondary btn-sm" onClick={() => loadTracking(yearMonth)} disabled={loading}>
             重新整理
           </button>
+        </div>
+        <div className="filter-toolbar">
+          <label className="field field-compact">
+            <span className="field-label">郵寄紀錄月份</span>
+            <input
+              className="field-control"
+              type="month"
+              value={yearMonth}
+              onChange={(event) => handleYearMonthChange(event.target.value)}
+            />
+          </label>
+          <div className="toolbar-actions">
+            <button type="button" className="btn btn-primary btn-sm" onClick={() => loadTracking(yearMonth)} disabled={loading}>
+              {loading ? '載入中…' : '查詢月份'}
+            </button>
+          </div>
         </div>
       </section>
 
@@ -817,6 +853,7 @@ export default function MailTrackingPage() {
 
       <section className="card">
         <h3 className="section-label mail-tracking-section-title">補寄郵資（發票更正等）</h3>
+        <p className="hint">{manualPostageHint}</p>
         <p className="hint">不需重新派工時，可在此新增 28 元補寄郵資；依實際寄出時間歸屬月份。</p>
         <div className="mail-tracking-manual-postage">
           <button
@@ -900,11 +937,21 @@ export default function MailTrackingPage() {
           </section>
 
           <section className="card table-card">
-            <h3 className="section-label mail-tracking-section-title">當月寄出紀錄</h3>
-            <p className="hint">依「實際寄出時間（mailed_at）」篩選本月已寄件完成項目，與月結郵資一致。</p>
+            <h3 className="section-label mail-tracking-section-title">{sentSectionTitle}</h3>
+            <p className="hint">
+              依「實際寄出時間（mailed_at）」篩選 {yearMonth} 已寄件完成項目，與月結郵資一致。
+              {postageTotals.postage_total > 0 && (
+                <>
+                  {' '}
+                  派工寄件 {postageTotals.schedule_postage_count || 0} 筆
+                  {postageTotals.manual_postage_count > 0 ? `、補寄 ${postageTotals.manual_postage_count} 筆` : ''}
+                  ，郵資合計 {formatMoney(postageTotals.postage_total)} 元。
+                </>
+              )}
+            </p>
             <MailTrackingTable
-              rows={sentThisMonthRows}
-              emptyText="本月尚無寄出紀錄。"
+              rows={sentMonthRows}
+              emptyText={sentEmptyText}
               showSentAt
               showTrackingNumber
               editButtonLabel="修改"

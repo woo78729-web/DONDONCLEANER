@@ -84,6 +84,15 @@ function resolveMailBilling(schedule, report = null) {
     return { units: 0, amount: 0 };
   }
 
+  const project = schedule?.cleaning_project ?? schedule?.cleaningProject ?? null;
+
+  if (project) {
+    return {
+      units: Number(project.billing_units ?? project.completed_units ?? project.total_ac_units ?? 0),
+      amount: Number(project.billing_amount ?? project.cleaning_price ?? 0),
+    };
+  }
+
   const units = Number(
     report?.completed_units
     ?? schedule?.ac_units
@@ -92,10 +101,16 @@ function resolveMailBilling(schedule, report = null) {
 
   let amount = 0;
 
-  if (report?.collected_amount != null && report.collected_amount !== '') {
+  if (report?.paid_to_company) {
+    amount = Number(report.billing_amount ?? schedule?.cleaning_price ?? 0);
+  } else if (report?.collected_amount != null && report.collected_amount !== '') {
     amount = Number(report.collected_amount);
   } else if (schedule?.cleaning_price != null && schedule.cleaning_price !== '') {
     amount = Number(schedule.cleaning_price);
+  } else if (report?.billing_amount != null && report.billing_amount !== '') {
+    amount = Number(report.billing_amount);
+  } else if (schedule?.billing_amount != null && schedule.billing_amount !== '') {
+    amount = Number(schedule.billing_amount);
   }
 
   return {
@@ -144,6 +159,31 @@ function compareMailRows(left, right) {
   return String(right.date || '').localeCompare(String(left.date || ''));
 }
 
+function extractCleaningProject(row) {
+  if (row.kind === 'schedule') {
+    return row.source?.cleaning_project ?? row.source?.cleaningProject ?? null;
+  }
+
+  return row.source?.daily_schedule?.cleaning_project
+    ?? row.source?.daily_schedule?.cleaningProject
+    ?? null;
+}
+
+function projectBillingFromRows(rows) {
+  for (const row of rows) {
+    const project = extractCleaningProject(row);
+
+    if (project) {
+      return {
+        units: Number(project.billing_units ?? project.completed_units ?? project.total_ac_units ?? 0),
+        amount: Number(project.billing_amount ?? project.cleaning_price ?? 0),
+      };
+    }
+  }
+
+  return sumBillingFromRows(rows);
+}
+
 function mergeProjectMailRows(projectId, rows) {
   const sortedRows = [...rows].sort(compareMailRows);
   const primary = sortedRows[0];
@@ -154,7 +194,7 @@ function mergeProjectMailRows(projectId, rows) {
   const earliestDate = dates[0] || primary.date;
   const latestDate = dates[dates.length - 1] || primary.date;
 
-  const billing = sumBillingFromRows(sortedRows);
+  const billing = projectBillingFromRows(sortedRows);
 
   return {
     ...primary,

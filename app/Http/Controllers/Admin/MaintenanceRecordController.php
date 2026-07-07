@@ -223,14 +223,18 @@ class MaintenanceRecordController extends Controller
 
     public function mailTracking(Request $request): JsonResponse
     {
-        $now = now();
-        $year = (int) $now->format('Y');
-        $month = (int) $now->format('n');
+        $validated = $request->validate([
+            'year_month' => ['nullable', 'regex:/^\d{4}-\d{2}$/'],
+        ]);
+
+        $yearMonth = $validated['year_month'] ?? now()->format('Y-m');
+        [$year, $month] = array_map('intval', explode('-', $yearMonth, 2));
 
         $scheduleQuery = DailySchedule::query()
             ->with([
                 'user:id,name,account',
-                'dailyReport:id,schedule_id,needs_invoice_and_mail,needs_receipt_and_mail,invoice_sent,invoice_sent_at,mailed_at',
+                'cleaningProject',
+                'dailyReport:id,schedule_id,needs_invoice_and_mail,needs_receipt_and_mail,invoice_sent,invoice_sent_at,mailed_at,completed_units,collected_amount,paid_to_company,has_tax',
             ])
             ->where('needs_mail', true);
 
@@ -255,11 +259,56 @@ class MaintenanceRecordController extends Controller
             ->take(100)
             ->map(fn (DailySchedule $schedule) => $this->scheduleMailPayload($schedule));
 
-        $sentThisMonthSchedules = MailTrackingSupport::uniqueMailTrackingSchedules(
+        $reportQuery = DailyReport::query()
+            ->with([
+                'dailySchedule' => fn ($query) => $query->with([
+                    'user:id,name,account',
+                    'cleaningProject',
+                ]),
+            ])
+            ->where(function ($builder) {
+                $builder
+                    ->where('needs_invoice_and_mail', true)
+                    ->orWhere('needs_receipt_and_mail', true);
+            });
+
+        $pendingReports = MailTrackingSupport::uniqueMailTrackingReports(
+            (clone $reportQuery)
+                ->where('invoice_sent', false)
+                ->orderByDesc('created_at')
+                ->limit(100)
+                ->get()
+        )->map(fn (DailyReport $report) => $this->reportMailPayload($report));
+
+        $sentMonth = $this->sentMailRecordsForMonth($year, $month);
+
+        return $this->success([
+            'year_month' => $yearMonth,
+            'pending' => [
+                'schedules' => $pendingSchedules,
+                'reports' => $pendingReports,
+            ],
+            'sent_month' => $sentMonth,
+            'sent_this_month' => $sentMonth,
+            'manual_postage_entries' => MailPostageAccounting::manualPostageEntriesForMonth($year, $month),
+            'totals' => MailPostageAccounting::postageTotalsForMonth($year, $month),
+            // 保留舊欄位，避免其他地方仍讀 schedules / reports
+            'schedules' => $pendingSchedules,
+            'reports' => $pendingReports,
+        ], '寄件追蹤查詢成功');
+    }
+
+    /**
+     * @return array{schedules:\Illuminate\Support\Collection<int, array<string, mixed>>, reports:\Illuminate\Support\Collection<int, array<string, mixed>>}
+     */
+    private function sentMailRecordsForMonth(int $year, int $month): array
+    {
+        $sentSchedules = MailTrackingSupport::uniqueMailTrackingSchedules(
             MailPostageAccounting::sentSchedulesForMonthQuery($year, $month)
                 ->with([
                     'user:id,name,account',
-                    'dailyReport:id,schedule_id,needs_invoice_and_mail,needs_receipt_and_mail,invoice_sent,invoice_sent_at,mailed_at',
+                    'cleaningProject',
+                    'dailyReport:id,schedule_id,needs_invoice_and_mail,needs_receipt_and_mail,invoice_sent,invoice_sent_at,mailed_at,completed_units,collected_amount,paid_to_company,has_tax',
                 ])
                 ->orderByDesc('mailed_at')
                 ->orderByDesc('id')
@@ -278,48 +327,26 @@ class MaintenanceRecordController extends Controller
             ->take(100)
             ->map(fn (DailySchedule $schedule) => $this->scheduleMailPayload($schedule));
 
-        $reportQuery = DailyReport::query()
-            ->with([
-                'dailySchedule' => fn ($query) => $query->with('user:id,name,account'),
-            ])
-            ->where(function ($builder) {
-                $builder
-                    ->where('needs_invoice_and_mail', true)
-                    ->orWhere('needs_receipt_and_mail', true);
-            });
-
-        $pendingReports = MailTrackingSupport::uniqueMailTrackingReports(
-            (clone $reportQuery)
-                ->where('invoice_sent', false)
-                ->orderByDesc('created_at')
-                ->limit(100)
-                ->get()
-        )->map(fn (DailyReport $report) => $this->reportMailPayload($report));
-
-        $sentThisMonthReports = MailTrackingSupport::uniqueMailTrackingReports(
+        $sentReports = MailTrackingSupport::uniqueMailTrackingReports(
             MailPostageAccounting::sentReportsForMonthQuery($year, $month)
                 ->with([
-                    'dailySchedule' => fn ($query) => $query->with('user:id,name,account'),
+                    'dailySchedule' => fn ($query) => $query->with([
+                        'user:id,name,account',
+                        'cleaningProject',
+                    ]),
                 ])
                 ->orderByDesc('mailed_at')
                 ->orderByDesc('id')
-                ->limit(100)
+                ->limit(200)
                 ->get()
-        )->map(fn (DailyReport $report) => $this->reportMailPayload($report));
+        )
+            ->take(100)
+            ->map(fn (DailyReport $report) => $this->reportMailPayload($report));
 
-        return $this->success([
-            'pending' => [
-                'schedules' => $pendingSchedules,
-                'reports' => $pendingReports,
-            ],
-            'sent_this_month' => [
-                'schedules' => $sentThisMonthSchedules,
-                'reports' => $sentThisMonthReports,
-            ],
-            // 保留舊欄位，避免其他地方仍讀 schedules / reports
-            'schedules' => $pendingSchedules,
-            'reports' => $pendingReports,
-        ], '寄件追蹤查詢成功');
+        return [
+            'schedules' => $sentSchedules->values(),
+            'reports' => $sentReports->values(),
+        ];
     }
 
     public function searchMailHistory(Request $request): JsonResponse
@@ -538,9 +565,13 @@ class MaintenanceRecordController extends Controller
      */
     private function scheduleMailPayload(DailySchedule $schedule): array
     {
+        $schedule->loadMissing(['cleaningProject', 'dailyReport']);
+        $billing = MailTrackingSupport::resolveMailBilling($schedule, $schedule->dailyReport);
+
         return [
             'id' => $schedule->id,
             'cleaning_project_id' => $schedule->cleaning_project_id,
+            'cleaning_project' => MailTrackingSupport::projectMailPayload($schedule->cleaningProject),
             'work_date' => $schedule->work_date?->format('Y-m-d'),
             'customer_name' => $schedule->customer_name,
             'customer_phone' => $schedule->customer_phone,
@@ -567,6 +598,8 @@ class MaintenanceRecordController extends Controller
             'mailed_at' => $schedule->mailed_at?->format('Y-m-d'),
             'user' => $schedule->user,
             'daily_report' => $schedule->dailyReport,
+            'billing_units' => $billing['units'],
+            'billing_amount' => $billing['amount'],
         ];
     }
 
@@ -576,6 +609,10 @@ class MaintenanceRecordController extends Controller
     private function reportMailPayload(DailyReport $report): array
     {
         $schedule = $report->dailySchedule;
+        $schedule?->loadMissing('cleaningProject');
+        $billing = $schedule
+            ? MailTrackingSupport::resolveMailBilling($schedule, $report)
+            : ['units' => (int) $report->completed_units, 'amount' => (int) $report->collected_amount];
 
         return [
             'id' => $report->id,
@@ -586,9 +623,14 @@ class MaintenanceRecordController extends Controller
             'needs_receipt_and_mail' => (bool) $report->needs_receipt_and_mail,
             'completed_units' => (int) $report->completed_units,
             'collected_amount' => (int) $report->collected_amount,
+            'paid_to_company' => (bool) $report->paid_to_company,
+            'has_tax' => (bool) $report->has_tax,
+            'billing_units' => $billing['units'],
+            'billing_amount' => $billing['amount'],
             'daily_schedule' => $schedule ? [
                 'id' => $schedule->id,
                 'cleaning_project_id' => $schedule->cleaning_project_id,
+                'cleaning_project' => MailTrackingSupport::projectMailPayload($schedule->cleaningProject),
                 'work_date' => $schedule->work_date?->format('Y-m-d'),
                 'customer_name' => $schedule->customer_name,
                 'customer_phone' => $schedule->customer_phone,

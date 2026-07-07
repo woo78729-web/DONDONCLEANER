@@ -490,8 +490,8 @@ class AcCleaningApi {
     return this.request('PATCH', `/admin/maintenance-records/${recordId}`, { body: payload });
   }
 
-  getMailTracking() {
-    return this.request('GET', '/admin/mail-tracking');
+  getMailTracking(params = {}) {
+    return this.request('GET', '/admin/mail-tracking', { params });
   }
 
   searchMailHistory(params = {}) {

@@ -2,6 +2,7 @@
 
 namespace App\Support;
 
+use App\Models\CleaningProject;
 use App\Models\DailyReport;
 use App\Models\DailySchedule;
 use Illuminate\Support\Collection;
@@ -61,6 +62,107 @@ class MailTrackingSupport
     {
         return (bool) $report->needs_invoice_and_mail
             || (bool) $report->needs_receipt_and_mail;
+    }
+
+    /**
+     * @return array{units:int, amount:int}
+     */
+    public static function resolveMailBilling(DailySchedule $schedule, ?DailyReport $report = null): array
+    {
+        $schedule->loadMissing(['cleaningProject', 'dailyReport']);
+        $report ??= $schedule->dailyReport;
+        $project = $schedule->cleaningProject;
+
+        if ($project) {
+            return self::projectMailBilling($project);
+        }
+
+        $units = (int) ($report?->completed_units ?? $schedule->ac_units ?? 0);
+        $needsInvoice = (bool) ($report?->has_tax ?? false)
+            || (bool) ($report?->needs_invoice_and_mail ?? false)
+            || (bool) $schedule->needs_invoice;
+
+        if ($report && (bool) $report->paid_to_company) {
+            $lines = SchedulePricing::normalizeLines(
+                $schedule->pricing_lines,
+                $schedule->ac_units,
+                $schedule->unit_price,
+            );
+            $lines = EmployeeRemittance::scaleLines(
+                $lines,
+                (int) $report->completed_units,
+                (int) $schedule->ac_units,
+            );
+
+            return [
+                'units' => $units,
+                'amount' => (int) SchedulePricing::summarizeLines($lines, $needsInvoice)['cleaning_price'],
+            ];
+        }
+
+        if ($report && (int) $report->collected_amount > 0) {
+            return [
+                'units' => $units,
+                'amount' => (int) $report->collected_amount,
+            ];
+        }
+
+        return [
+            'units' => $units,
+            'amount' => (int) ($schedule->cleaning_price ?? 0),
+        ];
+    }
+
+    /**
+     * @return array{units:int, amount:int}
+     */
+    public static function projectMailBilling(CleaningProject $project): array
+    {
+        $project->loadMissing(['schedules.dailyReport']);
+        $progress = CleaningProjectSupport::progress($project);
+        $needsInvoice = (bool) $project->needs_invoice;
+        $lines = SchedulePricing::normalizeLines(
+            $project->pricing_lines,
+            (int) $project->ac_units,
+            (int) $project->unit_price,
+        );
+        $amount = (int) SchedulePricing::summarizeLines($lines, $needsInvoice)['cleaning_price'];
+
+        if ($amount <= 0 && (int) $project->cleaning_price > 0) {
+            $amount = (int) $project->cleaning_price;
+        }
+
+        return [
+            'units' => (int) $project->total_ac_units,
+            'amount' => $amount,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    public static function projectMailPayload(?CleaningProject $project): ?array
+    {
+        if (! $project) {
+            return null;
+        }
+
+        $project->loadMissing(['schedules.dailyReport']);
+        $progress = CleaningProjectSupport::progress($project);
+        $billing = self::projectMailBilling($project);
+
+        return [
+            'id' => $project->id,
+            'project_code' => $project->project_code,
+            'title' => $project->title,
+            'total_ac_units' => (int) $project->total_ac_units,
+            'cleaning_price' => (int) $project->cleaning_price,
+            'completed_units' => (int) ($progress['completed_units'] ?? 0),
+            'needs_invoice' => (bool) $project->needs_invoice,
+            'expects_company_remittance' => (bool) $project->expects_company_remittance,
+            'billing_units' => $billing['units'],
+            'billing_amount' => $billing['amount'],
+        ];
     }
 
     public static function isPrimaryMailSchedule(DailySchedule $schedule): bool
