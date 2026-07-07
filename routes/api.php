@@ -81,6 +81,7 @@ Route::middleware(['auth:sanctum', 'role:admin'])->prefix('admin')->group(functi
     Route::delete('/users/{user}', [AdminUserController::class, 'destroy']);
     Route::post('/users/{user}/avatar', [AdminUserController::class, 'uploadAvatar']);
     Route::get('/accounting', [AdminAccountingController::class, 'show']);
+    Route::get('/accounting/settlement-ledger', [AdminAccountingController::class, 'settlementLedger']);
     Route::get('/accounting/unit-performance', [AdminAccountingController::class, 'unitPerformance']);
     Route::patch('/accounting/settings', [AdminAccountingController::class, 'updateSettings']);
     Route::post('/accounting/advances', [AdminAccountingController::class, 'storeAdvance']);

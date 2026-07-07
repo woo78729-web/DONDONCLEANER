@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Layout } from '../components/Layout';
 import { PageAlert } from '../components/PageAlert';
 import { PartnerSettlementReport } from '../components/PartnerSettlementReport';
+import { SettlementLedgerTable } from '../components/SettlementLedgerTable';
 import { api } from '../api/client';
 
 function currentYearMonth() {
@@ -29,6 +30,10 @@ export default function AdminAccountingPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [savingExpenses, setSavingExpenses] = useState(false);
+  const [ledger, setLedger] = useState(null);
+  const [ledgerEmployeeId, setLedgerEmployeeId] = useState('');
+  const [ledgerViewMode, setLedgerViewMode] = useState('daily');
+  const [ledgerLoading, setLedgerLoading] = useState(false);
 
   async function loadAccounting(nextYearMonth = yearMonth) {
     setLoading(true);
@@ -48,6 +53,23 @@ export default function AdminAccountingPage() {
   useEffect(() => {
     loadAccounting(yearMonth);
   }, [yearMonth]);
+
+  async function loadLedger(nextYearMonth = yearMonth, nextEmployeeId = ledgerEmployeeId) {
+    setLedgerLoading(true);
+
+    try {
+      const result = await api.getSettlementLedger(nextYearMonth, nextEmployeeId || undefined);
+      setLedger(result.data);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLedgerLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadLedger(yearMonth, ledgerEmployeeId);
+  }, [yearMonth, ledgerEmployeeId]);
 
   const totals = data?.totals;
 
@@ -566,6 +588,59 @@ export default function AdminAccountingPage() {
                 </tbody>
               </table>
             </div>
+          </section>
+
+          <section className="card table-card settlement-ledger-card">
+            <div className="card-header" style={{ padding: '16px 16px 0' }}>
+              <h2 className="card-title">結算排查表（Excel 式明細）</h2>
+              <p className="hint">
+                依回報逐日列出各單價台數與應收／應退；底部合計應與上方「各員工應收帳」一致。淨額 = 應收現場 − 應退師傅（正數＝師傅應繳，退 XXX＝公司應退）。
+              </p>
+            </div>
+            <div className="filter-toolbar" style={{ padding: '0 16px 16px' }}>
+              <label className="field field-compact">
+                <span className="field-label">師傅</span>
+                <select
+                  className="field-control"
+                  value={ledgerEmployeeId}
+                  onChange={(event) => setLedgerEmployeeId(event.target.value)}
+                >
+                  <option value="">全部師傅</option>
+                  {(data.employees || []).map((employee) => (
+                    <option key={employee.user_id} value={employee.user_id}>{employee.name}</option>
+                  ))}
+                </select>
+              </label>
+              <div className="toolbar-actions">
+                <button
+                  type="button"
+                  className={`btn btn-sm ${ledgerViewMode === 'daily' ? 'btn-primary' : 'btn-secondary'}`}
+                  onClick={() => setLedgerViewMode('daily')}
+                >
+                  按日加總
+                </button>
+                <button
+                  type="button"
+                  className={`btn btn-sm ${ledgerViewMode === 'detail' ? 'btn-primary' : 'btn-secondary'}`}
+                  onClick={() => setLedgerViewMode('detail')}
+                >
+                  逐筆明細
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => loadLedger()}
+                  disabled={ledgerLoading}
+                >
+                  {ledgerLoading ? '載入中...' : '重新整理'}
+                </button>
+              </div>
+            </div>
+            <SettlementLedgerTable
+              ledger={ledger}
+              viewMode={ledgerViewMode}
+              showEmployee={!ledgerEmployeeId}
+            />
           </section>
         </>
       )}

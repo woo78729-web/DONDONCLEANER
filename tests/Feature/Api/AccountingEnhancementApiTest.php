@@ -293,4 +293,53 @@ class AccountingEnhancementApiTest extends TestCase
             ])
             ->assertJsonPath('data.company_totals.0.year_total', 2);
     }
+
+    public function test_settlement_ledger_returns_daily_and_detail_rows_with_matching_totals(): void
+    {
+        Sanctum::actingAs($this->admin);
+
+        $yearMonth = now()->format('Y-m');
+        $workDate = now()->toDateString();
+
+        $schedule = DailySchedule::query()->create($this->scheduleAttributes([
+            'user_id' => $this->employee->id,
+            'work_date' => $workDate,
+            'pricing_lines' => [
+                ['ac_units' => 2, 'unit_price' => 1000],
+            ],
+            'ac_units' => 2,
+            'cleaning_price' => 2000,
+            'unit_price' => 1000,
+            'task_details' => '2台1000',
+        ]));
+
+        DailyReport::query()->create([
+            'schedule_id' => $schedule->id,
+            'planned_units' => 2,
+            'completed_units' => 2,
+            'collected_amount' => 2000,
+            'paid_to_company' => false,
+        ]);
+
+        $response = $this->getJson('/api/admin/accounting/settlement-ledger?year_month='.$yearMonth.'&user_id='.$this->employee->id)
+            ->assertOk()
+            ->assertJsonStructure([
+                'data' => [
+                    'year_month',
+                    'detail_rows',
+                    'daily_rows',
+                    'totals' => [
+                        'collect_from_employee',
+                        'advance_to_employee',
+                        'payment_to_finance',
+                    ],
+                    'employee_summaries',
+                ],
+            ]);
+
+        $this->assertCount(1, $response->json('data.detail_rows'));
+        $this->assertCount(1, $response->json('data.daily_rows'));
+        $this->assertSame(800, $response->json('data.totals.collect_from_employee'));
+        $this->assertSame(800, $response->json('data.employee_summaries.0.collect_from_employee'));
+    }
 }

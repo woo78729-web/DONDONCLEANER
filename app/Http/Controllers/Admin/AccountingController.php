@@ -7,6 +7,7 @@ use App\Models\AccountingSetting;
 use App\Models\ManualPostageEntry;
 use App\Models\MonthlyAdvanceEntry;
 use App\Support\MailPostageAccounting;
+use App\Support\EmployeeSettlementLedger;
 use App\Support\MonthlyAccounting;
 use App\Support\MonthlyFixedExpenseSupport;
 use App\Support\UnitPerformanceReport;
@@ -43,6 +44,21 @@ class AccountingController extends Controller
                 $validated['to_year'] ?? null,
             ),
             '歷年台數績效查詢成功'
+        );
+    }
+
+    public function settlementLedger(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'year_month' => ['nullable', 'regex:/^\d{4}-\d{2}$/'],
+            'user_id' => ['nullable', 'integer', 'exists:users,id'],
+        ]);
+
+        $yearMonth = $validated['year_month'] ?? now()->format('Y-m');
+
+        return $this->success(
+            EmployeeSettlementLedger::build($yearMonth, isset($validated['user_id']) ? (int) $validated['user_id'] : null),
+            '結算明細表查詢成功'
         );
     }
 

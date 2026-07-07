@@ -265,6 +265,15 @@ class AcCleaningApi {
     });
   }
 
+  getSettlementLedger(yearMonth, userId) {
+    return this.request('GET', '/admin/accounting/settlement-ledger', {
+      params: {
+        ...(yearMonth ? { year_month: yearMonth } : {}),
+        ...(userId ? { user_id: userId } : {}),
+      },
+    });
+  }
+
   getLegacyLedgerTrends(params = {}) {
     return this.request('GET', '/admin/legacy-ledgers/trends', { params });
   }

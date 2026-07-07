@@ -1072,6 +1072,54 @@ select option {
   position: static;
 }
 
+.settlement-ledger-card .filter-toolbar {
+  border-bottom: 1px solid rgba(255, 140, 0, 0.12);
+}
+
+.settlement-ledger-table-wrap {
+  overflow: auto;
+  max-height: min(70vh, 720px);
+}
+
+.data-table.settlement-ledger-table {
+  table-layout: auto;
+  width: max-content;
+  min-width: 100%;
+  font-size: 0.92rem;
+}
+
+.settlement-ledger-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--surface-1);
+  white-space: nowrap;
+}
+
+.settlement-ledger-table tbody td,
+.settlement-ledger-table tfoot td {
+  white-space: nowrap;
+  vertical-align: top;
+}
+
+.settlement-ledger-table__detail {
+  min-width: 180px;
+  max-width: 280px;
+  white-space: normal;
+}
+
+.settlement-ledger-table__net {
+  font-weight: 600;
+  color: var(--brand-800);
+}
+
+.settlement-ledger-table tfoot td {
+  position: sticky;
+  bottom: 0;
+  background: rgba(255, 140, 0, 0.1);
+  border-top: 1px solid rgba(255, 140, 0, 0.28);
+}
+
 .accounting-employee-due-table th,
 .accounting-employee-due-table td {
   min-width: 0;
