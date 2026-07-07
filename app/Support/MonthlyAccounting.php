@@ -3,6 +3,7 @@
 namespace App\Support;
 
 use App\Models\AccountingSetting;
+use App\Models\CompanyRemittance;
 use App\Models\DailyReport;
 use App\Models\DailySchedule;
 use App\Models\ManualPostageEntry;
@@ -110,9 +111,14 @@ class MonthlyAccounting
             $travelAllowanceTotal,
         );
 
-        $companyTransfers = self::companyTransfersFromEmployees($employeeSummaries);
+        $remittanceTotals = self::remittanceTotalsForMonth((int) $year, (int) $month);
+        $companyTransfers = self::companyTransfersForMonth((int) $year, (int) $month);
         $totals['company_transfer_count'] = count($companyTransfers);
-        $totals['company_inbound_expected'] = (int) array_sum(array_column($employeeSummaries, 'company_inbound_expected'));
+        $totals['company_inbound_expected'] = $remittanceTotals['expected'];
+        $totals['company_transfer'] = $remittanceTotals['confirmed'];
+        $totals['hongyi_payment'] = $totals['profit_share_half']
+            - $remittanceTotals['expected']
+            + $totals['invoice_tax_cost'];
         $totals['payment_to_finance_total'] = (int) array_sum(array_column($employeeSummaries, 'payment_to_finance'));
         $totals['payout_from_finance_total'] = (int) array_sum(array_column($employeeSummaries, 'payout_from_finance'));
         $totals['compensation_due_to_company_total'] = $compensationDueToCompany;
@@ -148,7 +154,10 @@ class MonthlyAccounting
     {
         return DailyReport::query()
             ->with([
-                'dailySchedule' => fn ($query) => $query->with('user:id,name,account,avatar_path'),
+                'dailySchedule' => fn ($query) => $query->with([
+                    'user:id,name,account,avatar_path',
+                    'cleaningProject',
+                ]),
                 'companyRemittance',
             ])
             ->whereHas('dailySchedule', function ($query) use ($year, $month) {
@@ -290,8 +299,13 @@ class MonthlyAccounting
             $travelAllowance = (int) $report->travel_allowance;
 
             $financial = CompanyRemittanceSupport::financialBreakdown($report);
-            $companyInboundExpected = $report->paid_to_company ? (int) $summary['company_transfer'] : 0;
-            $companyTransferConfirmed = ($report->paid_to_company && CompanyRemittanceSupport::countsTowardHongyiAccount($report))
+            $isProjectRemittance = $schedule->cleaning_project_id
+                && $schedule->cleaningProject
+                && (bool) $schedule->cleaningProject->expects_company_remittance;
+            $companyInboundExpected = ($report->paid_to_company && ! $isProjectRemittance)
+                ? (int) $summary['company_transfer']
+                : 0;
+            $companyTransferConfirmed = ($companyInboundExpected > 0 && CompanyRemittanceSupport::countsTowardHongyiAccount($report))
                 ? $companyInboundExpected
                 : 0;
 
@@ -447,40 +461,122 @@ class MonthlyAccounting
     }
 
     /**
-     * @param  list<array<string, mixed>>  $employees
+     * @return array{expected:int, confirmed:int}
+     */
+    private static function remittanceTotalsForMonth(int $year, int $month): array
+    {
+        $remittances = CompanyRemittanceSupport::monthQuery($year, $month)->get();
+
+        return [
+            'expected' => (int) $remittances->sum('amount'),
+            'confirmed' => (int) $remittances
+                ->where('status', CompanyRemittance::STATUS_CONFIRMED)
+                ->sum('amount'),
+        ];
+    }
+
+    /**
      * @return list<array<string, mixed>>
      */
-    private static function companyTransfersFromEmployees(array $employees): array
+    private static function companyTransfersForMonth(int $year, int $month): array
     {
-        $transfers = [];
+        return CompanyRemittanceSupport::monthQuery($year, $month)
+            ->with([
+                'report.dailySchedule.user:id,name',
+                'report.dailySchedule.cleaningProject.schedules.user:id,name',
+                'cleaningProject.schedules.dailyReport',
+                'cleaningProject.schedules.user:id,name',
+            ])
+            ->orderBy('expected_remittance_date')
+            ->orderBy('created_at')
+            ->orderBy('id')
+            ->get()
+            ->map(fn (CompanyRemittance $remittance) => self::companyTransferPayload($remittance))
+            ->values()
+            ->all();
+    }
 
-        foreach ($employees as $employee) {
-            foreach ($employee['reports'] ?? [] as $report) {
-                if ((int) ($report['company_inbound_expected'] ?? 0) <= 0) {
+    /**
+     * @return array<string, mixed>
+     */
+    private static function companyTransferPayload(CompanyRemittance $remittance): array
+    {
+        $remittance->loadMissing([
+            'report.dailySchedule.user:id,name',
+            'report.dailySchedule.cleaningProject',
+            'cleaningProject.schedules.dailyReport',
+            'cleaningProject.schedules.user:id,name',
+        ]);
+
+        $report = $remittance->report;
+        $schedule = $report?->dailySchedule;
+        $project = $remittance->cleaningProject ?? $schedule?->cleaningProject;
+        $isProjectTotal = $project !== null && (bool) $project->expects_company_remittance;
+        $amount = (int) $remittance->amount;
+        $confirmedAmount = $remittance->status === CompanyRemittance::STATUS_CONFIRMED ? $amount : 0;
+        $advanceToEmployee = 0;
+        $completedUnits = 0;
+        $needsInvoice = (bool) ($project?->needs_invoice ?? $schedule?->needs_invoice);
+        $taskDetails = $schedule?->task_details;
+
+        if ($isProjectTotal && $project) {
+            $taskDetails = $project->task_details ?? $taskDetails;
+
+            foreach ($project->schedules as $projectSchedule) {
+                $projectReport = $projectSchedule->dailyReport;
+
+                if (! $projectReport || ! $projectReport->paid_to_company) {
                     continue;
                 }
 
-                $transfers[] = [
-                    'report_id' => $report['report_id'],
-                    'work_date' => $report['work_date'],
-                    'employee_name' => $employee['name'],
-                    'customer_name' => $report['customer_name'] ?? null,
-                    'task_details' => $report['task_details'] ?? null,
-                    'completed_units' => (int) ($report['completed_units'] ?? 0),
-                    'needs_invoice' => (bool) ($report['needs_invoice'] ?? false),
-                    'amount' => (int) $report['company_inbound_expected'],
-                    'confirmed_amount' => (int) ($report['company_transfer'] ?? 0),
-                    'advance_to_employee' => (int) ($report['advance_to_employee'] ?? 0),
-                    'remittance_status' => $report['remittance_status'] ?? null,
-                    'remittance_status_label' => $report['remittance_status_label'] ?? '待入帳',
-                ];
+                $breakdown = CompanyRemittanceSupport::financialBreakdown($projectReport);
+                $advanceToEmployee += (int) $breakdown['advance_to_employee'];
+                $completedUnits += (int) $projectReport->completed_units;
             }
+        } elseif ($report) {
+            $breakdown = CompanyRemittanceSupport::financialBreakdown($report);
+            $advanceToEmployee = (int) $breakdown['advance_to_employee'];
+            $completedUnits = (int) $report->completed_units;
+            $needsInvoice = (bool) $report->has_tax
+                || (bool) $report->needs_invoice_and_mail
+                || (bool) $schedule?->needs_invoice;
         }
 
-        usort($transfers, fn ($a, $b) => strcmp((string) $a['work_date'], (string) $b['work_date'])
-            ?: strcmp((string) $a['employee_name'], (string) $b['employee_name']));
+        $employeeName = $schedule?->user?->name;
 
-        return $transfers;
+        if ($isProjectTotal && $project) {
+            $employeeName = $project->schedules
+                ->pluck('user.name')
+                ->filter()
+                ->unique()
+                ->values()
+                ->join('、') ?: $employeeName;
+        }
+
+        $workDate = $isProjectTotal
+            ? ($project?->planned_end_date?->format('Y-m-d') ?? (string) $project?->planned_end_date)
+            : ($schedule?->work_date?->format('Y-m-d') ?? (string) $schedule?->work_date);
+
+        if ($remittance->expected_remittance_date !== null) {
+            $workDate = $remittance->expected_remittance_date->format('Y-m-d');
+        }
+
+        return [
+            'remittance_id' => $remittance->id,
+            'report_id' => $remittance->report_id,
+            'cleaning_project_id' => $project?->id,
+            'work_date' => $workDate,
+            'employee_name' => $employeeName,
+            'customer_name' => $project?->customer_name ?? $schedule?->customer_name,
+            'task_details' => $taskDetails,
+            'completed_units' => $completedUnits,
+            'needs_invoice' => $needsInvoice,
+            'amount' => $amount,
+            'confirmed_amount' => $confirmedAmount,
+            'advance_to_employee' => $advanceToEmployee,
+            'remittance_status' => $remittance->status,
+            'remittance_status_label' => CompanyRemittanceSupport::statusLabel($remittance->status),
+        ];
     }
 
     /**

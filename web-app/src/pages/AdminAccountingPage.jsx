@@ -400,7 +400,7 @@ export default function AdminAccountingPage() {
                 </thead>
                 <tbody>
                   {companyTransfers.map((transfer) => (
-                    <tr key={transfer.report_id}>
+                    <tr key={transfer.remittance_id ?? transfer.report_id}>
                       <td>{transfer.work_date}</td>
                       <td>{transfer.employee_name}</td>
                       <td>

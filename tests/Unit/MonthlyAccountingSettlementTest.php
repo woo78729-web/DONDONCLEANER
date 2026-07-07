@@ -71,7 +71,7 @@ class MonthlyAccountingSettlementTest extends TestCase
             [[
                 'collect_from_employee' => 50000,
                 'advance_to_employee' => 69600,
-                'company_inbound_expected' => 121800,
+                'company_inbound_expected' => 112350,
                 'company_share_due' => 135300,
                 'invoice_surcharge_due' => 6050,
                 'remittance_company_share' => 46400,
@@ -96,7 +96,7 @@ class MonthlyAccountingSettlementTest extends TestCase
         $this->assertSame(141350, $totals['operating_income']);
         $this->assertSame(114058, $totals['gross_profit']);
         $this->assertSame(57029, $totals['profit_share_half']);
-        $this->assertSame(-55091, $totals['hongyi_payment']);
+        $this->assertSame(-45641, $totals['hongyi_payment']);
     }
 
     public function test_travel_allowance_counts_toward_atai_advance_and_monthly_expense(): void

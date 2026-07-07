@@ -116,6 +116,60 @@ class AdminEnhancementApiTest extends TestCase
             ->assertJsonPath('data.company_transfers.0.advance_to_employee', 1200);
     }
 
+    public function test_accounting_hongyi_account_matches_remittance_tracking_for_multi_schedule_project(): void
+    {
+        Sanctum::actingAs($this->admin);
+
+        $employeeTwo = User::query()->create([
+            'account' => 'emp2acct',
+            'password' => Hash::make('password123'),
+            'name' => '員工二',
+            'role' => 'employee',
+            'is_active' => true,
+            'rules_accepted_at' => now(),
+            'must_change_password' => false,
+        ]);
+
+        $start = now()->subDays(10)->toDateString();
+        $end = now()->subDays(8)->toDateString();
+        $yearMonth = substr($end, 0, 7);
+
+        $this->postJson('/api/admin/projects', [
+            'employee_ids' => [$this->employee->id, $employeeTwo->id],
+            'planned_start_date' => $start,
+            'planned_end_date' => $end,
+            'customer_name' => '多派班匯款客戶',
+            'customer_phone' => '0912345678',
+            'customer_address' => '台東市',
+            'customer_source' => 'phone',
+            'expects_company_remittance' => true,
+            'pricing_lines' => [
+                ['ac_units' => 4, 'unit_price' => 1000],
+            ],
+        ])->assertCreated();
+
+        $remittanceId = $this->getJson('/api/admin/remittance-tracking?year_month='.$yearMonth)
+            ->assertOk()
+            ->assertJsonPath('data.totals.pending_amount', 4000)
+            ->json('data.pending.0.id');
+
+        $this->postJson("/api/admin/remittance-tracking/{$remittanceId}/split", [
+            'split_amount' => 1500,
+        ])->assertOk();
+
+        $this->patchJson("/api/admin/remittance-tracking/{$remittanceId}/confirm")
+            ->assertOk();
+
+        $this->getJson('/api/admin/accounting?year_month='.$yearMonth)
+            ->assertOk()
+            ->assertJsonCount(2, 'data.company_transfers')
+            ->assertJsonPath('data.totals.company_inbound_expected', 4000)
+            ->assertJsonPath('data.totals.company_transfer', 2500)
+            ->assertJsonPath('data.totals.company_transfer_count', 2)
+            ->assertJsonPath('data.company_transfers.0.customer_name', '多派班匯款客戶')
+            ->assertJsonPath('data.company_transfers.1.customer_name', '多派班匯款客戶');
+    }
+
     public function test_accounting_summary_includes_compensation_due_to_atai(): void
     {
         Sanctum::actingAs($this->admin);
