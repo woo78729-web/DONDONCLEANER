@@ -508,8 +508,8 @@ export function normalizePricingLines(lines, fallbackUnits = 1, fallbackUnitPric
   })];
 }
 
-export function summarizePricingLines(lines) {
-  const normalized = normalizePricingLines(lines);
+export function summarizePricingLines(lines, fallbackUnits = 1, fallbackUnitPrice = 1500, scheduleContext = null) {
+  const normalized = normalizePricingLines(lines, fallbackUnits, fallbackUnitPrice, scheduleContext);
   let totalUnits = 0;
   let customerTotal = 0;
   let hongyiFee = 0;
@@ -600,23 +600,30 @@ export function getDefaultStartTime(workDate, userId, schedules = []) {
 
 export function buildScheduleSuccessSummary(form, employees = [], { mode = 'create' } = {}) {
   const employee = employees.find((item) => String(item.id) === String(form.user_id));
-  const pricing = summarizePricingLines(form.pricing_lines);
-  const serviceAddresses = normalizeServiceAddresses(form);
+  const synced = syncInvoiceTaxFlags(form);
+  const pricing = summarizePricingLines(
+    synced.pricing_lines,
+    synced.ac_units ?? 1,
+    synced.unit_price ?? 1500,
+    synced,
+  );
+  const serviceAddresses = normalizeServiceAddresses(synced);
   const acUnits = serviceAddresses.length > 1
     ? serviceAddresses.reduce((total, row) => total + (Number(row.ac_units) || 0), 0)
-    : Number(pricing.ac_units) || 0;
+    : Number(pricing.ac_units) || Number(synced.ac_units) || 0;
 
   return {
     mode,
-    work_date: form.work_date,
-    start_time: form.start_time,
-    end_time: form.end_time,
-    customer_name: form.customer_name,
-    customer_address: form.customer_address,
-    customer_phone: form.customer_phone,
+    work_date: synced.work_date,
+    start_time: synced.start_time,
+    end_time: synced.end_time,
+    customer_name: synced.customer_name,
+    customer_address: synced.customer_address,
+    customer_phone: synced.customer_phone,
     employee_name: employee?.name || '未指定',
     ac_units: acUnits,
     cleaning_price: Number(pricing.cleaning_price) || 0,
+    pricing_lines: pricing.pricing_lines,
   };
 }
 
@@ -671,7 +678,12 @@ export function inferUnitPrice(schedule) {
 
 export function applyPriceCalculation(form) {
   const synced = syncInvoiceTaxFlags(form);
-  const summary = summarizePricingLines(synced.pricing_lines);
+  const summary = summarizePricingLines(
+    synced.pricing_lines,
+    synced.ac_units ?? 1,
+    synced.unit_price ?? 1500,
+    synced,
+  );
   let serviceAddresses = normalizeServiceAddresses(synced);
   if (serviceAddresses.length === 1) {
     serviceAddresses = serviceAddresses.map((row) => ({
@@ -1022,9 +1034,15 @@ export function getScheduleDisplayUnits(schedule) {
 }
 
 export function getSchedulePlannedPrice(schedule) {
-  const lines = normalizePricingLines(schedule?.pricing_lines);
+  const hasPricingLines = Array.isArray(schedule?.pricing_lines) && schedule.pricing_lines.length > 0;
 
-  if (lines.length > 0) {
+  if (hasPricingLines) {
+    const lines = normalizePricingLines(
+      schedule.pricing_lines,
+      schedule?.ac_units ?? 1,
+      inferUnitPrice(schedule),
+      schedule,
+    );
     const total = Number(summarizePricingLines(lines).cleaning_price) || 0;
 
     if (total > 0) {
@@ -2100,7 +2118,12 @@ export function buildSchedulePayload(form, { original = null, userRole = 'admin'
 
   const hidePricing = userRole === 'customer_service';
   const synced = syncInvoiceTaxFlags(form);
-  const summary = summarizePricingLines(synced.pricing_lines);
+  const summary = summarizePricingLines(
+    synced.pricing_lines,
+    synced.ac_units ?? 1,
+    synced.unit_price ?? 1500,
+    synced,
+  );
   const needsInvoice = Boolean(summary.needs_invoice || synced.needs_invoice);
   const pricingLines = summary.pricing_lines.map((line) => ({
     ac_units: Number(line.ac_units),
@@ -2183,7 +2206,12 @@ export function buildSchedulePayload(form, { original = null, userRole = 'admin'
 
 export function buildProjectPayload(form) {
   const synced = syncInvoiceTaxFlags(form);
-  const summary = summarizePricingLines(synced.pricing_lines);
+  const summary = summarizePricingLines(
+    synced.pricing_lines,
+    synced.ac_units ?? 1,
+    synced.unit_price ?? 1500,
+    synced,
+  );
   const needsInvoice = deriveNeedsInvoice({ ...synced, pricing_lines: summary.pricing_lines });
   const pricingLines = summary.pricing_lines.map((line) => ({
     ac_units: Number(line.ac_units),
@@ -2267,7 +2295,12 @@ function enforceMailTrackingPayload(payload, form) {
 export function buildSchedulePayloads(form, options = {}) {
   const addresses = normalizeServiceAddresses(form);
   const synced = syncInvoiceTaxFlags(form);
-  const summary = summarizePricingLines(synced.pricing_lines);
+  const summary = summarizePricingLines(
+    synced.pricing_lines,
+    synced.ac_units ?? 1,
+    synced.unit_price ?? 1500,
+    synced,
+  );
   const totalUnits = getTotalPricingUnits(synced);
   const groupPrice = Number(summary.cleaning_price) || 0;
   const normalizedLines = normalizePricingLines(synced.pricing_lines);
