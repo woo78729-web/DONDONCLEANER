@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\CompanyRemittance;
 use App\Support\CompanyRemittanceSupport;
+use App\Support\FundRoutingService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -93,6 +94,8 @@ class RemittanceTrackingController extends Controller
         $remittance->confirmed_at = now();
         $remittance->save();
 
+        FundRoutingService::onRemittanceConfirmed($remittance->fresh());
+
         return $this->success(
             CompanyRemittanceSupport::payload($remittance->fresh()),
             '已確認入帳'
@@ -136,6 +139,10 @@ class RemittanceTrackingController extends Controller
         }
 
         $remittance->save();
+
+        if ($remittance->status === CompanyRemittance::STATUS_CONFIRMED) {
+            FundRoutingService::onRemittanceConfirmed($remittance->fresh());
+        }
 
         return $this->success(
             CompanyRemittanceSupport::payload($remittance->fresh()),

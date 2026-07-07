@@ -21,6 +21,8 @@ class CompanyRemittance extends Model
         'expected_remittance_date',
         'reminded_at',
         'confirmed_at',
+        'fund_transaction_id',
+        'destination_account_id',
     ];
 
     protected function casts(): array
@@ -41,5 +43,15 @@ class CompanyRemittance extends Model
     public function cleaningProject(): BelongsTo
     {
         return $this->belongsTo(CleaningProject::class, 'cleaning_project_id');
+    }
+
+    public function fundTransaction(): BelongsTo
+    {
+        return $this->belongsTo(FundTransaction::class, 'fund_transaction_id');
+    }
+
+    public function destinationAccount(): BelongsTo
+    {
+        return $this->belongsTo(FundAccount::class, 'destination_account_id');
     }
 }

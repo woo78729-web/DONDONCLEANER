@@ -50,6 +50,7 @@ class DailyReport extends Model
     {
         return [
             'paid_to_company' => 'boolean',
+            'fund_routed_at' => 'datetime',
             'invoice_sent' => 'boolean',
             'invoice_sent_at' => 'datetime',
             'mailed_at' => 'date:Y-m-d',

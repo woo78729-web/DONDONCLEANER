@@ -45,7 +45,9 @@ class EmployeeReportSupport
 
         CompanyRemittanceSupport::syncForReport($report);
 
-        return $report;
+        FundRoutingService::onReportPosted($report->fresh());
+
+        return $report->fresh();
     }
 
     /**
@@ -57,6 +59,8 @@ class EmployeeReportSupport
         $report->save();
 
         CompanyRemittanceSupport::syncForReport($report->fresh());
+
+        FundRoutingService::onReportPosted($report->fresh());
 
         return $report->fresh();
     }
