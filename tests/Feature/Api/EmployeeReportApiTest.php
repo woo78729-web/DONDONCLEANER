@@ -256,6 +256,28 @@ class EmployeeReportApiTest extends TestCase
             ->assertJsonPath('data.schedules.1.customer_name', '今日客戶');
     }
 
+    public function test_calendar_block_without_report_is_not_overdue(): void
+    {
+        \Carbon\Carbon::setTestNow(\Carbon\Carbon::parse('2026-07-06 09:00:00'));
+
+        DailySchedule::query()->create($this->scheduleAttributes([
+            'user_id' => $this->employee->id,
+            'work_date' => '2026-06-05',
+            'start_time' => '09:00',
+            'end_time' => '21:00',
+            'customer_name' => '專案占位',
+            'schedule_kind' => \App\Models\CleaningProject::SCHEDULE_KIND_CALENDAR_BLOCK,
+            'ac_units' => 0,
+            'cleaning_price' => 0,
+        ]));
+
+        Sanctum::actingAs($this->employee);
+
+        $this->getJson('/api/employee/schedules?view=today')
+            ->assertOk()
+            ->assertJsonPath('data.overdue_unreported_count', 0);
+    }
+
     public function test_employee_schedule_range_is_capped_at_tomorrow(): void
     {
         $tomorrow = now()->addDay()->toDateString();

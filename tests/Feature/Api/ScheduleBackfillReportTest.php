@@ -90,4 +90,30 @@ class ScheduleBackfillReportTest extends TestCase
         $scheduleId = $response->json('data.id');
         $this->assertNull(DailyReport::query()->where('schedule_id', $scheduleId)->first());
     }
+
+    public function test_backfill_command_creates_missing_past_reports(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-07-06 10:00:00'));
+
+        $schedule = \App\Models\DailySchedule::query()->create($this->scheduleAttributes([
+            'user_id' => $this->employee->id,
+            'work_date' => '2026-06-05',
+            'start_time' => '09:00',
+            'end_time' => '21:00',
+            'customer_name' => '補單客戶',
+            'ac_units' => 3,
+            'pricing_lines' => [
+                ['ac_units' => 3, 'unit_price' => 1000],
+            ],
+        ]));
+
+        $this->assertNull(DailyReport::query()->where('schedule_id', $schedule->id)->first());
+
+        $this->artisan('schedule:backfill-reports', ['--month' => '2026-06'])
+            ->assertSuccessful();
+
+        $report = DailyReport::query()->where('schedule_id', $schedule->id)->first();
+        $this->assertNotNull($report);
+        $this->assertSame(3, (int) $report->completed_units);
+    }
 }

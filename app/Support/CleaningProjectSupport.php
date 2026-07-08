@@ -982,6 +982,10 @@ class CleaningProjectSupport
                 CompanyRemittanceSupport::syncForProject($project);
             }
 
+            ScheduleBackfillSupport::backfillMissingReports(
+                yearMonth: $project->planned_start_date?->format('Y-m'),
+            );
+
             $summary['total_ac_units'] = (int) $project->fresh()->total_ac_units;
 
             return $summary;

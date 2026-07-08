@@ -3,6 +3,7 @@
 namespace App\Support;
 
 use App\Models\DailySchedule;
+use App\Support\ScheduleBackfillSupport;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
@@ -20,6 +21,10 @@ class EmployeeScheduleSupport
 
     public static function isOverdueUnreported(DailySchedule $schedule, ?Carbon $now = null): bool
     {
+        if (! ScheduleBackfillSupport::requiresTechnicianReport($schedule)) {
+            return false;
+        }
+
         if ($schedule->dailyReport) {
             return false;
         }
@@ -47,6 +52,8 @@ class EmployeeScheduleSupport
         return DailySchedule::query()
             ->with(self::scheduleRelations())
             ->where('user_id', $userId)
+            ->where('schedule_kind', '!=', \App\Models\CleaningProject::SCHEDULE_KIND_CALENDAR_BLOCK)
+            ->where('ac_units', '>=', 1)
             ->whereDoesntHave('dailyReport')
             ->where(function (Builder $builder) use ($today, $currentTime) {
                 $builder

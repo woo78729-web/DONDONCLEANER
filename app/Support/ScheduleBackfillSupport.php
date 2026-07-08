@@ -8,6 +8,15 @@ use Carbon\Carbon;
 
 class ScheduleBackfillSupport
 {
+    public static function requiresTechnicianReport(DailySchedule $schedule): bool
+    {
+        if ($schedule->schedule_kind === \App\Models\CleaningProject::SCHEDULE_KIND_CALENDAR_BLOCK) {
+            return false;
+        }
+
+        return (int) $schedule->ac_units >= 1;
+    }
+
     public static function isStrictlyPastWorkDate(string $workDate, ?Carbon $now = null): bool
     {
         return Carbon::parse($workDate)->startOfDay()->lt(($now ?? now())->copy()->startOfDay());
@@ -19,11 +28,7 @@ class ScheduleBackfillSupport
             return false;
         }
 
-        if ($schedule->schedule_kind === \App\Models\CleaningProject::SCHEDULE_KIND_CALENDAR_BLOCK) {
-            return false;
-        }
-
-        if ((int) $schedule->ac_units < 1) {
+        if (! self::requiresTechnicianReport($schedule)) {
             return false;
         }
 
@@ -63,5 +68,61 @@ class ScheduleBackfillSupport
             $schedule,
             self::buildAutoReportInput($schedule)
         );
+    }
+
+    /**
+     * 補跑過去日期、尚未回報且應自動回報的班表（例如早期補單漏跑）。
+     *
+     * @return array{matched:int, created:int, dry_run:bool}
+     */
+    public static function backfillMissingReports(
+        ?int $userId = null,
+        ?string $yearMonth = null,
+        bool $dryRun = false,
+        ?Carbon $now = null,
+    ): array {
+        $query = DailySchedule::query()
+            ->whereDoesntHave('dailyReport')
+            ->where('schedule_kind', '!=', \App\Models\CleaningProject::SCHEDULE_KIND_CALENDAR_BLOCK)
+            ->where('ac_units', '>=', 1);
+
+        if ($userId !== null) {
+            $query->where('user_id', $userId);
+        }
+
+        if ($yearMonth !== null) {
+            [$year, $month] = array_pad(explode('-', $yearMonth), 2, null);
+
+            if ($year && $month) {
+                $query
+                    ->whereYear('work_date', (int) $year)
+                    ->whereMonth('work_date', (int) $month);
+            }
+        }
+
+        $matched = 0;
+        $created = 0;
+
+        foreach ($query->orderBy('work_date')->orderBy('id')->get() as $schedule) {
+            if (! self::shouldAutoReport($schedule, $now)) {
+                continue;
+            }
+
+            $matched++;
+
+            if ($dryRun) {
+                continue;
+            }
+
+            if (self::createReportIfPastBackfill($schedule, $now) !== null) {
+                $created++;
+            }
+        }
+
+        return [
+            'matched' => $matched,
+            'created' => $created,
+            'dry_run' => $dryRun,
+        ];
     }
 }

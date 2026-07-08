@@ -4,6 +4,7 @@ namespace App\Providers;
 
 use App\Console\Commands\BackfillFundLedger;
 use App\Console\Commands\BackfillMonthlyFixedExpenses;
+use App\Console\Commands\BackfillScheduleReports;
 use App\Console\Commands\ConsolidateProjectSettlement;
 use App\Console\Commands\DedupeProjectRemittances;
 use App\Console\Commands\EnsureAdminAccount;
@@ -26,6 +27,7 @@ class AppServiceProvider extends ServiceProvider
         ArtisanApplication::starting(function ($artisan): void {
             $artisan->resolve(BackfillMonthlyFixedExpenses::class);
             $artisan->resolve(BackfillFundLedger::class);
+            $artisan->resolve(BackfillScheduleReports::class);
             $artisan->resolve(ConsolidateProjectSettlement::class);
             $artisan->resolve(DedupeProjectRemittances::class);
             $artisan->resolve(EnsureAdminAccount::class);

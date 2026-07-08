@@ -925,7 +925,19 @@ export function hasScheduleReport(schedule) {
   return Boolean(schedule?.daily_report || schedule?.dailyReport);
 }
 
+export function requiresTechnicianReport(schedule) {
+  if (schedule?.schedule_kind === 'calendar_block') {
+    return false;
+  }
+
+  return Number(schedule?.ac_units || 0) >= 1;
+}
+
 export function isScheduleOverdueUnreported(schedule, now = new Date()) {
+  if (!requiresTechnicianReport(schedule)) {
+    return false;
+  }
+
   if (hasScheduleReport(schedule)) {
     return false;
   }
