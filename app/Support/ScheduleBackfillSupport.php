@@ -2,6 +2,8 @@
 
 namespace App\Support;
 
+use App\Models\CleaningProject;
+use App\Models\CompanyRemittance;
 use App\Models\DailyReport;
 use App\Models\DailySchedule;
 use Carbon\Carbon;
@@ -29,6 +31,10 @@ class ScheduleBackfillSupport
         }
 
         if (! self::requiresTechnicianReport($schedule)) {
+            return false;
+        }
+
+        if (self::isSupersededProjectDailySchedule($schedule)) {
             return false;
         }
 
@@ -122,6 +128,99 @@ class ScheduleBackfillSupport
         return [
             'matched' => $matched,
             'created' => $created,
+            'dry_run' => $dryRun,
+        ];
+    }
+
+    /**
+     * 專案已改「整張工單分台」後，舊的逐日 regular 班表不應再自動回報。
+     */
+    public static function isSupersededProjectDailySchedule(DailySchedule $schedule): bool
+    {
+        if (! $schedule->cleaning_project_id) {
+            return false;
+        }
+
+        if ($schedule->schedule_kind !== CleaningProject::SCHEDULE_KIND_REGULAR) {
+            return false;
+        }
+
+        $schedule->loadMissing('cleaningProject.schedules');
+
+        return $schedule->cleaningProject?->schedules->contains(
+            fn (DailySchedule $row) => (int) $row->user_id === (int) $schedule->user_id
+                && $row->schedule_kind === CleaningProject::SCHEDULE_KIND_ASSIGNMENT
+                && (int) $row->id !== (int) $schedule->id,
+        ) ?? false;
+    }
+
+    /**
+     * 清除占位／零台班表上的幽靈回報，以及專案整理後殘留的逐日班表。
+     *
+     * @return array{ghost_reports:int, duplicate_schedules:int, dry_run:bool}
+     */
+    public static function cleanupObsoleteProjectReports(
+        ?string $yearMonth = null,
+        bool $dryRun = false,
+    ): array {
+        $query = DailyReport::query()->with([
+            'dailySchedule.cleaningProject.schedules',
+        ]);
+
+        if ($yearMonth !== null) {
+            [$year, $month] = array_pad(explode('-', $yearMonth), 2, null);
+
+            if ($year && $month) {
+                $query->whereHas('dailySchedule', function ($builder) use ($year, $month) {
+                    $builder
+                        ->whereYear('work_date', (int) $year)
+                        ->whereMonth('work_date', (int) $month);
+                });
+            }
+        }
+
+        $ghostReports = 0;
+        $duplicateSchedules = 0;
+
+        foreach ($query->get() as $report) {
+            $schedule = $report->dailySchedule;
+
+            if (! $schedule) {
+                continue;
+            }
+
+            if (
+                $schedule->schedule_kind === CleaningProject::SCHEDULE_KIND_CALENDAR_BLOCK
+                || (int) $schedule->ac_units < 1
+            ) {
+                $ghostReports++;
+
+                if (! $dryRun) {
+                    if ($schedule->schedule_kind === CleaningProject::SCHEDULE_KIND_CALENDAR_BLOCK) {
+                        CompanyRemittance::query()->where('report_id', $report->id)->delete();
+                        $report->delete();
+                    } else {
+                        ScheduleDeletionSupport::deleteWithDependents($schedule);
+                    }
+                }
+
+                continue;
+            }
+
+            if (! self::isSupersededProjectDailySchedule($schedule)) {
+                continue;
+            }
+
+            $duplicateSchedules++;
+
+            if (! $dryRun) {
+                ScheduleDeletionSupport::deleteWithDependents($schedule);
+            }
+        }
+
+        return [
+            'ghost_reports' => $ghostReports,
+            'duplicate_schedules' => $duplicateSchedules,
             'dry_run' => $dryRun,
         ];
     }

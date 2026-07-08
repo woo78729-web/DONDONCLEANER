@@ -116,4 +116,33 @@ class ScheduleBackfillReportTest extends TestCase
         $this->assertNotNull($report);
         $this->assertSame(3, (int) $report->completed_units);
     }
+
+    public function test_cleanup_removes_ghost_report_on_calendar_block(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-07-06 10:00:00'));
+
+        $schedule = \App\Models\DailySchedule::query()->create($this->scheduleAttributes([
+            'user_id' => $this->employee->id,
+            'work_date' => '2026-06-05',
+            'schedule_kind' => \App\Models\CleaningProject::SCHEDULE_KIND_CALENDAR_BLOCK,
+            'ac_units' => 0,
+            'cleaning_price' => 0,
+        ]));
+
+        DailyReport::query()->create([
+            'schedule_id' => $schedule->id,
+            'planned_units' => 0,
+            'completed_units' => 0,
+            'collected_amount' => 400,
+            'paid_to_company' => false,
+        ]);
+
+        $this->artisan('schedule:backfill-reports', [
+            '--month' => '2026-06',
+            '--skip-cleanup' => false,
+        ])->assertSuccessful();
+
+        $this->assertNull(DailyReport::query()->where('schedule_id', $schedule->id)->first());
+        $this->assertNotNull(\App\Models\DailySchedule::query()->find($schedule->id));
+    }
 }
