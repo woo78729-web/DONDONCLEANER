@@ -525,7 +525,7 @@ export default function AdminSchedulesPage() {
           </span>
         </div>
 
-        {renderEmployeeStrip()}
+        {!isMobile && renderEmployeeStrip()}
 
         <ScheduleAreaFilter selectedAreas={selectedAreas} onChange={setSelectedAreas} />
 
@@ -581,41 +581,46 @@ export default function AdminSchedulesPage() {
           )}
 
           {isMobile && (
-            <div className="schedule-mobile-toolbar" aria-label="派班快捷功能">
-              <div className="schedule-mobile-toolbar__actions">
+            <div className="schedule-mobile-header">
+              <div className="schedule-mobile-toolbar" aria-label="派班快捷功能">
+                <div className="schedule-mobile-toolbar__actions">
+                  <button
+                    type="button"
+                    className="schedule-mobile-toolbar__btn"
+                    onClick={() => setMobileFilterOpen(true)}
+                  >
+                    篩選
+                  </button>
+                  {canAccess(user, 'schedules.manage') && (
+                    <Link to="/admin/regional-scheduling" className="schedule-mobile-toolbar__btn schedule-mobile-toolbar__link">
+                      區域
+                    </Link>
+                  )}
+                  {canAccess(user, 'phone.lookup') && (
+                    <Link to="/admin/phone-lookup" className="schedule-mobile-toolbar__btn schedule-mobile-toolbar__link">
+                      電話
+                    </Link>
+                  )}
+                  <button
+                    type="button"
+                    className="schedule-mobile-toolbar__btn"
+                    onClick={goToday}
+                  >
+                    今天
+                  </button>
+                </div>
                 <button
                   type="button"
-                  className="schedule-mobile-toolbar__btn"
-                  onClick={() => setMobileFilterOpen(true)}
+                  className="schedule-mobile-toolbar__fab"
+                  aria-label="新增行程"
+                  onClick={() => openCreate({ start: new Date(), useDefaultShift: true })}
                 >
-                  篩選
-                </button>
-                {canAccess(user, 'schedules.manage') && (
-                  <Link to="/admin/regional-scheduling" className="schedule-mobile-toolbar__btn schedule-mobile-toolbar__link">
-                    區域
-                  </Link>
-                )}
-                {canAccess(user, 'phone.lookup') && (
-                  <Link to="/admin/phone-lookup" className="schedule-mobile-toolbar__btn schedule-mobile-toolbar__link">
-                    電話
-                  </Link>
-                )}
-                <button
-                  type="button"
-                  className="schedule-mobile-toolbar__btn"
-                  onClick={goToday}
-                >
-                  今天
+                  +
                 </button>
               </div>
-              <button
-                type="button"
-                className="schedule-mobile-toolbar__fab"
-                aria-label="新增行程"
-                onClick={() => openCreate({ start: new Date(), useDefaultShift: true })}
-              >
-                +
-              </button>
+              <div className="schedule-mobile-employee-bar" aria-label="師傅篩選">
+                {renderEmployeeStrip()}
+              </div>
             </div>
           )}
 
