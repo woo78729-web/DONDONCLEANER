@@ -428,6 +428,72 @@
   background: rgba(255, 140, 0, 0.28);
 }
 
+.calendar-mini-month__day.is-disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.calendar-mini-month__day.is-disabled:hover {
+  background: transparent;
+}
+
+.date-picker-input {
+  position: relative;
+  width: 100%;
+}
+
+.date-picker-input__display {
+  width: 100%;
+  cursor: pointer;
+}
+
+.date-picker-input__popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 1200;
+  width: min(100%, 320px);
+  border-radius: 14px;
+  background: rgba(8, 8, 10, 0.98);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+}
+
+.date-picker-input__calendar {
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.date-picker-input__footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.date-picker-input__footer-btn {
+  border: 0;
+  background: transparent;
+  color: var(--brand-500);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 4px 0;
+}
+
+.date-picker-input__footer-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.date-picker-input__footer-btn:hover:not(:disabled) {
+  color: #ffab40;
+}
+
 .calendar-mini-month__dot {
   position: absolute;
   bottom: 4px;

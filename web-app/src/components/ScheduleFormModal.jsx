@@ -31,6 +31,7 @@ import { AddressAutocompleteInput } from './AddressAutocompleteInput';
 import { CustomerWashHistory } from './CustomerWashHistory';
 import { EmployeeDayScheduleSidebar } from './EmployeeDayScheduleSidebar';
 import { InvoiceTaxIdFields } from './InvoiceTaxIdFields';
+import { DatePickerInput } from './DatePickerInput';
 import './schedule-calendar.css';
 
 function updateForm(onChange, form, partial) {
@@ -357,12 +358,10 @@ export function ScheduleFormModal({
 
           <label className="field schedule-form-modal__date-field">
             <span className="field-label">預約日期</span>
-            <input
-              className="field-control"
-              type="date"
+            <DatePickerInput
               value={form.work_date}
               min={getMinScheduleWorkDate(userRole)}
-              onChange={(e) => handleChange({ work_date: e.target.value })}
+              onChange={(workDate) => handleChange({ work_date: workDate })}
               required
             />
           </label>
