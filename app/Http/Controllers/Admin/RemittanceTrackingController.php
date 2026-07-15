@@ -9,7 +9,6 @@ use App\Support\FundRoutingService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\Schema;
 
 class RemittanceTrackingController extends Controller
 {
@@ -76,14 +75,7 @@ class RemittanceTrackingController extends Controller
             return $this->error('此筆匯款已入帳', 422);
         }
 
-        $remittance->status = CompanyRemittance::STATUS_REMINDED;
-        $remittance->reminded_at = now();
-
-        if (Schema::hasColumn('company_remittances', 'alert_snooze_until')) {
-            $remittance->alert_snooze_until = now()->addDays(CompanyRemittanceSupport::REMIND_SNOOZE_DAYS);
-        }
-
-        $remittance->save();
+        CompanyRemittanceSupport::dismissAlerts([$remittance->id]);
 
         return $this->success(
             CompanyRemittanceSupport::payload($remittance->fresh()),

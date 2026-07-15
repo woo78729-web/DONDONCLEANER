@@ -251,6 +251,72 @@ class RemittanceTrackingApiTest extends TestCase
             ->assertJsonPath('data.count', 0);
     }
 
+    public function test_dismiss_alerts_snoozes_all_split_project_remittances(): void
+    {
+        Sanctum::actingAs($this->admin);
+
+        $workDate = now()->subDays(20)->toDateString();
+
+        $this->postJson('/api/admin/projects', [
+            'employee_ids' => [$this->employee->id],
+            'planned_start_date' => $workDate,
+            'planned_end_date' => $workDate,
+            'customer_name' => '拆帳催繳客戶',
+            'customer_phone' => '0912345678',
+            'customer_address' => '台東市',
+            'customer_source' => 'phone',
+            'expects_company_remittance' => true,
+            'pricing_lines' => [
+                ['ac_units' => 4, 'unit_price' => 1000],
+            ],
+        ])->assertCreated();
+
+        $yearMonth = substr($workDate, 0, 7);
+        $primaryId = $this->getJson('/api/admin/remittance-tracking?year_month='.$yearMonth)
+            ->assertOk()
+            ->json('data.pending.0.id');
+
+        $splitId = $this->postJson("/api/admin/remittance-tracking/{$primaryId}/split", [
+            'split_amount' => 1500,
+        ])
+            ->assertOk()
+            ->json('data.split.id');
+
+        \App\Models\CompanyRemittance::query()
+            ->whereIn('id', [$primaryId, $splitId])
+            ->get()
+            ->each(function (\App\Models\CompanyRemittance $remittance) {
+                $remittance->status = \App\Models\CompanyRemittance::STATUS_PENDING;
+                $remittance->reminded_at = null;
+                $remittance->alert_snooze_until = null;
+                $remittance->created_at = now()->subDays(20);
+                $remittance->saveQuietly();
+            });
+
+        $this->getJson('/api/admin/remittance-tracking/alerts')
+            ->assertOk()
+            ->assertJsonPath('data.count', 1);
+
+        $this->postJson('/api/admin/remittance-tracking/alerts/dismiss', [
+            'remittance_ids' => [$splitId],
+        ])->assertOk();
+
+        $this->getJson('/api/admin/remittance-tracking/alerts')
+            ->assertOk()
+            ->assertJsonPath('data.count', 0);
+
+        $snoozed = \App\Models\CompanyRemittance::query()
+            ->whereIn('id', [$primaryId, $splitId])
+            ->get();
+
+        $this->assertCount(2, $snoozed);
+        foreach ($snoozed as $remittance) {
+            $this->assertSame(\App\Models\CompanyRemittance::STATUS_REMINDED, $remittance->status);
+            $this->assertNotNull($remittance->alert_snooze_until);
+            $this->assertTrue($remittance->alert_snooze_until->isFuture());
+        }
+    }
+
     public function test_remittance_job_shows_total_amount_advance_and_payout(): void
     {
         Sanctum::actingAs($this->admin);
