@@ -8,6 +8,7 @@ use App\Models\DailyReport;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Schema;
 
 class CompanyRemittanceSupport
 {
@@ -376,9 +377,33 @@ class CompanyRemittanceSupport
         return $remittance->created_at?->copy()->startOfDay();
     }
 
+    public static function isAlertSnoozed(CompanyRemittance $remittance): bool
+    {
+        if (! Schema::hasColumn('company_remittances', 'alert_snooze_until')) {
+            return false;
+        }
+
+        return $remittance->alert_snooze_until !== null
+            && $remittance->alert_snooze_until->isFuture();
+    }
+
+    public static function snoozeAlertUntil(CompanyRemittance $remittance, ?Carbon $until = null): void
+    {
+        if (! Schema::hasColumn('company_remittances', 'alert_snooze_until')) {
+            return;
+        }
+
+        $remittance->alert_snooze_until = $until ?? now()->addDays(self::REMIND_SNOOZE_DAYS);
+        $remittance->save();
+    }
+
     public static function isOverdue(CompanyRemittance $remittance): bool
     {
         if ($remittance->status === CompanyRemittance::STATUS_CONFIRMED) {
+            return false;
+        }
+
+        if (self::isAlertSnoozed($remittance)) {
             return false;
         }
 
@@ -411,29 +436,60 @@ class CompanyRemittanceSupport
         $pendingCutoff = $now->copy()->subDays(self::OVERDUE_DAYS)->toDateString();
         $remindedCutoff = $now->copy()->subDays(self::REMIND_SNOOZE_DAYS)->startOfDay();
 
-        return CompanyRemittance::query()
+        $query = CompanyRemittance::query()
             ->with([
                 'report.dailySchedule.user:id,name,account',
-            ])
-            ->where(function (Builder $query) use ($pendingCutoff, $remindedCutoff) {
-                $query->where(function (Builder $pending) use ($pendingCutoff) {
-                    $pending->where('status', CompanyRemittance::STATUS_PENDING)
-                        ->whereRaw('COALESCE(expected_remittance_date, date(created_at)) <= ?', [$pendingCutoff]);
-                })->orWhere(function (Builder $reminded) use ($remindedCutoff) {
-                    $reminded->where('status', CompanyRemittance::STATUS_REMINDED)
-                        ->whereNotNull('reminded_at')
-                        ->where('reminded_at', '<=', $remindedCutoff);
-                });
+            ]);
+
+        if (Schema::hasColumn('company_remittances', 'alert_snooze_until')) {
+            $query->where(function (Builder $builder) {
+                $builder->whereNull('alert_snooze_until')
+                    ->orWhere('alert_snooze_until', '<=', now());
             });
+        }
+
+        return $query->where(function (Builder $builder) use ($pendingCutoff, $remindedCutoff) {
+            $builder->where(function (Builder $pending) use ($pendingCutoff) {
+                $pending->where('status', CompanyRemittance::STATUS_PENDING)
+                    ->whereRaw('COALESCE(expected_remittance_date, date(created_at)) <= ?', [$pendingCutoff]);
+            })->orWhere(function (Builder $reminded) use ($remindedCutoff) {
+                $reminded->where('status', CompanyRemittance::STATUS_REMINDED)
+                    ->whereNotNull('reminded_at')
+                    ->where('reminded_at', '<=', $remindedCutoff);
+            });
+        });
     }
 
     public static function healMissingRemindedAt(): void
     {
+        $payload = ['reminded_at' => now()];
+
+        if (Schema::hasColumn('company_remittances', 'alert_snooze_until')) {
+            $payload['alert_snooze_until'] = now()->addDays(self::REMIND_SNOOZE_DAYS);
+        }
+
         CompanyRemittance::query()
             ->where('status', CompanyRemittance::STATUS_REMINDED)
             ->whereNull('reminded_at')
+            ->update($payload);
+    }
+
+    /**
+     * @param  list<int>|array<int, int>  $remittanceIds
+     */
+    public static function dismissAlerts(array $remittanceIds): int
+    {
+        if ($remittanceIds === [] || ! Schema::hasColumn('company_remittances', 'alert_snooze_until')) {
+            return 0;
+        }
+
+        $snoozeUntil = now()->addDays(self::REMIND_SNOOZE_DAYS);
+
+        return CompanyRemittance::query()
+            ->whereIn('id', $remittanceIds)
+            ->where('status', '!=', CompanyRemittance::STATUS_CONFIRMED)
             ->update([
-                'reminded_at' => now(),
+                'alert_snooze_until' => $snoozeUntil,
             ]);
     }
 
@@ -492,6 +548,7 @@ class CompanyRemittanceSupport
             'is_overdue' => self::isOverdue($remittance),
             'expected_remittance_date' => $remittance->expected_remittance_date?->format('Y-m-d'),
             'reminded_at' => $remittance->reminded_at?->toDateTimeString(),
+            'alert_snooze_until' => $remittance->alert_snooze_until?->toDateTimeString(),
             'confirmed_at' => $remittance->confirmed_at?->toDateTimeString(),
             'created_at' => $remittance->created_at?->toDateTimeString(),
             'work_date' => $isProjectTotal

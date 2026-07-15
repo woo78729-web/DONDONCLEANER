@@ -8,6 +8,7 @@ export function RemittanceAlertModal({
   open,
   items = [],
   onClose,
+  dismissing = false,
 }) {
   if (!open || !items.length) {
     return null;
@@ -53,8 +54,8 @@ export function RemittanceAlertModal({
           <Link to="/admin/remittance-tracking" className="btn btn-primary btn-pill" onClick={onClose}>
             前往匯款追查
           </Link>
-          <button type="button" className="btn btn-secondary btn-pill" onClick={onClose}>
-            我知道了
+          <button type="button" className="btn btn-secondary btn-pill" onClick={onClose} disabled={dismissing}>
+            {dismissing ? '處理中...' : '我知道了'}
           </button>
         </div>
       </div>

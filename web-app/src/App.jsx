@@ -29,12 +29,14 @@ import EmployeeLeavePage from './pages/EmployeeLeavePage';
 import EmployeeSettingsPage from './pages/EmployeeSettingsPage';
 import EmployeeOnboardingPage from './pages/EmployeeOnboardingPage';
 import EmployeeRulesPage from './pages/EmployeeRulesPage';
+import { RemittanceAlertHost } from './components/RemittanceAlertHost';
 
 export default function App() {
   return (
     <AppErrorBoundary>
       <AuthProvider>
         <BrowserRouter basename={import.meta.env.BASE_URL.replace(/\/$/, '') || '/spa'}>
+        <RemittanceAlertHost />
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/login/google-callback" element={<GoogleAuthCallbackPage />} />

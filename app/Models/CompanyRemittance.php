@@ -20,6 +20,7 @@ class CompanyRemittance extends Model
         'status',
         'expected_remittance_date',
         'reminded_at',
+        'alert_snooze_until',
         'confirmed_at',
         'fund_transaction_id',
         'destination_account_id',
@@ -31,6 +32,7 @@ class CompanyRemittance extends Model
             'amount' => 'integer',
             'expected_remittance_date' => 'date',
             'reminded_at' => 'datetime',
+            'alert_snooze_until' => 'datetime',
             'confirmed_at' => 'datetime',
         ];
     }

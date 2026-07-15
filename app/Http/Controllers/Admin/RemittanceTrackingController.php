@@ -77,11 +77,24 @@ class RemittanceTrackingController extends Controller
         $remittance->status = CompanyRemittance::STATUS_REMINDED;
         $remittance->reminded_at = now();
         $remittance->save();
+        CompanyRemittanceSupport::snoozeAlertUntil($remittance);
 
         return $this->success(
             CompanyRemittanceSupport::payload($remittance->fresh()),
             '已標記催繳，一週後若仍未入帳會再次提醒'
         );
+    }
+
+    public function dismissAlerts(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'remittance_ids' => ['required', 'array', 'min:1'],
+            'remittance_ids.*' => ['integer', 'exists:company_remittances,id'],
+        ]);
+
+        CompanyRemittanceSupport::dismissAlerts($validated['remittance_ids']);
+
+        return $this->success(null, '匯款提醒已暫停一週');
     }
 
     public function confirm(CompanyRemittance $remittance): JsonResponse

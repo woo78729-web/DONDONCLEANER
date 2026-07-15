@@ -208,6 +208,49 @@ class RemittanceTrackingApiTest extends TestCase
             ->assertJsonPath('data.count', 0);
     }
 
+    public function test_dismiss_alerts_snoozes_popup_for_one_week(): void
+    {
+        Sanctum::actingAs($this->admin);
+
+        $schedule = DailySchedule::query()->create($this->scheduleAttributes([
+            'user_id' => $this->employee->id,
+            'work_date' => now()->subDays(20)->toDateString(),
+            'pricing_lines' => [
+                ['ac_units' => 1, 'unit_price' => 1000],
+            ],
+            'ac_units' => 1,
+            'cleaning_price' => 1000,
+            'unit_price' => 1000,
+        ]));
+
+        $report = DailyReport::query()->create([
+            'schedule_id' => $schedule->id,
+            'planned_units' => 1,
+            'completed_units' => 1,
+            'collected_amount' => 0,
+            'paid_to_company' => true,
+            'created_at' => now()->subDays(20),
+            'updated_at' => now()->subDays(20),
+        ]);
+        CompanyRemittanceSupport::syncForReport($report);
+        $remittanceId = $report->fresh()->companyRemittance->id;
+        $remittance = $report->fresh()->companyRemittance;
+        $remittance->created_at = now()->subDays(20);
+        $remittance->saveQuietly();
+
+        $this->getJson('/api/admin/remittance-tracking/alerts')
+            ->assertOk()
+            ->assertJsonPath('data.count', 1);
+
+        $this->postJson('/api/admin/remittance-tracking/alerts/dismiss', [
+            'remittance_ids' => [$remittanceId],
+        ])->assertOk();
+
+        $this->getJson('/api/admin/remittance-tracking/alerts')
+            ->assertOk()
+            ->assertJsonPath('data.count', 0);
+    }
+
     public function test_remittance_job_shows_total_amount_advance_and_payout(): void
     {
         Sanctum::actingAs($this->admin);

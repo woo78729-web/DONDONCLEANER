@@ -4,11 +4,6 @@ import { useAuth } from '../context/AuthContext';
 import { assetUrl } from '../utils/assetUrl';
 import { getMobileTabItems, getNavStructure } from '../utils/navItems';
 import { canAccess, getRoleLabel } from '../utils/permissions';
-import { RemittanceAlertModal } from './RemittanceAlertModal';
-import {
-  shouldAutoOpenRemittanceAlerts,
-  suppressRemittanceAlerts,
-} from '../utils/remittanceAlertDismiss';
 import { UnitChangeAlertModal } from './UnitChangeAlertModal';
 import { api } from '../api/client';
 
@@ -128,60 +123,13 @@ export function Layout({ title, children }) {
   const location = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
   const [openNavGroup, setOpenNavGroup] = useState(null);
-  const [remittanceAlerts, setRemittanceAlerts] = useState([]);
-  const [remittanceAlertOpen, setRemittanceAlertOpen] = useState(false);
   const [unitChangeAlerts, setUnitChangeAlerts] = useState([]);
   const [unitChangeAlertOpen, setUnitChangeAlertOpen] = useState(false);
   const [dismissingUnitAlerts, setDismissingUnitAlerts] = useState(false);
 
   const navStructure = user ? getNavStructure(user) : [];
   const mobileTabItems = user ? getMobileTabItems(user) : [];
-  const canTrackRemittance = user ? canAccess(user, 'remittance.track') : false;
   const isAdmin = user?.role === 'admin';
-
-  useEffect(() => {
-    if (!user || !canTrackRemittance) {
-      setRemittanceAlerts([]);
-      setRemittanceAlertOpen(false);
-      return undefined;
-    }
-
-    let cancelled = false;
-
-    function loadRemittanceAlerts() {
-      api.getRemittanceAlerts()
-        .then((result) => {
-          if (cancelled) {
-            return;
-          }
-
-          const items = result.data?.items || [];
-          setRemittanceAlerts(items);
-          setRemittanceAlertOpen(shouldAutoOpenRemittanceAlerts(items));
-        })
-        .catch(() => {
-          if (cancelled) {
-            return;
-          }
-
-          setRemittanceAlerts([]);
-          setRemittanceAlertOpen(false);
-        });
-    }
-
-    loadRemittanceAlerts();
-    window.addEventListener('ac:remittance-alerts-refresh', loadRemittanceAlerts);
-
-    return () => {
-      cancelled = true;
-      window.removeEventListener('ac:remittance-alerts-refresh', loadRemittanceAlerts);
-    };
-  }, [user, canTrackRemittance]);
-
-  function closeRemittanceAlerts() {
-    suppressRemittanceAlerts(remittanceAlerts);
-    setRemittanceAlertOpen(false);
-  }
 
   useEffect(() => {
     if (!user || !isAdmin) {
@@ -291,12 +239,6 @@ export function Layout({ title, children }) {
         )}
 
         <main className="page-content">{children}</main>
-
-        <RemittanceAlertModal
-          open={remittanceAlertOpen}
-          items={remittanceAlerts}
-          onClose={closeRemittanceAlerts}
-        />
 
         <UnitChangeAlertModal
           open={unitChangeAlertOpen}

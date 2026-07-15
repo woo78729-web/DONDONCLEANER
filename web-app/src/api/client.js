@@ -444,6 +444,12 @@ class AcCleaningApi {
     return this.request('GET', '/admin/remittance-tracking/alerts');
   }
 
+  dismissRemittanceAlerts(remittanceIds) {
+    return this.request('POST', '/admin/remittance-tracking/alerts/dismiss', {
+      body: { remittance_ids: remittanceIds },
+    });
+  }
+
   getUnitChangeAlerts() {
     return this.request('GET', '/admin/reports/unit-change-alerts');
   }

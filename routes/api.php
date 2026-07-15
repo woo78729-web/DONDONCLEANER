@@ -69,6 +69,7 @@ Route::middleware(['auth:sanctum', 'role:admin|customer_service|finance'])->pref
     Route::get('/maintenance-records/{maintenanceRecord}', [MaintenanceRecordController::class, 'show']);
     Route::get('/remittance-tracking', [RemittanceTrackingController::class, 'index']);
     Route::get('/remittance-tracking/alerts', [RemittanceTrackingController::class, 'alerts']);
+    Route::post('/remittance-tracking/alerts/dismiss', [RemittanceTrackingController::class, 'dismissAlerts']);
     Route::patch('/remittance-tracking/{remittance}/remind', [RemittanceTrackingController::class, 'remind']);
     Route::patch('/remittance-tracking/{remittance}/confirm', [RemittanceTrackingController::class, 'confirm']);
     Route::post('/remittance-tracking/{remittance}/split', [RemittanceTrackingController::class, 'split']);
