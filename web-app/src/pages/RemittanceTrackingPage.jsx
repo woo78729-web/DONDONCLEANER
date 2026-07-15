@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { Layout } from '../components/Layout';
 import { PageAlert } from '../components/PageAlert';
 import { api } from '../api/client';
+import { snoozeRemittanceAlertsLocally } from '../utils/remittanceAlertSnooze';
 import '../components/schedule-calendar.css';
 
 function currentYearMonth() {
@@ -151,6 +152,7 @@ export default function RemittanceTrackingPage() {
     try {
       await api.remindRemittance(remittanceId);
       setMessage('已標記催繳，一週後若仍未入帳會再次提醒');
+      snoozeRemittanceAlertsLocally([remittanceId]);
       window.dispatchEvent(new CustomEvent('ac:remittance-alerts-refresh'));
       await loadTracking(yearMonth);
     } catch (err) {

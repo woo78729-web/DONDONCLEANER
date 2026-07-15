@@ -1,7 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../api/client';
 import { canAccess } from '../utils/permissions';
+import {
+  filterActiveRemittanceAlerts,
+  snoozeRemittanceAlertsLocally,
+} from '../utils/remittanceAlertSnooze';
 import { RemittanceAlertModal } from './RemittanceAlertModal';
 
 export function RemittanceAlertHost() {
@@ -9,14 +13,31 @@ export function RemittanceAlertHost() {
   const [alerts, setAlerts] = useState([]);
   const [open, setOpen] = useState(false);
   const [dismissing, setDismissing] = useState(false);
-  const autoOpenedRef = useRef(false);
+  const hasAutoOpenedRef = useRef(false);
   const canTrackRemittance = user ? canAccess(user, 'remittance.track') : false;
+
+  const applyAlerts = useCallback((items) => {
+    const activeItems = filterActiveRemittanceAlerts(items);
+
+    setAlerts(activeItems);
+
+    if (!activeItems.length) {
+      setOpen(false);
+      hasAutoOpenedRef.current = false;
+      return;
+    }
+
+    if (!hasAutoOpenedRef.current) {
+      setOpen(true);
+      hasAutoOpenedRef.current = true;
+    }
+  }, []);
 
   useEffect(() => {
     if (!canTrackRemittance) {
       setAlerts([]);
       setOpen(false);
-      autoOpenedRef.current = false;
+      hasAutoOpenedRef.current = false;
       return undefined;
     }
 
@@ -29,19 +50,7 @@ export function RemittanceAlertHost() {
             return;
           }
 
-          const items = result.data?.items || [];
-          setAlerts(items);
-
-          if (!items.length) {
-            setOpen(false);
-            autoOpenedRef.current = false;
-            return;
-          }
-
-          if (!autoOpenedRef.current) {
-            setOpen(true);
-            autoOpenedRef.current = true;
-          }
+          applyAlerts(result.data?.items || []);
         })
         .catch(() => {
           if (cancelled) {
@@ -60,7 +69,7 @@ export function RemittanceAlertHost() {
       cancelled = true;
       window.removeEventListener('ac:remittance-alerts-refresh', loadRemittanceAlerts);
     };
-  }, [canTrackRemittance]);
+  }, [applyAlerts, canTrackRemittance]);
 
   async function handleClose() {
     if (!alerts.length) {
@@ -68,15 +77,18 @@ export function RemittanceAlertHost() {
       return;
     }
 
+    const remittanceIds = alerts.map((item) => item.id);
+
     setDismissing(true);
+    snoozeRemittanceAlertsLocally(remittanceIds);
+    setAlerts([]);
+    setOpen(false);
+    hasAutoOpenedRef.current = false;
 
     try {
-      await api.dismissRemittanceAlerts(alerts.map((item) => item.id));
-      setAlerts([]);
-      setOpen(false);
-      autoOpenedRef.current = false;
+      await api.dismissRemittanceAlerts(remittanceIds);
     } catch {
-      setOpen(false);
+      // Local snooze still prevents repeat popups this week.
     } finally {
       setDismissing(false);
     }

@@ -431,6 +431,7 @@ class CompanyRemittanceSupport
     public static function overdueQuery(): Builder
     {
         self::healMissingRemindedAt();
+        self::healRecentRemindedSnooze();
 
         $now = now();
         $pendingCutoff = $now->copy()->subDays(self::OVERDUE_DAYS)->toDateString();
@@ -474,23 +475,63 @@ class CompanyRemittanceSupport
             ->update($payload);
     }
 
+    public static function healRecentRemindedSnooze(): void
+    {
+        if (! Schema::hasColumn('company_remittances', 'alert_snooze_until')) {
+            return;
+        }
+
+        $recentCutoff = now()->subDays(self::REMIND_SNOOZE_DAYS);
+
+        CompanyRemittance::query()
+            ->where('status', CompanyRemittance::STATUS_REMINDED)
+            ->whereNotNull('reminded_at')
+            ->where('reminded_at', '>=', $recentCutoff)
+            ->where(function (Builder $query) {
+                $query->whereNull('alert_snooze_until')
+                    ->orWhere('alert_snooze_until', '<', now());
+            })
+            ->get()
+            ->each(function (CompanyRemittance $remittance) {
+                $remittance->alert_snooze_until = $remittance->reminded_at
+                    ->copy()
+                    ->addDays(self::REMIND_SNOOZE_DAYS);
+                $remittance->save();
+            });
+    }
+
     /**
      * @param  list<int>|array<int, int>  $remittanceIds
      */
     public static function dismissAlerts(array $remittanceIds): int
     {
-        if ($remittanceIds === [] || ! Schema::hasColumn('company_remittances', 'alert_snooze_until')) {
+        if ($remittanceIds === []) {
             return 0;
         }
 
         $snoozeUntil = now()->addDays(self::REMIND_SNOOZE_DAYS);
+        $updated = 0;
 
-        return CompanyRemittance::query()
+        CompanyRemittance::query()
             ->whereIn('id', $remittanceIds)
             ->where('status', '!=', CompanyRemittance::STATUS_CONFIRMED)
-            ->update([
-                'alert_snooze_until' => $snoozeUntil,
-            ]);
+            ->get()
+            ->each(function (CompanyRemittance $remittance) use ($snoozeUntil, &$updated) {
+                if ($remittance->status !== CompanyRemittance::STATUS_REMINDED) {
+                    $remittance->status = CompanyRemittance::STATUS_REMINDED;
+                }
+
+                $remittance->reminded_at = now();
+
+                if (Schema::hasColumn('company_remittances', 'alert_snooze_until')) {
+                    $remittance->alert_snooze_until = $snoozeUntil;
+                }
+
+                $remittance->save();
+                $updated++;
+            });
+
+        return $updated;
     }
 
     public static function statusLabel(string $status): string
