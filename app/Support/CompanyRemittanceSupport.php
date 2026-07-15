@@ -382,13 +382,16 @@ class CompanyRemittanceSupport
             return false;
         }
 
-        $now = now();
+        $now = now()->copy()->startOfDay();
 
         if ($remittance->status === CompanyRemittance::STATUS_REMINDED) {
-            $anchor = $remittance->reminded_at ?? self::expectedRemittanceAnchor($remittance);
+            if ($remittance->reminded_at === null) {
+                return false;
+            }
 
-            return $anchor !== null
-                && $anchor->copy()->addDays(self::REMIND_SNOOZE_DAYS)->lte($now);
+            $anchor = $remittance->reminded_at->copy()->startOfDay();
+
+            return $anchor->copy()->addDays(self::REMIND_SNOOZE_DAYS)->lte($now);
         }
 
         $anchor = self::expectedRemittanceAnchor($remittance);
@@ -402,9 +405,11 @@ class CompanyRemittanceSupport
      */
     public static function overdueQuery(): Builder
     {
+        self::healMissingRemindedAt();
+
         $now = now();
         $pendingCutoff = $now->copy()->subDays(self::OVERDUE_DAYS)->toDateString();
-        $remindedCutoff = $now->copy()->subDays(self::REMIND_SNOOZE_DAYS);
+        $remindedCutoff = $now->copy()->subDays(self::REMIND_SNOOZE_DAYS)->startOfDay();
 
         return CompanyRemittance::query()
             ->with([
@@ -416,9 +421,20 @@ class CompanyRemittanceSupport
                         ->whereRaw('COALESCE(expected_remittance_date, date(created_at)) <= ?', [$pendingCutoff]);
                 })->orWhere(function (Builder $reminded) use ($remindedCutoff) {
                     $reminded->where('status', CompanyRemittance::STATUS_REMINDED)
+                        ->whereNotNull('reminded_at')
                         ->where('reminded_at', '<=', $remindedCutoff);
                 });
             });
+    }
+
+    public static function healMissingRemindedAt(): void
+    {
+        CompanyRemittance::query()
+            ->where('status', CompanyRemittance::STATUS_REMINDED)
+            ->whereNull('reminded_at')
+            ->update([
+                'reminded_at' => now(),
+            ]);
     }
 
     public static function statusLabel(string $status): string

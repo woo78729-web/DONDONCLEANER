@@ -172,6 +172,42 @@ class RemittanceTrackingApiTest extends TestCase
             ->assertJsonPath('data.count', 0);
     }
 
+    public function test_reminded_without_timestamp_does_not_trigger_alert_until_healed(): void
+    {
+        Sanctum::actingAs($this->admin);
+
+        $schedule = DailySchedule::query()->create($this->scheduleAttributes([
+            'user_id' => $this->employee->id,
+            'work_date' => now()->subDays(20)->toDateString(),
+            'pricing_lines' => [
+                ['ac_units' => 1, 'unit_price' => 1000],
+            ],
+            'ac_units' => 1,
+            'cleaning_price' => 1000,
+            'unit_price' => 1000,
+        ]));
+
+        $report = DailyReport::query()->create([
+            'schedule_id' => $schedule->id,
+            'planned_units' => 1,
+            'completed_units' => 1,
+            'collected_amount' => 0,
+            'paid_to_company' => true,
+            'created_at' => now()->subDays(20),
+            'updated_at' => now()->subDays(20),
+        ]);
+        CompanyRemittanceSupport::syncForReport($report);
+        $remittance = $report->fresh()->companyRemittance;
+        $remittance->status = \App\Models\CompanyRemittance::STATUS_REMINDED;
+        $remittance->reminded_at = null;
+        $remittance->created_at = now()->subDays(20);
+        $remittance->saveQuietly();
+
+        $this->getJson('/api/admin/remittance-tracking/alerts')
+            ->assertOk()
+            ->assertJsonPath('data.count', 0);
+    }
+
     public function test_remittance_job_shows_total_amount_advance_and_payout(): void
     {
         Sanctum::actingAs($this->admin);

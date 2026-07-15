@@ -5,6 +5,10 @@ import { assetUrl } from '../utils/assetUrl';
 import { getMobileTabItems, getNavStructure } from '../utils/navItems';
 import { canAccess, getRoleLabel } from '../utils/permissions';
 import { RemittanceAlertModal } from './RemittanceAlertModal';
+import {
+  shouldAutoOpenRemittanceAlerts,
+  suppressRemittanceAlerts,
+} from '../utils/remittanceAlertDismiss';
 import { UnitChangeAlertModal } from './UnitChangeAlertModal';
 import { api } from '../api/client';
 
@@ -139,20 +143,45 @@ export function Layout({ title, children }) {
     if (!user || !canTrackRemittance) {
       setRemittanceAlerts([]);
       setRemittanceAlertOpen(false);
-      return;
+      return undefined;
     }
 
-    api.getRemittanceAlerts()
-      .then((result) => {
-        const items = result.data?.items || [];
-        setRemittanceAlerts(items);
-        setRemittanceAlertOpen(items.length > 0);
-      })
-      .catch(() => {
-        setRemittanceAlerts([]);
-        setRemittanceAlertOpen(false);
-      });
+    let cancelled = false;
+
+    function loadRemittanceAlerts() {
+      api.getRemittanceAlerts()
+        .then((result) => {
+          if (cancelled) {
+            return;
+          }
+
+          const items = result.data?.items || [];
+          setRemittanceAlerts(items);
+          setRemittanceAlertOpen(shouldAutoOpenRemittanceAlerts(items));
+        })
+        .catch(() => {
+          if (cancelled) {
+            return;
+          }
+
+          setRemittanceAlerts([]);
+          setRemittanceAlertOpen(false);
+        });
+    }
+
+    loadRemittanceAlerts();
+    window.addEventListener('ac:remittance-alerts-refresh', loadRemittanceAlerts);
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener('ac:remittance-alerts-refresh', loadRemittanceAlerts);
+    };
   }, [user, canTrackRemittance]);
+
+  function closeRemittanceAlerts() {
+    suppressRemittanceAlerts(remittanceAlerts);
+    setRemittanceAlertOpen(false);
+  }
 
   useEffect(() => {
     if (!user || !isAdmin) {
@@ -266,7 +295,7 @@ export function Layout({ title, children }) {
         <RemittanceAlertModal
           open={remittanceAlertOpen}
           items={remittanceAlerts}
-          onClose={() => setRemittanceAlertOpen(false)}
+          onClose={closeRemittanceAlerts}
         />
 
         <UnitChangeAlertModal
