@@ -60,6 +60,7 @@ class RemittanceTrackingController extends Controller
             ->orderBy('created_at')
             ->get()
             ->filter(fn (CompanyRemittance $item) => CompanyRemittanceSupport::isOverdue($item))
+            ->unique(fn (CompanyRemittance $item) => CompanyRemittanceSupport::alertDedupeKey($item))
             ->map(fn (CompanyRemittance $item) => CompanyRemittanceSupport::payload($item))
             ->values();
 

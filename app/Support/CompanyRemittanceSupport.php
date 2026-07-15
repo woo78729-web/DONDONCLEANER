@@ -430,6 +430,7 @@ class CompanyRemittanceSupport
      */
     public static function overdueQuery(): Builder
     {
+        self::healDuplicateOverdueRemittances();
         self::healMissingRemindedAt();
         self::healRecentRemindedSnooze();
 
@@ -459,6 +460,74 @@ class CompanyRemittanceSupport
                     ->where('reminded_at', '<=', $remindedCutoff);
             });
         });
+    }
+
+    public static function healDuplicateOverdueRemittances(): void
+    {
+        $projectIds = CompanyRemittance::query()
+            ->whereNotNull('cleaning_project_id')
+            ->distinct()
+            ->pluck('cleaning_project_id');
+
+        foreach ($projectIds as $projectId) {
+            $rows = CompanyRemittance::query()
+                ->where('cleaning_project_id', $projectId)
+                ->orderBy('id')
+                ->get();
+
+            if ($rows->count() <= 1) {
+                continue;
+            }
+
+            $primary = $rows->sortByDesc(function (CompanyRemittance $item) {
+                $score = 0;
+
+                if ($item->status === CompanyRemittance::STATUS_REMINDED) {
+                    $score += 100;
+                }
+
+                if (self::isAlertSnoozed($item)) {
+                    $score += 50;
+                }
+
+                return ($score * 1_000_000) + $item->id;
+            })->first();
+
+            CompanyRemittance::query()
+                ->where('cleaning_project_id', $projectId)
+                ->where('id', '!=', $primary->id)
+                ->delete();
+        }
+
+        CompanyRemittance::query()
+            ->with(['report.dailySchedule'])
+            ->whereNull('cleaning_project_id')
+            ->whereHas('report.dailySchedule', fn (Builder $query) => $query->whereNotNull('cleaning_project_id'))
+            ->get()
+            ->each(function (CompanyRemittance $orphan) {
+                $projectId = $orphan->report?->dailySchedule?->cleaning_project_id;
+
+                if (! $projectId) {
+                    return;
+                }
+
+                $hasProjectRow = CompanyRemittance::query()
+                    ->where('cleaning_project_id', $projectId)
+                    ->exists();
+
+                if ($hasProjectRow) {
+                    $orphan->delete();
+                }
+            });
+    }
+
+    public static function alertDedupeKey(CompanyRemittance $remittance): string
+    {
+        if ($remittance->cleaning_project_id) {
+            return 'project:'.$remittance->cleaning_project_id;
+        }
+
+        return 'report:'.$remittance->report_id;
     }
 
     public static function healMissingRemindedAt(): void

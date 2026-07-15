@@ -88,7 +88,9 @@ export function RemittanceAlertHost() {
     try {
       await api.dismissRemittanceAlerts(remittanceIds);
     } catch {
-      // Local snooze still prevents repeat popups this week.
+      await Promise.all(
+        remittanceIds.map((id) => api.remindRemittance(id).catch(() => null)),
+      );
     } finally {
       setDismissing(false);
     }
