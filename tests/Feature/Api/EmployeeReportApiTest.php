@@ -197,7 +197,7 @@ class EmployeeReportApiTest extends TestCase
         $this->assertSame(11000, (int) $schedule->cleaning_price);
     }
 
-    public function test_employee_cannot_report_more_than_planned_units(): void
+    public function test_employee_can_report_more_than_planned_units_with_reason(): void
     {
         $workDate = now()->toDateString();
 
@@ -219,8 +219,43 @@ class EmployeeReportApiTest extends TestCase
             'completed_units' => 6,
             'skip_reason' => '客戶臨時加一台',
             'collected_amount' => 9000,
+        ])->assertCreated()
+            ->assertJsonPath('data.completed_units', 6)
+            ->assertJsonPath('data.planned_units', 5)
+            ->assertJsonPath('data.unit_mismatch', true)
+            ->assertJsonPath('data.skip_reason', '客戶臨時加一台');
+
+        Sanctum::actingAs($this->admin);
+
+        $this->getJson('/api/admin/reports/unit-change-alerts')
+            ->assertOk()
+            ->assertJsonCount(1, 'data.items')
+            ->assertJsonPath('data.items.0.completed_units', 6);
+    }
+
+    public function test_employee_cannot_report_unit_mismatch_without_reason(): void
+    {
+        $workDate = now()->toDateString();
+
+        $schedule = DailySchedule::query()->create($this->scheduleAttributes([
+            'user_id' => $this->employee->id,
+            'work_date' => $workDate,
+            'ac_units' => 5,
+            'pricing_lines' => [
+                ['ac_units' => 5, 'unit_price' => 1500],
+            ],
+            'cleaning_price' => 7500,
+            'task_details' => '5台1500=7500',
+        ]));
+
+        Sanctum::actingAs($this->employee);
+
+        $this->postJson('/api/employee/reports', [
+            'schedule_id' => $schedule->id,
+            'completed_units' => 6,
+            'collected_amount' => 9000,
         ])->assertStatus(422)
-            ->assertJsonPath('message', '完成台數不可超過預計 5 台，若現場多洗請聯絡管理員調整排班');
+            ->assertJsonPath('message', '台數異動需填寫原因');
     }
 
     public function test_employee_can_get_tomorrow_schedules(): void

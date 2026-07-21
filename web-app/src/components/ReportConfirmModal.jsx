@@ -36,6 +36,12 @@ export function ReportConfirmModal({
                   <dd>{summary.skippedUnits}</dd>
                 </div>
               )}
+              {summary.extraUnits > 0 && (
+                <div>
+                  <dt>多洗台數</dt>
+                  <dd>{summary.extraUnits}</dd>
+                </div>
+              )}
               <div>
                 <dt>台數異動原因</dt>
                 <dd>{summary.skipReason || '-'}</dd>

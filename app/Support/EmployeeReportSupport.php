@@ -117,7 +117,6 @@ class EmployeeReportSupport
         array $input,
         ?DailyReport $existingReport = null,
         bool $requireSkipReason = true,
-        bool $allowExceedPlanned = false,
     ): array {
         $plannedUnits = (int) $schedule->ac_units;
         $hasTax = (bool) ($input['has_tax'] ?? false);
@@ -150,14 +149,10 @@ class EmployeeReportSupport
             $lines = EmployeeRemittance::scaleLines($lines, $completedUnits, $plannedUnits);
         }
 
-        if (! $allowExceedPlanned) {
-            self::assertCompletedUnitsWithinPlanned($completedUnits, $plannedUnits);
-        }
-
         $skippedUnits = max(0, $plannedUnits - $completedUnits);
         $unitMismatch = $completedUnits !== $plannedUnits;
 
-        if ($requireSkipReason && $unitMismatch && $completedUnits < $plannedUnits && $skipReason === '') {
+        if ($requireSkipReason && $unitMismatch && $skipReason === '') {
             throw new \InvalidArgumentException('台數異動需填寫原因');
         }
 
@@ -286,19 +281,6 @@ class EmployeeReportSupport
         $schedule->save();
 
         return $schedule->fresh();
-    }
-
-    private static function assertCompletedUnitsWithinPlanned(int $completedUnits, int $plannedUnits): void
-    {
-        if ($completedUnits <= $plannedUnits) {
-            return;
-        }
-
-        throw new \InvalidArgumentException(
-            $plannedUnits > 0
-                ? "完成台數不可超過預計 {$plannedUnits} 台，若現場多洗請聯絡管理員調整排班"
-                : '完成台數不可超過預計台數'
-        );
     }
 
     /**

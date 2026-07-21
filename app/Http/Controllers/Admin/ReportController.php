@@ -168,7 +168,6 @@ class ReportController extends Controller
                 $input,
                 $report,
                 $requireSkipReason,
-                $allowExceedPlanned,
             );
         } catch (\InvalidArgumentException $exception) {
             return $this->error($exception->getMessage(), 422);

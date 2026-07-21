@@ -87,23 +87,21 @@ function EmployeeReportForm({
             className="field-control"
             type="number"
             min="0"
-            max={calculated.plannedUnits}
             value={draft.completed_units}
             onChange={(event) => updateDraft({ completed_units: event.target.value })}
             required
           />
         </label>
         <label className="field">
-          <span className="field-label">未洗台數</span>
-          <input className="field-control" type="number" value={calculated.skippedUnits} readOnly />
+          <span className="field-label">{calculated.unitsExceedPlanned ? '多洗台數' : '未洗台數'}</span>
+          <input
+            className="field-control"
+            type="number"
+            value={calculated.unitsExceedPlanned ? calculated.extraUnits : calculated.skippedUnits}
+            readOnly
+          />
         </label>
       </div>
-
-      {calculated.unitsExceedPlanned && (
-        <p className="form-error">
-          完成台數不可超過預計 {calculated.plannedUnits} 台，若現場多洗請聯絡管理員調整排班。
-        </p>
-      )}
 
       {calculated.unitMismatch && (
         <>
@@ -114,7 +112,7 @@ function EmployeeReportForm({
               onChange={updatePricingLines}
               showTax
               showRemove={false}
-              maxUnits={calculated.plannedUnits}
+              maxUnits={Math.max(calculated.completedUnits, calculated.plannedUnits, 1)}
             />
           </div>
 
@@ -125,7 +123,7 @@ function EmployeeReportForm({
               rows={2}
               value={draft.skip_reason}
               onChange={(event) => updateDraft({ skip_reason: event.target.value })}
-              placeholder="請說明完成台數與排班不同的原因"
+              placeholder="請說明完成台數與排班不同的原因（管理員會審核）"
               required
             />
           </label>
@@ -206,11 +204,7 @@ function EmployeeReportForm({
       )}
 
       <div className="toolbar-actions">
-        <button
-          type="submit"
-          className="btn btn-primary"
-          disabled={submitting || calculated.unitsExceedPlanned}
-        >
+        <button type="submit" className="btn btn-primary" disabled={submitting}>
           {submitting ? '處理中...' : '確認送出回報'}
         </button>
       </div>
@@ -262,11 +256,6 @@ export default function EmployeeDailyReportPage() {
   function openConfirm(schedule) {
     const draft = drafts[schedule.id];
     const calculated = calculateEmployeeReportDraft(schedule, draft);
-
-    if (calculated.unitsExceedPlanned) {
-      setError(`完成台數不可超過預計 ${calculated.plannedUnits} 台，若現場多洗請聯絡管理員調整排班`);
-      return;
-    }
 
     if (calculated.unitMismatch && !draft.skip_reason?.trim()) {
       setError('台數異動需填寫原因');
