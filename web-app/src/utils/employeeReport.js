@@ -117,8 +117,9 @@ function getEffectivePricingLines(schedule, draft, completedUnits, plannedUnits)
 export function calculateEmployeeReportDraft(schedule, draft) {
   const plannedUnits = Number(schedule?.ac_units || 0);
   const completedUnits = Math.max(0, Number(draft.completed_units || 0));
-  const skippedUnits = Math.max(0, plannedUnits - completedUnits);
-  const unitMismatch = completedUnits !== plannedUnits;
+  const unitsExceedPlanned = plannedUnits > 0 && completedUnits > plannedUnits;
+  const unitMismatch = completedUnits < plannedUnits;
+  const skippedUnits = unitMismatch ? plannedUnits - completedUnits : 0;
   const hasTax = Boolean(draft.has_tax);
   const needsInvoiceAndMail = Boolean(draft.needs_invoice_and_mail);
   const needsReceiptAndMail = Boolean(draft.needs_receipt_and_mail);
@@ -136,6 +137,7 @@ export function calculateEmployeeReportDraft(schedule, draft) {
     plannedUnits,
     completedUnits,
     skippedUnits,
+    unitsExceedPlanned,
     unitMismatch,
     pricingLines,
     needsInvoice,
@@ -210,7 +212,7 @@ export function ensureMismatchPricingLines(schedule, draft) {
   const plannedUnits = Number(schedule?.ac_units || 0);
   const completedUnits = Math.max(0, Number(draft.completed_units || 0));
 
-  if (completedUnits === plannedUnits) {
+  if (completedUnits >= plannedUnits) {
     const next = { ...draft };
     delete next.pricing_lines;
     return next;
@@ -227,9 +229,13 @@ export function ensureMismatchPricingLines(schedule, draft) {
 }
 
 export function syncDraftFromPricingLines(schedule, draft, pricingLines) {
-  const completedUnits = pricingLines.reduce(
-    (total, line) => total + Number(line.ac_units || 0),
-    0,
+  const plannedUnits = Number(schedule?.ac_units || 0);
+  const completedUnits = Math.min(
+    plannedUnits,
+    pricingLines.reduce(
+      (total, line) => total + Number(line.ac_units || 0),
+      0,
+    ),
   );
 
   return ensureMismatchPricingLines(schedule, {

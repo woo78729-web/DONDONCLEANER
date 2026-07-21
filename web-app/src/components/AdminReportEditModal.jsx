@@ -65,6 +65,13 @@ export function AdminReportEditModal({
     event.preventDefault();
     setError('');
 
+    const calculated = calculateEmployeeReportDraft(schedule, draft);
+
+    if (calculated.unitsExceedPlanned) {
+      setError(`完成台數不可超過預計 ${calculated.plannedUnits} 台，若現場多洗請聯絡管理員調整排班`);
+      return;
+    }
+
     setSubmitting(true);
 
     try {
@@ -114,6 +121,12 @@ export function AdminReportEditModal({
               <input className="field-control" type="number" value={calculated.skippedUnits} readOnly />
             </label>
           </div>
+
+          {calculated.unitsExceedPlanned && (
+            <p className="form-error">
+              完成台數不可超過預計 {calculated.plannedUnits} 台，若現場多洗請先調整排班台數。
+            </p>
+          )}
 
           {calculated.skippedUnits > 0 && (
             <label className="field">
@@ -196,7 +209,7 @@ export function AdminReportEditModal({
           </label>
 
           <div className="modal-actions">
-            <button type="submit" className="btn btn-primary" disabled={submitting}>
+            <button type="submit" className="btn btn-primary" disabled={submitting || calculated.unitsExceedPlanned}>
               {submitting ? '儲存中...' : '儲存調整'}
             </button>
             <button type="button" className="btn btn-secondary" onClick={onClose}>取消</button>

@@ -158,6 +158,32 @@ class EmployeeReportApiTest extends TestCase
             ->assertJsonPath('data.unit_mismatch', true);
     }
 
+    public function test_employee_cannot_report_more_than_planned_units(): void
+    {
+        $workDate = now()->toDateString();
+
+        $schedule = DailySchedule::query()->create($this->scheduleAttributes([
+            'user_id' => $this->employee->id,
+            'work_date' => $workDate,
+            'ac_units' => 5,
+            'pricing_lines' => [
+                ['ac_units' => 5, 'unit_price' => 1500],
+            ],
+            'cleaning_price' => 7500,
+            'task_details' => '5台1500=7500',
+        ]));
+
+        Sanctum::actingAs($this->employee);
+
+        $this->postJson('/api/employee/reports', [
+            'schedule_id' => $schedule->id,
+            'completed_units' => 6,
+            'skip_reason' => '客戶臨時加一台',
+            'collected_amount' => 9000,
+        ])->assertStatus(422)
+            ->assertJsonPath('message', '完成台數不可超過預計 5 台，若現場多洗請聯絡管理員調整排班');
+    }
+
     public function test_employee_can_get_tomorrow_schedules(): void
     {
         $tomorrow = now()->addDay()->toDateString();

@@ -149,8 +149,10 @@ class EmployeeReportSupport
             $lines = EmployeeRemittance::scaleLines($lines, $completedUnits, $plannedUnits);
         }
 
+        self::assertCompletedUnitsWithinPlanned($completedUnits, $plannedUnits);
+
         $skippedUnits = max(0, $plannedUnits - $completedUnits);
-        $unitMismatch = $completedUnits !== $plannedUnits;
+        $unitMismatch = $completedUnits < $plannedUnits;
 
         if ($requireSkipReason && $unitMismatch && $skipReason === '') {
             throw new \InvalidArgumentException('台數異動需填寫原因');
@@ -254,6 +256,19 @@ class EmployeeReportSupport
             'created_at' => $report->created_at?->toDateTimeString(),
             'daily_schedule' => $report->dailySchedule,
         ];
+    }
+
+    private static function assertCompletedUnitsWithinPlanned(int $completedUnits, int $plannedUnits): void
+    {
+        if ($completedUnits <= $plannedUnits) {
+            return;
+        }
+
+        throw new \InvalidArgumentException(
+            $plannedUnits > 0
+                ? "完成台數不可超過預計 {$plannedUnits} 台，若現場多洗請聯絡管理員調整排班"
+                : '完成台數不可超過預計台數'
+        );
     }
 
     /**
