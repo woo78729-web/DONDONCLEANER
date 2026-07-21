@@ -117,6 +117,7 @@ class EmployeeReportSupport
         array $input,
         ?DailyReport $existingReport = null,
         bool $requireSkipReason = true,
+        bool $allowExceedPlanned = false,
     ): array {
         $plannedUnits = (int) $schedule->ac_units;
         $hasTax = (bool) ($input['has_tax'] ?? false);
@@ -149,12 +150,14 @@ class EmployeeReportSupport
             $lines = EmployeeRemittance::scaleLines($lines, $completedUnits, $plannedUnits);
         }
 
-        self::assertCompletedUnitsWithinPlanned($completedUnits, $plannedUnits);
+        if (! $allowExceedPlanned) {
+            self::assertCompletedUnitsWithinPlanned($completedUnits, $plannedUnits);
+        }
 
         $skippedUnits = max(0, $plannedUnits - $completedUnits);
-        $unitMismatch = $completedUnits < $plannedUnits;
+        $unitMismatch = $completedUnits !== $plannedUnits;
 
-        if ($requireSkipReason && $unitMismatch && $skipReason === '') {
+        if ($requireSkipReason && $unitMismatch && $completedUnits < $plannedUnits && $skipReason === '') {
             throw new \InvalidArgumentException('台數異動需填寫原因');
         }
 
@@ -256,6 +259,33 @@ class EmployeeReportSupport
             'created_at' => $report->created_at?->toDateTimeString(),
             'daily_schedule' => $report->dailySchedule,
         ];
+    }
+
+    public static function syncSchedulePlannedUnits(DailySchedule $schedule, int $completedUnits): DailySchedule
+    {
+        $plannedUnits = (int) $schedule->ac_units;
+
+        if ($completedUnits <= $plannedUnits) {
+            return $schedule;
+        }
+
+        $lines = SchedulePricing::normalizeLines(
+            $schedule->pricing_lines,
+            $schedule->ac_units,
+            $schedule->unit_price
+        );
+        $lines = EmployeeRemittance::scaleLines($lines, $completedUnits, $plannedUnits);
+        $summary = SchedulePricing::summarizeLines($lines, (bool) $schedule->needs_invoice);
+
+        $schedule->ac_units = $completedUnits;
+        $schedule->pricing_lines = $lines;
+        $schedule->cleaning_price = (int) $summary['cleaning_price'];
+        $schedule->unit_price = (int) $summary['unit_price'];
+        $schedule->task_details = $summary['task_details'];
+        $schedule->hongyi_fee = (int) $summary['hongyi_fee'];
+        $schedule->save();
+
+        return $schedule->fresh();
     }
 
     private static function assertCompletedUnitsWithinPlanned(int $completedUnits, int $plannedUnits): void

@@ -65,13 +65,6 @@ export function AdminReportEditModal({
     event.preventDefault();
     setError('');
 
-    const calculated = calculateEmployeeReportDraft(schedule, draft);
-
-    if (calculated.unitsExceedPlanned) {
-      setError(`完成台數不可超過預計 ${calculated.plannedUnits} 台，若現場多洗請聯絡管理員調整排班`);
-      return;
-    }
-
     setSubmitting(true);
 
     try {
@@ -110,21 +103,27 @@ export function AdminReportEditModal({
                 className="field-control"
                 type="number"
                 min="0"
-                max={calculated.plannedUnits}
                 value={draft.completed_units}
                 onChange={(event) => updateDraft({ completed_units: event.target.value })}
                 required
               />
             </label>
             <label className="field">
-              <span className="field-label">未洗台數</span>
-              <input className="field-control" type="number" value={calculated.skippedUnits} readOnly />
+              <span className="field-label">{calculated.unitsExceedPlanned ? '多洗台數' : '未洗台數'}</span>
+              <input
+                className="field-control"
+                type="number"
+                value={calculated.unitsExceedPlanned
+                  ? calculated.completedUnits - calculated.plannedUnits
+                  : calculated.skippedUnits}
+                readOnly
+              />
             </label>
           </div>
 
           {calculated.unitsExceedPlanned && (
-            <p className="form-error">
-              完成台數不可超過預計 {calculated.plannedUnits} 台，若現場多洗請先調整排班台數。
+            <p className="hint">
+              完成台數超過排班預計，儲存後會同步調整排班台數與金額。
             </p>
           )}
 
@@ -209,7 +208,7 @@ export function AdminReportEditModal({
           </label>
 
           <div className="modal-actions">
-            <button type="submit" className="btn btn-primary" disabled={submitting || calculated.unitsExceedPlanned}>
+            <button type="submit" className="btn btn-primary" disabled={submitting}>
               {submitting ? '儲存中...' : '儲存調整'}
             </button>
             <button type="button" className="btn btn-secondary" onClick={onClose}>取消</button>

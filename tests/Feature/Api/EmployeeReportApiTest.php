@@ -158,6 +158,45 @@ class EmployeeReportApiTest extends TestCase
             ->assertJsonPath('data.unit_mismatch', true);
     }
 
+    public function test_admin_can_update_report_with_more_units_than_planned(): void
+    {
+        $workDate = now()->toDateString();
+
+        $schedule = DailySchedule::query()->create($this->scheduleAttributes([
+            'user_id' => $this->employee->id,
+            'work_date' => $workDate,
+            'ac_units' => 10,
+            'pricing_lines' => [
+                ['ac_units' => 10, 'unit_price' => 1000],
+            ],
+            'cleaning_price' => 10000,
+            'task_details' => '10台1000=10000',
+        ]));
+
+        Sanctum::actingAs($this->employee);
+
+        $reportId = $this->postJson('/api/employee/reports', [
+            'schedule_id' => $schedule->id,
+            'completed_units' => 10,
+            'collected_amount' => 10000,
+        ])->json('data.id');
+
+        Sanctum::actingAs($this->admin);
+
+        $this->patchJson('/api/admin/reports/'.$reportId, [
+            'completed_units' => 11,
+            'collected_amount' => 11000,
+        ])->assertOk()
+            ->assertJsonPath('data.completed_units', 11)
+            ->assertJsonPath('data.planned_units', 11)
+            ->assertJsonPath('data.unit_mismatch', false);
+
+        $schedule->refresh();
+
+        $this->assertSame(11, (int) $schedule->ac_units);
+        $this->assertSame(11000, (int) $schedule->cleaning_price);
+    }
+
     public function test_employee_cannot_report_more_than_planned_units(): void
     {
         $workDate = now()->toDateString();

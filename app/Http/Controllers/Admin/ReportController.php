@@ -154,12 +154,21 @@ class ReportController extends Controller
         ], $validated);
 
         try {
-            $requireSkipReason = ! in_array($request->user()->role, ['admin', 'customer_service'], true);
+            $allowExceedPlanned = in_array($request->user()->role, ['admin', 'customer_service'], true);
+            $requireSkipReason = ! $allowExceedPlanned;
+            $completedUnits = (int) ($input['completed_units'] ?? $report->completed_units);
+
+            if ($allowExceedPlanned && $completedUnits > (int) $report->dailySchedule->ac_units) {
+                EmployeeReportSupport::syncSchedulePlannedUnits($report->dailySchedule, $completedUnits);
+                $report->load('dailySchedule');
+            }
+
             $payload = EmployeeReportSupport::buildFromSchedule(
                 $report->dailySchedule,
                 $input,
                 $report,
                 $requireSkipReason,
+                $allowExceedPlanned,
             );
         } catch (\InvalidArgumentException $exception) {
             return $this->error($exception->getMessage(), 422);
