@@ -42,6 +42,14 @@ export function getNavItems(user) {
 
   pushItem(items, user, {
     permission: 'schedules.manage',
+    to: '/admin/projects',
+    label: '專案專區',
+    shortLabel: '專案',
+    tabOrder: prefersSchedulesHome ? 1.2 : 2.2,
+  });
+
+  pushItem(items, user, {
+    permission: 'schedules.manage',
     to: '/admin/regional-scheduling',
     label: '區域排班',
     shortLabel: '區域',

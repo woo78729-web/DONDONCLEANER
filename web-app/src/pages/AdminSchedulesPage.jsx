@@ -596,6 +596,11 @@ export default function AdminSchedulesPage() {
                       區域
                     </Link>
                   )}
+                  {canAccess(user, 'schedules.manage') && (
+                    <Link to="/admin/projects" className="schedule-mobile-toolbar__btn schedule-mobile-toolbar__link">
+                      專案
+                    </Link>
+                  )}
                   {canAccess(user, 'phone.lookup') && (
                     <Link to="/admin/phone-lookup" className="schedule-mobile-toolbar__btn schedule-mobile-toolbar__link">
                       電話
