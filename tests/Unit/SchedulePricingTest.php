@@ -53,4 +53,20 @@ class SchedulePricingTest extends TestCase
         $this->assertSame(3150, SchedulePricing::summarizeLines($lines)['cleaning_price']);
         $this->assertSame(240, SchedulePricing::summarizeLines($lines)['hongyi_fee']);
     }
+
+    public function test_is_taxable_overrides_none_invoice_type(): void
+    {
+        $summary = SchedulePricing::summarizeLines([
+            [
+                'ac_units' => 2,
+                'unit_price' => 1500,
+                'invoice_type' => SchedulePricing::INVOICE_TYPE_NONE,
+                'is_taxable' => true,
+            ],
+        ]);
+
+        $this->assertSame(3150, $summary['cleaning_price']);
+        $this->assertSame(240, $summary['hongyi_fee']);
+        $this->assertTrue($summary['needs_invoice']);
+    }
 }

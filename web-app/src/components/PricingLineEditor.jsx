@@ -205,7 +205,11 @@ export function PricingLineEditor({
                   <input
                     type="checkbox"
                     checked={Boolean(line.is_taxable)}
-                    onChange={(event) => updateLine(line.id, { is_taxable: event.target.checked })}
+                    onChange={(event) => updateLine(line.id, {
+                      is_taxable: event.target.checked,
+                      invoice_type: event.target.checked ? INVOICE_TYPE_DUPLICATE : INVOICE_TYPE_NONE,
+                      charge_customer_tax: event.target.checked,
+                    })}
                   />
                   <span>含稅 +5%</span>
                 </label>

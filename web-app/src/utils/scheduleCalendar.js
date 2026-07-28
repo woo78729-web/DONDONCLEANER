@@ -71,6 +71,16 @@ export function hasInvoicedPricingLine(lines) {
 }
 
 export function migratePricingLineFields(line, scheduleContext = null) {
+  if (line?.is_taxable && (!line?.invoice_type || line.invoice_type === INVOICE_TYPE_NONE)) {
+    return {
+      ...line,
+      invoice_type: INVOICE_TYPE_DUPLICATE,
+      charge_customer_tax: line.charge_customer_tax !== false,
+      invoice_title: '',
+      invoice_tax_id: '',
+    };
+  }
+
   if (line?.invoice_type && INVOICE_TYPE_OPTIONS.some((option) => option.value === line.invoice_type)) {
     return {
       ...line,

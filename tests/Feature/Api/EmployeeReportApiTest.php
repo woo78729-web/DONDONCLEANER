@@ -123,6 +123,44 @@ class EmployeeReportApiTest extends TestCase
             ->assertJsonPath('message', '此班表已有回報紀錄，如需調整請聯絡管理員');
     }
 
+    public function test_employee_report_with_taxable_pricing_line_applies_surcharge(): void
+    {
+        $workDate = now()->toDateString();
+
+        $schedule = DailySchedule::query()->create($this->scheduleAttributes([
+            'user_id' => $this->employee->id,
+            'work_date' => $workDate,
+            'ac_units' => 3,
+            'pricing_lines' => [
+                ['ac_units' => 3, 'unit_price' => 1500],
+            ],
+            'cleaning_price' => 4500,
+            'task_details' => '3台1500=4500',
+        ]));
+
+        Sanctum::actingAs($this->employee);
+
+        $this->postJson('/api/employee/reports', [
+            'schedule_id' => $schedule->id,
+            'completed_units' => 2,
+            'skip_reason' => '少洗一台',
+            'has_tax' => false,
+            'collected_amount' => 3150,
+            'pricing_lines' => [
+                [
+                    'ac_units' => 2,
+                    'unit_price' => 1500,
+                    'is_taxable' => true,
+                    'invoice_type' => 'none',
+                ],
+            ],
+        ])->assertCreated()
+            ->assertJsonPath('data.completed_units', 2)
+            ->assertJsonPath('data.collected_amount', 3150)
+            ->assertJsonPath('data.has_tax', true)
+            ->assertJsonPath('data.unit_mismatch', true);
+    }
+
     public function test_admin_can_update_employee_report(): void
     {
         $workDate = now()->toDateString();

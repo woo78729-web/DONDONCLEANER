@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
+import { PricingLineEditor } from './PricingLineEditor';
 import {
   buildReportPayload,
   calculateEmployeeReportDraft,
+  ensureMismatchPricingLines,
+  syncDraftFromPricingLines,
 } from '../utils/employeeReport';
 
 export function AdminReportEditModal({
@@ -17,7 +20,7 @@ export function AdminReportEditModal({
 
   useEffect(() => {
     if (open && report && schedule) {
-      setDraft({
+      setDraft(ensureMismatchPricingLines(schedule, {
         completed_units: String(report.completed_units ?? schedule.ac_units ?? 1),
         skip_reason: report.skip_reason || '',
         has_tax: Boolean(report.has_tax),
@@ -27,7 +30,7 @@ export function AdminReportEditModal({
         collected_amount: String(report.collected_amount ?? 0),
         paid_to_company: Boolean(report.paid_to_company),
         travel_allowance: String(report.travel_allowance ?? 0),
-      });
+      }));
       setSubmitting(false);
       setError('');
     }
@@ -44,10 +47,16 @@ export function AdminReportEditModal({
 
   function updateDraft(changes) {
     setDraft((prev) => {
-      const nextDraft = { ...prev, ...changes };
+      let nextDraft = { ...prev, ...changes };
+
+      if ('completed_units' in changes) {
+        nextDraft = ensureMismatchPricingLines(schedule, nextDraft);
+      }
+
       const nextCalculated = calculateEmployeeReportDraft(schedule, nextDraft);
 
       if ('completed_units' in changes
+        || 'pricing_lines' in changes
         || 'has_tax' in changes
         || 'needs_invoice_and_mail' in changes
         || 'needs_receipt_and_mail' in changes
@@ -58,6 +67,18 @@ export function AdminReportEditModal({
       }
 
       return nextDraft;
+    });
+  }
+
+  function updatePricingLines(pricingLines) {
+    const nextDraft = syncDraftFromPricingLines(schedule, draft, pricingLines);
+    const nextCalculated = calculateEmployeeReportDraft(schedule, nextDraft);
+
+    setDraft({
+      ...nextDraft,
+      collected_amount: nextDraft.paid_to_company
+        ? '0'
+        : String(nextCalculated.collectedAmount),
     });
   }
 
@@ -127,16 +148,31 @@ export function AdminReportEditModal({
             </p>
           )}
 
-          {calculated.skippedUnits > 0 && (
-            <label className="field">
-              <span className="field-label">未洗原因（選填）</span>
-              <textarea
-                className="field-control"
-                rows={2}
-                value={draft.skip_reason}
-                onChange={(event) => updateDraft({ skip_reason: event.target.value })}
-              />
-            </label>
+          {calculated.unitMismatch && (
+            <>
+              <div className="field employee-report-pricing">
+                <span className="field-label">台數異動 — 請確認各項目台數與單價（含稅會依品項重新計算）</span>
+                <PricingLineEditor
+                  lines={draft.pricing_lines || calculated.pricingLines}
+                  onChange={updatePricingLines}
+                  showTax
+                  showRemove={false}
+                  maxUnits={Math.max(calculated.completedUnits, calculated.plannedUnits, 1)}
+                />
+              </div>
+
+              {calculated.skippedUnits > 0 && (
+                <label className="field">
+                  <span className="field-label">未洗原因（選填）</span>
+                  <textarea
+                    className="field-control"
+                    rows={2}
+                    value={draft.skip_reason}
+                    onChange={(event) => updateDraft({ skip_reason: event.target.value })}
+                  />
+                </label>
+              )}
+            </>
           )}
 
           <label className="field field-checkbox">
@@ -206,6 +242,12 @@ export function AdminReportEditModal({
               onChange={(event) => updateDraft({ temporary_request: event.target.value })}
             />
           </label>
+
+          {(calculated.reportInvoiceTaxCost > 0) && (
+            <p className="hint employee-report-costs">
+              稅金 8% {calculated.reportInvoiceTaxCost} 元（併入開支）
+            </p>
+          )}
 
           <div className="modal-actions">
             <button type="submit" className="btn btn-primary" disabled={submitting}>

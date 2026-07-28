@@ -149,6 +149,15 @@ class EmployeeReportSupport
             $lines = EmployeeRemittance::scaleLines($lines, $completedUnits, $plannedUnits);
         }
 
+        if (! $hasTax) {
+            foreach ($lines as $line) {
+                if (SchedulePricing::lineHasInvoice($line)) {
+                    $hasTax = true;
+                    break;
+                }
+            }
+        }
+
         $skippedUnits = max(0, $plannedUnits - $completedUnits);
         $unitMismatch = $completedUnits !== $plannedUnits;
 

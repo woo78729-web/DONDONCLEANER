@@ -197,7 +197,7 @@ class SchedulePricing
     {
         $type = $line['invoice_type'] ?? null;
 
-        if (in_array($type, [self::INVOICE_TYPE_NONE, self::INVOICE_TYPE_DUPLICATE, self::INVOICE_TYPE_TRIPLICATE], true)) {
+        if (in_array($type, [self::INVOICE_TYPE_DUPLICATE, self::INVOICE_TYPE_TRIPLICATE], true)) {
             return $type;
         }
 
