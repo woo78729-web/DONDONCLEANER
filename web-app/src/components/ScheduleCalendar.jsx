@@ -529,7 +529,13 @@ export function ScheduleCalendar({
 
         showMultiDayTimes
 
-        allDayAccessor={(event) => (event.resource?.type === 'leave' ? false : Boolean(event.allDay))}
+        allDayAccessor={(event) => {
+          if (event.resource?.type === 'leave') {
+            return view === 'month';
+          }
+
+          return Boolean(event.allDay);
+        }}
 
         date={currentDate}
 

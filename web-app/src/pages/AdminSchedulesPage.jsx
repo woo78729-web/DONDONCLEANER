@@ -34,9 +34,7 @@ import {
   emptyScheduleForm,
   formatDateOnly,
   formatTimeValue,
-  getAdminCalendarFetchRange,
-  getAvailabilityLoadRange,
-  getCalendarLoadRange,
+  getPlanningLeaveFetchRange,
   hasScheduleReport,
   isSlotInPast,
   scheduleToForm,
@@ -102,23 +100,15 @@ export default function AdminSchedulesPage() {
   ) => {
     setError('');
     try {
-      const fetchRange = getAdminCalendarFetchRange(anchor, visibleDayCount);
-      const availabilityRange = getAvailabilityLoadRange(days, anchor);
-      const calendarRange = getCalendarLoadRange(anchor);
-      const date_from = fetchRange.date_from < availabilityRange.date_from
-        ? fetchRange.date_from
-        : availabilityRange.date_from;
-      const date_to = fetchRange.date_to > availabilityRange.date_to
-        ? fetchRange.date_to
-        : availabilityRange.date_to;
+      const loadRange = getPlanningLeaveFetchRange(anchor, visibleDayCount, days);
 
       const [result, leaveResult] = await Promise.all([
         api.getCalendarSchedules({
-          date_from,
-          date_to,
+          date_from: loadRange.date_from,
+          date_to: loadRange.date_to,
           user_id: employeeId || undefined,
         }),
-        api.getPlanningLeaves(calendarRange),
+        api.getPlanningLeaves(loadRange),
       ]);
 
       setAllSchedules(result.data.schedules);
@@ -457,7 +447,10 @@ export default function AdminSchedulesPage() {
     setError('');
   }
 
-  const leaveRange = useMemo(() => getCalendarLoadRange(currentDate), [currentDate]);
+  const leaveRange = useMemo(
+    () => getPlanningLeaveFetchRange(currentDate, displayDays, lookaheadDays),
+    [currentDate, displayDays, lookaheadDays],
+  );
 
   const calendarLeaves = useMemo(() => {
     if (!selectedEmployeeId) {

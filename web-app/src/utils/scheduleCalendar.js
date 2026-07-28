@@ -900,6 +900,20 @@ export function getAvailabilityLoadRange(lookaheadDays, anchorDate = new Date())
   };
 }
 
+export function getPlanningLeaveFetchRange(anchorDate, displayDays = 7, lookaheadDays = 14) {
+  const fetchRange = getAdminCalendarFetchRange(anchorDate, displayDays);
+  const availabilityRange = getAvailabilityLoadRange(lookaheadDays, anchorDate);
+
+  return {
+    date_from: fetchRange.date_from < availabilityRange.date_from
+      ? fetchRange.date_from
+      : availabilityRange.date_from,
+    date_to: fetchRange.date_to > availabilityRange.date_to
+      ? fetchRange.date_to
+      : availabilityRange.date_to,
+  };
+}
+
 export function combineDateTime(dateStr, timeStr) {
   const date = formatDateOnly(dateStr);
   const time = formatTimeValue(timeStr);
