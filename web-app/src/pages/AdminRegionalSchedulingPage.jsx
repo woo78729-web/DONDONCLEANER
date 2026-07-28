@@ -23,7 +23,6 @@ import {
   emptyScheduleForm,
   formatDateOnly,
   getAvailabilityLoadRange,
-  getPlanningLeaveFetchRange,
   isSlotInPast,
   scheduleToForm,
   slotToForm,
@@ -60,7 +59,6 @@ export default function AdminRegionalSchedulingPage() {
     try {
       const anchor = new Date();
       const availabilityRange = getAvailabilityLoadRange(lookaheadDays, anchor);
-      const leaveFetchRange = getPlanningLeaveFetchRange(anchor, 7, lookaheadDays);
 
       const [result, leaveResult] = await Promise.all([
         api.getCalendarSchedules({
@@ -68,7 +66,7 @@ export default function AdminRegionalSchedulingPage() {
           date_to: availabilityRange.date_to,
           user_id: selectedEmployeeId || undefined,
         }),
-        api.getPlanningLeaves(leaveFetchRange),
+        api.getPlanningLeaves(availabilityRange),
       ]);
 
       setAllSchedules(result.data.schedules);

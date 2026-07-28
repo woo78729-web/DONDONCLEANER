@@ -45,6 +45,35 @@ class SchedulePricing
     }
 
     /**
+     * When a report/schedule flag says invoice is needed but the pricing line still has
+     * invoice_type=none (e.g. after normalizeLines), upgrade it so 5%/8% math applies.
+     * Existing invoiced lines are left unchanged (including charge_customer_tax=false).
+     *
+     * @param  array<string, mixed>  $line
+     * @return array<string, mixed>
+     */
+    public static function applyInvoiceFlag(array $line, bool $needsInvoice): array
+    {
+        if (self::lineHasInvoice($line)) {
+            return $line;
+        }
+
+        if (! $needsInvoice) {
+            return array_merge($line, [
+                'invoice_type' => self::INVOICE_TYPE_NONE,
+                'charge_customer_tax' => false,
+                'is_taxable' => false,
+            ]);
+        }
+
+        return array_merge($line, [
+            'invoice_type' => self::INVOICE_TYPE_DUPLICATE,
+            'charge_customer_tax' => true,
+            'is_taxable' => true,
+        ]);
+    }
+
+    /**
      * @param  array<string, mixed>  $line
      * @return array{
      *     subtotal:int,
@@ -95,6 +124,7 @@ class SchedulePricing
         $hasInvoicedLine = false;
 
         foreach ($lines as $line) {
+            $line = self::applyInvoiceFlag($line, $needsInvoice);
             $units = (int) ($line['ac_units'] ?? 0);
             $unitPrice = (int) ($line['unit_price'] ?? 0);
             $totals = self::calculateLineTotals($line);

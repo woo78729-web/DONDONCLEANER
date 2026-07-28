@@ -135,19 +135,49 @@ export function Layout({ title, children }) {
     if (!user || !isAdmin) {
       setUnitChangeAlerts([]);
       setUnitChangeAlertOpen(false);
-      return;
+      return undefined;
     }
 
-    api.getUnitChangeAlerts()
-      .then((result) => {
-        const items = result.data?.items || [];
-        setUnitChangeAlerts(items);
-        setUnitChangeAlertOpen(items.length > 0);
-      })
-      .catch(() => {
-        setUnitChangeAlerts([]);
-        setUnitChangeAlertOpen(false);
-      });
+    let cancelled = false;
+    let idleId = null;
+    let timeoutId = null;
+
+    function loadUnitChangeAlerts() {
+      api.getUnitChangeAlerts()
+        .then((result) => {
+          if (cancelled) {
+            return;
+          }
+
+          const items = result.data?.items || [];
+          setUnitChangeAlerts(items);
+          setUnitChangeAlertOpen(items.length > 0);
+        })
+        .catch(() => {
+          if (cancelled) {
+            return;
+          }
+
+          setUnitChangeAlerts([]);
+          setUnitChangeAlertOpen(false);
+        });
+    }
+
+    if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') {
+      idleId = window.requestIdleCallback(loadUnitChangeAlerts, { timeout: 2500 });
+    } else {
+      timeoutId = window.setTimeout(loadUnitChangeAlerts, 800);
+    }
+
+    return () => {
+      cancelled = true;
+      if (idleId != null && typeof window.cancelIdleCallback === 'function') {
+        window.cancelIdleCallback(idleId);
+      }
+      if (timeoutId != null) {
+        window.clearTimeout(timeoutId);
+      }
+    };
   }, [user, isAdmin]);
 
   async function closeUnitChangeAlerts() {

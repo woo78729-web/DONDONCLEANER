@@ -18,13 +18,16 @@ function enrichLineForReportPricing(line, needsInvoice) {
       ...line,
       invoice_type: 'none',
       charge_customer_tax: false,
+      is_taxable: false,
     };
   }
 
+  // Override after normalize/migrate: those leave invoice_type=none with charge_customer_tax=false.
   return {
     ...line,
     invoice_type: 'duplicate',
-    charge_customer_tax: line.charge_customer_tax !== false,
+    charge_customer_tax: true,
+    is_taxable: true,
   };
 }
 
@@ -32,23 +35,37 @@ export function cloneSchedulePricingLines(schedule) {
   const lines = schedule?.pricing_lines;
 
   if (Array.isArray(lines) && lines.length > 0) {
-    return lines.map((line, index) => migratePricingLineFields({
-      id: `line-${index}`,
-      ac_units: String(line.ac_units ?? 1),
-      unit_price: String(line.unit_price ?? 1500),
-      is_taxable: Boolean(line.is_taxable),
-      invoice_type: line.invoice_type,
-      charge_customer_tax: line.charge_customer_tax,
-      invoice_title: line.invoice_title ?? '',
-      invoice_tax_id: line.invoice_tax_id ?? '',
-    }, schedule));
+    return lines.map((line, index) => {
+      const migrated = migratePricingLineFields({
+        id: `line-${index}`,
+        ac_units: String(line.ac_units ?? 1),
+        unit_price: String(line.unit_price ?? 1500),
+        is_taxable: Boolean(line.is_taxable),
+        invoice_type: line.invoice_type,
+        charge_customer_tax: line.charge_customer_tax,
+        invoice_title: line.invoice_title ?? '',
+        invoice_tax_id: line.invoice_tax_id ?? '',
+      }, schedule);
+
+      return {
+        ...migrated,
+        is_taxable: lineHasInvoice(migrated)
+          ? migrated.charge_customer_tax !== false
+          : Boolean(migrated.is_taxable),
+      };
+    });
   }
 
   return [migratePricingLineFields(createPricingLine({
     ac_units: String(schedule?.ac_units ?? 1),
     unit_price: String(schedule?.unit_price ?? 1500),
     is_taxable: Boolean(schedule?.needs_invoice),
-  }), schedule)];
+  }), schedule)].map((migrated) => ({
+    ...migrated,
+    is_taxable: lineHasInvoice(migrated)
+      ? migrated.charge_customer_tax !== false
+      : Boolean(migrated.is_taxable),
+  }));
 }
 
 export function scalePricingLinesForCompleted(lines, completedUnits, plannedUnits) {
@@ -203,9 +220,12 @@ export function defaultMailFlagsFromSchedule(schedule) {
 
 export function buildDefaultReportDraft(schedule) {
   const mailFlags = defaultMailFlagsFromSchedule(schedule);
+  const clonedLines = cloneSchedulePricingLines(schedule);
+  const hasLineInvoice = clonedLines.some((line) => lineHasInvoice(line));
+  const hasTax = Boolean(schedule?.needs_invoice) || hasLineInvoice;
   const calculated = calculateEmployeeReportDraft(schedule, {
     completed_units: schedule?.ac_units ?? 1,
-    has_tax: Boolean(schedule?.needs_invoice),
+    has_tax: hasTax,
     ...mailFlags,
     paid_to_company: false,
   });
@@ -213,7 +233,7 @@ export function buildDefaultReportDraft(schedule) {
   return {
     completed_units: String(schedule?.ac_units ?? 1),
     skip_reason: '',
-    has_tax: Boolean(schedule?.needs_invoice),
+    has_tax: hasTax,
     ...mailFlags,
     temporary_request: '',
     collected_amount: String(calculated.collectedAmount),

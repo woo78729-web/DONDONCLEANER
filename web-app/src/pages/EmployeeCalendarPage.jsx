@@ -120,16 +120,25 @@ export default function EmployeeCalendarPage() {
     setError('');
 
     try {
-      const [leaveResult, scheduleResult] = await Promise.all([
-        api.getEmployeeLeaves(),
-        api.getEmployeeSchedules({
-          date_from: monthStartKey,
-          date_to: monthEndKey,
-        }),
-      ]);
+      const schedulesPromise = api.getEmployeeSchedules({
+        date_from: monthStartKey,
+        date_to: monthEndKey,
+      }).then((result) => {
+        setMonthSchedules(result.data.schedules || []);
+        return result;
+      });
 
-      setLeaves(leaveResult.data.leaves || []);
-      setMonthSchedules(scheduleResult.data.schedules || []);
+      const leavesPromise = api.getEmployeeLeaves().then((result) => {
+        setLeaves(result.data.leaves || []);
+        return result;
+      });
+
+      const results = await Promise.allSettled([schedulesPromise, leavesPromise]);
+      const firstError = results.find((result) => result.status === 'rejected');
+
+      if (firstError) {
+        throw firstError.reason;
+      }
     } catch (err) {
       setError(err.message);
       setLeaves([]);

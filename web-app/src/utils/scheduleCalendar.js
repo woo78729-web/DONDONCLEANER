@@ -910,18 +910,10 @@ export function getAvailabilityLoadRange(lookaheadDays, anchorDate = new Date())
   };
 }
 
-export function getPlanningLeaveFetchRange(anchorDate, displayDays = 7, lookaheadDays = 14) {
-  const fetchRange = getAdminCalendarFetchRange(anchorDate, displayDays);
-  const availabilityRange = getAvailabilityLoadRange(lookaheadDays, anchorDate);
-
-  return {
-    date_from: fetchRange.date_from < availabilityRange.date_from
-      ? fetchRange.date_from
-      : availabilityRange.date_from,
-    date_to: fetchRange.date_to > availabilityRange.date_to
-      ? fetchRange.date_to
-      : availabilityRange.date_to,
-  };
+export function getPlanningLeaveFetchRange(anchorDate, displayDays = 7, _lookaheadDays = 14) {
+  // Calendar/leave fetch should match the visible month+week window only.
+  // Availability lookahead uses its own endpoint and must not widen this range.
+  return getAdminCalendarFetchRange(anchorDate, displayDays);
 }
 
 export function combineDateTime(dateStr, timeStr) {

@@ -143,21 +143,7 @@ class EmployeeRemittance
      */
     private static function resolvePricingLine(array $line, bool $needsInvoice): array
     {
-        if (SchedulePricing::lineHasInvoice($line)) {
-            return $line;
-        }
-
-        if (! $needsInvoice) {
-            return $line + [
-                'invoice_type' => SchedulePricing::INVOICE_TYPE_NONE,
-                'charge_customer_tax' => false,
-            ];
-        }
-
-        return $line + [
-            'invoice_type' => SchedulePricing::INVOICE_TYPE_DUPLICATE,
-            'charge_customer_tax' => true,
-        ];
+        return SchedulePricing::applyInvoiceFlag($line, $needsInvoice);
     }
 
     /**

@@ -42,6 +42,8 @@ export function RemittanceAlertHost() {
     }
 
     let cancelled = false;
+    let idleId = null;
+    let timeoutId = null;
 
     function loadRemittanceAlerts() {
       api.getRemittanceAlerts()
@@ -62,11 +64,23 @@ export function RemittanceAlertHost() {
         });
     }
 
-    loadRemittanceAlerts();
+    // Defer until after first paint so login/home is not blocked by remittance heal.
+    if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') {
+      idleId = window.requestIdleCallback(loadRemittanceAlerts, { timeout: 2500 });
+    } else {
+      timeoutId = window.setTimeout(loadRemittanceAlerts, 800);
+    }
+
     window.addEventListener('ac:remittance-alerts-refresh', loadRemittanceAlerts);
 
     return () => {
       cancelled = true;
+      if (idleId != null && typeof window.cancelIdleCallback === 'function') {
+        window.cancelIdleCallback(idleId);
+      }
+      if (timeoutId != null) {
+        window.clearTimeout(timeoutId);
+      }
       window.removeEventListener('ac:remittance-alerts-refresh', loadRemittanceAlerts);
     };
   }, [applyAlerts, canTrackRemittance]);

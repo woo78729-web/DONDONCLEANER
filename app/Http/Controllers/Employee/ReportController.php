@@ -127,6 +127,10 @@ class ReportController extends Controller
             'pricing_lines.*.ac_units' => ['required_with:pricing_lines', 'integer', 'min:1'],
             'pricing_lines.*.unit_price' => ['required_with:pricing_lines', 'integer', 'in:1500,1300,1000'],
             'pricing_lines.*.is_taxable' => ['sometimes', 'boolean'],
+            'pricing_lines.*.invoice_type' => ['sometimes', 'nullable', 'string', 'in:none,duplicate,triplicate'],
+            'pricing_lines.*.charge_customer_tax' => ['sometimes', 'boolean'],
+            'pricing_lines.*.invoice_title' => ['sometimes', 'nullable', 'string', 'max:255'],
+            'pricing_lines.*.invoice_tax_id' => ['sometimes', 'nullable', 'string', 'max:20'],
         ]);
 
         $schedule = DailySchedule::query()

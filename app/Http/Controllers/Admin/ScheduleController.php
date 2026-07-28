@@ -268,10 +268,10 @@ class ScheduleController extends Controller
                 'cleaningProject:id,project_code,title,status,planned_start_date,planned_end_date,total_ac_units',
             ])
             ->when(! empty($validated['date_from']), function ($builder) use ($validated) {
-                $builder->whereDate('work_date', '>=', $validated['date_from']);
+                $builder->where('work_date', '>=', $validated['date_from']);
             })
             ->when(! empty($validated['date_to']), function ($builder) use ($validated) {
-                $builder->whereDate('work_date', '<=', $validated['date_to']);
+                $builder->where('work_date', '<=', $validated['date_to']);
             })
             ->when(! empty($validated['user_id']), function ($builder) use ($validated) {
                 $builder->where('user_id', $validated['user_id']);

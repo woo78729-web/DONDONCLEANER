@@ -95,36 +95,45 @@ export default function AdminSchedulesPage() {
   const loadSchedules = useCallback(async (
     anchor = currentDate,
     employeeId = selectedEmployeeId,
-    days = lookaheadDays,
     visibleDayCount = displayDays,
   ) => {
     setError('');
     try {
-      const loadRange = getPlanningLeaveFetchRange(anchor, visibleDayCount, days);
+      const loadRange = getPlanningLeaveFetchRange(anchor, visibleDayCount);
 
-      const [result, leaveResult] = await Promise.all([
-        api.getCalendarSchedules({
-          date_from: loadRange.date_from,
-          date_to: loadRange.date_to,
-          user_id: employeeId || undefined,
-        }),
-        api.getPlanningLeaves(loadRange),
-      ]);
+      const schedulesPromise = api.getCalendarSchedules({
+        date_from: loadRange.date_from,
+        date_to: loadRange.date_to,
+        user_id: employeeId || undefined,
+      }).then((result) => {
+        setAllSchedules(result.data.schedules);
+        return result;
+      });
 
-      setAllSchedules(result.data.schedules);
-      setLeaves(leaveResult.data.leaves || []);
+      const leavesPromise = api.getPlanningLeaves(loadRange).then((result) => {
+        setLeaves(result.data.leaves || []);
+        return result;
+      });
+
+      // Paint schedules as soon as they arrive; leave bands may land a beat later.
+      const results = await Promise.allSettled([schedulesPromise, leavesPromise]);
+      const firstError = results.find((result) => result.status === 'rejected');
+
+      if (firstError) {
+        throw firstError.reason;
+      }
     } catch (err) {
       setError(err.message);
     }
-  }, [currentDate, selectedEmployeeId, lookaheadDays, displayDays]);
+  }, [currentDate, selectedEmployeeId, displayDays]);
 
   useEffect(() => {
     loadEmployees().catch((err) => setError(err.message));
   }, [loadEmployees]);
 
   useEffect(() => {
-    loadSchedules(currentDate, selectedEmployeeId, lookaheadDays, displayDays).catch((err) => setError(err.message));
-  }, [currentDate, selectedEmployeeId, lookaheadDays, displayDays, loadSchedules]);
+    loadSchedules(currentDate, selectedEmployeeId, displayDays).catch((err) => setError(err.message));
+  }, [currentDate, selectedEmployeeId, displayDays, loadSchedules]);
 
   useEffect(() => {
     if (!isMobile) {

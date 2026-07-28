@@ -55,6 +55,26 @@ class EmployeeRemittanceTest extends TestCase
         $this->assertSame(450, $summary['collect_from_employee']);
     }
 
+    public function test_invoice_flag_applies_after_normalize_lines(): void
+    {
+        $lines = SchedulePricing::normalizeLines([
+            ['ac_units' => 2, 'unit_price' => 1300],
+        ]);
+
+        $summary = EmployeeRemittance::summarizeReport(
+            $lines,
+            2,
+            3,
+            true,
+            true,
+        );
+
+        // 2 × 1300 = 2600 base + 5% = 2730 company transfer; 8% hongyi = 208
+        $this->assertSame(2730, $summary['company_transfer']);
+        $this->assertSame(130, $summary['invoice_surcharge_due']);
+        $this->assertSame(208, $summary['invoice_tax_cost']);
+    }
+
     public function test_invoice_surcharge_is_included_in_company_transfer_not_cash_collect(): void
     {
         $summary = EmployeeRemittance::summarizeReport(
