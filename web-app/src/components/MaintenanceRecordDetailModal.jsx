@@ -57,7 +57,9 @@ export function MaintenanceRecordDetailModal({
     setDraft({
       follow_up_method: record.follow_up_method || '',
       requires_compensation: Boolean(record.requires_compensation),
-      is_warranty_case: Boolean(record.is_warranty_case),
+      is_warranty_case: record.requires_compensation
+        ? Boolean(record.is_warranty_case)
+        : true,
       service_amount: record.service_amount ? String(record.service_amount) : '',
       status: record.status || 'open',
       admin_notes: record.admin_notes || '',
@@ -168,10 +170,52 @@ export function MaintenanceRecordDetailModal({
                 <input
                   type="checkbox"
                   checked={Boolean(draft.requires_compensation)}
-                  onChange={(event) => setDraft((previous) => ({ ...previous, requires_compensation: event.target.checked }))}
+                  onChange={(event) => setDraft((previous) => ({
+                    ...previous,
+                    requires_compensation: event.target.checked,
+                    is_warranty_case: event.target.checked ? true : previous.is_warranty_case,
+                  }))}
                 />
                 <span>是否賠款</span>
               </label>
+
+              {canEditCompensation && draft.requires_compensation && (
+                <>
+                  <label className="field">
+                    <span className="field-label">賠款總額</span>
+                    <input
+                      className="field-control"
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={draft.service_amount}
+                      onChange={(event) => setDraft((previous) => ({ ...previous, service_amount: event.target.value }))}
+                      placeholder="請填寫賠款總額"
+                    />
+                  </label>
+
+                  <label className="field field-checkbox mail-tracking-modal__sent">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(draft.is_warranty_case)}
+                      onChange={(event) => setDraft((previous) => ({ ...previous, is_warranty_case: event.target.checked }))}
+                    />
+                    <span>公司與施工師傅各承擔一半</span>
+                  </label>
+
+                  {Number(draft.service_amount) > 0 && (
+                    <div className="field">
+                      <span className="field-label">分擔試算</span>
+                      <p className="field-control field-control--readonly">
+                        公司 {formatAmount(shares.company)}／師傅 {formatAmount(shares.employee)}
+                        {draft.is_warranty_case
+                          ? '（各付一半，師傅分擔款須入公司帳）'
+                          : '（非對半分擔時，師傅須全額入公司帳）'}
+                      </p>
+                    </div>
+                  )}
+                </>
+              )}
 
               {canEditCompensation && (
                 <>
@@ -192,42 +236,9 @@ export function MaintenanceRecordDetailModal({
                     <div className="maintenance-resolve-panel">
                       <h3 className="section-label">結案</h3>
                       {draft.requires_compensation ? (
-                        <>
-                          <p className="hint">此案件需賠款，請填寫金額後確認結案，將自動列入公司代墊；師傅分擔款應入公司帳（由阿泰代收）。</p>
-
-                          <label className="field field-checkbox mail-tracking-modal__sent">
-                            <input
-                              type="checkbox"
-                              checked={Boolean(draft.is_warranty_case)}
-                              onChange={(event) => setDraft((previous) => ({ ...previous, is_warranty_case: event.target.checked }))}
-                            />
-                            <span>保內賠款（公司與員工對半分擔）</span>
-                          </label>
-
-                          <label className="field">
-                            <span className="field-label">賠款總額</span>
-                            <input
-                              className="field-control"
-                              type="number"
-                              min="0"
-                              step="1"
-                              value={draft.service_amount}
-                              onChange={(event) => setDraft((previous) => ({ ...previous, service_amount: event.target.value }))}
-                              placeholder="請填寫賠款總額"
-                              autoFocus
-                            />
-                          </label>
-
-                          {Number(draft.service_amount) > 0 && (
-                            <div className="field">
-                              <span className="field-label">分擔試算</span>
-                              <p className="field-control field-control--readonly">
-                                公司 {formatAmount(shares.company)}／員工 {formatAmount(shares.employee)}
-                                {draft.is_warranty_case ? '（保內對半，師傅須入公司）' : '（非保內由師傅負擔並入公司）'}
-                              </p>
-                            </div>
-                          )}
-                        </>
+                        <p className="hint">
+                          確認結案後，賠款總額將自動列入公司代墊；師傅分擔款應入公司帳（由阿泰代收）。
+                        </p>
                       ) : (
                         <p className="hint">確認結案後，此案件將標記為已完成。</p>
                       )}
@@ -235,7 +246,7 @@ export function MaintenanceRecordDetailModal({
                   )}
 
                   {!isResolving && draft.requires_compensation && (
-                    <p className="hint">已標記需賠款，追蹤完成後請將狀態改為「已結案」並填寫賠款金額。</p>
+                    <p className="hint">已標記需賠款，填寫金額後可將狀態改為「已結案」完成入帳。</p>
                   )}
 
                   <label className="field">

@@ -1,11 +1,17 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api/client';
+import { useAuth } from '../context/AuthContext';
+import { canEditMaintenanceCompensation, canViewMaintenanceCompensation } from '../utils/permissions';
 import { MaintenanceCreateModal } from './MaintenanceCreateModal';
+import { MaintenanceRecordDetailModal } from './MaintenanceRecordDetailModal';
 
 const PENDING_STATUSES = new Set(['open', 'in_progress']);
 
 export function EmergencyMaintenancePanel({ compact = false, showHeader = true }) {
+  const { user } = useAuth();
+  const canViewCompensation = canViewMaintenanceCompensation(user);
+  const canEditCompensation = canEditMaintenanceCompensation(user);
   const [records, setRecords] = useState([]);
   const [phone, setPhone] = useState('');
   const [loading, setLoading] = useState(false);
@@ -13,6 +19,7 @@ export function EmergencyMaintenancePanel({ compact = false, showHeader = true }
   const [selected, setSelected] = useState(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [message, setMessage] = useState('');
+  const [saving, setSaving] = useState(false);
 
   async function loadRecords(nextPhone = phone) {
     setLoading(true);
@@ -48,15 +55,24 @@ export function EmergencyMaintenancePanel({ compact = false, showHeader = true }
     await loadRecords(phone);
   }
 
-  async function updateStatus(record, nextStatus) {
+  async function handleSave(payload) {
+    if (!selected || !canEditCompensation) {
+      return;
+    }
+
+    setSaving(true);
     setError('');
+    setMessage('');
 
     try {
-      await api.updateMaintenanceRecord(record.id, { status: nextStatus });
+      await api.updateMaintenanceRecord(selected.id, payload);
+      setMessage(payload.status === 'resolved' ? '維修案件已結案' : '維修紀錄已更新');
       setSelected(null);
       await loadRecords(phone);
     } catch (err) {
       setError(err.message);
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -134,42 +150,16 @@ export function EmergencyMaintenancePanel({ compact = false, showHeader = true }
         </div>
       )}
 
-      {selected && (
-        <div className="modal-overlay" role="presentation" onClick={() => setSelected(null)}>
-          <div className="modal-panel modal-panel--wide" role="dialog" onClick={(event) => event.stopPropagation()}>
-            <div className="modal-header">
-              <h2 className="modal-title">緊急維修 #{selected.id}</h2>
-              <button type="button" className="modal-close" onClick={() => setSelected(null)} aria-label="關閉">×</button>
-            </div>
-            <p>{selected.issue_description}</p>
-            <p className="hint">
-              客戶：{selected.customer_name || '-'}｜{selected.customer_phone}
-            </p>
-            <p className="hint">狀態：{selected.status_label}</p>
-            {selected.photos?.length > 0 && (
-              <div className="maintenance-photo-grid">
-                {selected.photos.map((photo) => (
-                  <a key={photo.id} href={photo.url} target="_blank" rel="noreferrer">
-                    <img src={photo.url} alt={photo.caption || '問題照片'} />
-                  </a>
-                ))}
-              </div>
-            )}
-            <div className="toolbar-actions">
-              {selected.status !== 'in_progress' && (
-                <button type="button" className="btn btn-secondary btn-sm" onClick={() => updateStatus(selected, 'in_progress')}>
-                  標記處理中
-                </button>
-              )}
-              {selected.status !== 'resolved' && (
-                <button type="button" className="btn btn-primary btn-sm" onClick={() => updateStatus(selected, 'resolved')}>
-                  標記已結案
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+      <MaintenanceRecordDetailModal
+        record={selected}
+        open={Boolean(selected)}
+        onClose={() => setSelected(null)}
+        onSave={handleSave}
+        saving={saving}
+        editable={canEditCompensation}
+        canViewCompensation={canViewCompensation}
+        canEditCompensation={canEditCompensation}
+      />
     </>
   );
 
@@ -201,7 +191,7 @@ export function EmergencyMaintenancePanel({ compact = false, showHeader = true }
           <h2 className="card-title">緊急維修處理</h2>
           <p className="hint">
             待處理 {openCount} 件
-            {compact ? '。可在此快速查詢，或前往完整頁面。' : '。可新增報修、查詢待處理與處理中的維修案件。'}
+            {compact ? '。可在此快速查詢，或前往完整頁面。' : '。可新增報修、填寫賠款金額，並查詢待處理案件。'}
           </p>
         </div>
         {!compact && (
