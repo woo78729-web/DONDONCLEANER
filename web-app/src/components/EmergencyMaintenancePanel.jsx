@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api/client';
+import { MaintenanceCreateModal } from './MaintenanceCreateModal';
 
 const PENDING_STATUSES = new Set(['open', 'in_progress']);
 
@@ -10,6 +11,8 @@ export function EmergencyMaintenancePanel({ compact = false, showHeader = true }
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [selected, setSelected] = useState(null);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [message, setMessage] = useState('');
 
   async function loadRecords(nextPhone = phone) {
     setLoading(true);
@@ -79,10 +82,13 @@ export function EmergencyMaintenancePanel({ compact = false, showHeader = true }
         )}
       </form>
 
+      {message && <div className="alert alert-success">{message}</div>}
       {error && <div className="alert alert-error">{error}</div>}
 
       {!records.length && !loading && (
-        <p className="hint phone-lookup__empty">目前沒有待處理的緊急維修。</p>
+        <p className="hint phone-lookup__empty">
+          目前沒有待處理的緊急維修。可按右上角「新增報修」建立案件。
+        </p>
       )}
 
       {records.length > 0 && (
@@ -167,8 +173,25 @@ export function EmergencyMaintenancePanel({ compact = false, showHeader = true }
     </>
   );
 
+  const createModal = (
+    <MaintenanceCreateModal
+      open={createOpen}
+      initialPhone={phone}
+      onClose={() => setCreateOpen(false)}
+      onSuccess={async () => {
+        setMessage('報修已建立，師傅可查看此案件。');
+        await loadRecords(phone);
+      }}
+    />
+  );
+
   if (!showHeader) {
-    return content;
+    return (
+      <>
+        {content}
+        {createModal}
+      </>
+    );
   }
 
   return (
@@ -178,16 +201,29 @@ export function EmergencyMaintenancePanel({ compact = false, showHeader = true }
           <h2 className="card-title">緊急維修處理</h2>
           <p className="hint">
             待處理 {openCount} 件
-            {compact ? '。可在此快速查詢，或前往完整頁面。' : '。獨立查詢待處理與處理中的維修案件。'}
+            {compact ? '。可在此快速查詢，或前往完整頁面。' : '。可新增報修、查詢待處理與處理中的維修案件。'}
           </p>
         </div>
         {!compact && (
-          <Link to="/admin/maintenance" className="btn btn-secondary btn-sm">
-            全部維修紀錄
-          </Link>
+          <div className="schedule-page-header-actions">
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              onClick={() => {
+                setMessage('');
+                setCreateOpen(true);
+              }}
+            >
+              新增報修
+            </button>
+            <Link to="/admin/maintenance" className="btn btn-secondary btn-sm">
+              全部維修紀錄
+            </Link>
+          </div>
         )}
       </div>
       {content}
+      {createModal}
     </section>
   );
 }

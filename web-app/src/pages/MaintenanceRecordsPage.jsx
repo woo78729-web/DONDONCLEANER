@@ -6,6 +6,8 @@ import { PageAlert } from '../components/PageAlert';
 
 import { MaintenanceRecordDetailModal, compensationLabel, formatAmount } from '../components/MaintenanceRecordDetailModal';
 
+import { MaintenanceCreateModal } from '../components/MaintenanceCreateModal';
+
 import { api } from '../api/client';
 
 import { useAuth } from '../context/AuthContext';
@@ -49,6 +51,8 @@ export default function MaintenanceRecordsPage() {
   const [loading, setLoading] = useState(false);
 
   const [saving, setSaving] = useState(false);
+
+  const [createOpen, setCreateOpen] = useState(false);
 
 
 
@@ -152,11 +156,18 @@ export default function MaintenanceRecordsPage() {
 
           </div>
 
-          <button type="button" className="btn btn-secondary btn-sm" onClick={() => loadRecords()} disabled={loading}>
-
-            重新整理
-
-          </button>
+          <div className="schedule-page-header-actions">
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              onClick={() => setCreateOpen(true)}
+            >
+              新增報修
+            </button>
+            <button type="button" className="btn btn-secondary btn-sm" onClick={() => loadRecords()} disabled={loading}>
+              重新整理
+            </button>
+          </div>
 
         </div>
 
@@ -296,6 +307,15 @@ export default function MaintenanceRecordsPage() {
 
         canEditCompensation={canEditCompensation}
 
+      />
+
+      <MaintenanceCreateModal
+        open={createOpen}
+        onClose={() => setCreateOpen(false)}
+        onSuccess={async () => {
+          setMessage('報修已建立');
+          await loadRecords();
+        }}
       />
 
     </Layout>
