@@ -895,9 +895,17 @@ class CompanyRemittanceSupport
 
     private static function hasActiveSplitGroup(CleaningProject $project): bool
     {
-        return CompanyRemittance::query()
+        $remittances = CompanyRemittance::query()
             ->where('cleaning_project_id', $project->id)
-            ->count() > 1;
+            ->get();
+
+        if ($remittances->count() <= 1) {
+            return false;
+        }
+
+        $expected = self::projectRemittanceAmount($project);
+
+        return (int) $remittances->sum('amount') === $expected;
     }
 
     private static function hasActiveSplitGroupForReport(DailyReport $report): bool

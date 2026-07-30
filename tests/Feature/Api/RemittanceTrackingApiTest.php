@@ -701,6 +701,51 @@ class RemittanceTrackingApiTest extends TestCase
             ->assertJsonPath('data.pending.0.amount', 4000);
     }
 
+    public function test_sync_dedupes_duplicate_project_remittances_with_project_id(): void
+    {
+        Sanctum::actingAs($this->admin);
+
+        $start = now()->subDays(10)->toDateString();
+        $end = now()->subDays(9)->toDateString();
+        $yearMonth = substr($end, 0, 7);
+
+        $this->postJson('/api/admin/projects', [
+            'employee_ids' => [$this->employee->id],
+            'planned_start_date' => $start,
+            'planned_end_date' => $end,
+            'customer_name' => '兩天匯款客戶',
+            'customer_phone' => '0912345678',
+            'customer_address' => '台東市',
+            'customer_source' => 'phone',
+            'expects_company_remittance' => true,
+            'pricing_lines' => [
+                ['ac_units' => 4, 'unit_price' => 1000],
+            ],
+        ])->assertCreated();
+
+        $project = \App\Models\CleaningProject::query()->first();
+        $reports = \App\Models\DailyReport::query()
+            ->whereHas('dailySchedule', fn ($query) => $query->where('cleaning_project_id', $project->id))
+            ->get();
+
+        foreach ($reports as $report) {
+            \App\Models\CompanyRemittance::query()->create([
+                'report_id' => $report->id,
+                'cleaning_project_id' => $project->id,
+                'amount' => 4000,
+                'status' => \App\Models\CompanyRemittance::STATUS_PENDING,
+            ]);
+        }
+
+        CompanyRemittanceSupport::syncForProject($project);
+
+        $this->getJson('/api/admin/remittance-tracking?year_month='.$yearMonth)
+            ->assertOk()
+            ->assertJsonCount(1, 'data.pending')
+            ->assertJsonPath('data.pending.0.amount', 4000)
+            ->assertJsonPath('data.pending.0.amount_mismatch', false);
+    }
+
     public function test_admin_can_update_remittance_amount(): void
     {
         Sanctum::actingAs($this->admin);
