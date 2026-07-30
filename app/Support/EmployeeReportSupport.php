@@ -91,7 +91,9 @@ class EmployeeReportSupport
         ];
 
         if (! $recalculateCollectedAmount && ! array_key_exists('collected_amount', $overrides)) {
-            $input['collected_amount'] = $report->collected_amount;
+            $input['collected_amount'] = (bool) ($overrides['paid_to_company'] ?? false)
+                ? 0
+                : $report->collected_amount;
         }
 
         $payload = self::buildFromSchedule($schedule, $input, $report, $requireSkipReason);

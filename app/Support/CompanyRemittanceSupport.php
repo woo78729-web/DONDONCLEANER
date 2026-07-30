@@ -155,7 +155,10 @@ class CompanyRemittanceSupport
             ->each(function (DailyReport $report) use ($projectIds) {
                 EmployeeReportSupport::resyncFromSchedule(
                     $report,
-                    ['paid_to_company' => true],
+                    [
+                        'paid_to_company' => true,
+                        'collected_amount' => 0,
+                    ],
                     false,
                 );
 

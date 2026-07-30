@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Api;
 
+use App\Models\CleaningProject;
 use App\Models\DailyReport;
 use App\Models\DailySchedule;
 use App\Models\User;
@@ -341,5 +342,60 @@ class AccountingEnhancementApiTest extends TestCase
         $this->assertCount(1, $response->json('data.daily_rows'));
         $this->assertSame(800, $response->json('data.totals.collect_from_employee'));
         $this->assertSame(800, $response->json('data.employee_summaries.0.collect_from_employee'));
+    }
+
+    public function test_accounting_load_heals_project_remittance_reports_with_nonzero_collected_amount(): void
+    {
+        Sanctum::actingAs($this->admin);
+
+        $workDate = now()->subDays(3)->toDateString();
+        $yearMonth = substr($workDate, 0, 7);
+
+        $project = CleaningProject::query()->create([
+            'project_code' => 'PREM-001',
+            'status' => CleaningProject::STATUS_IN_PROGRESS,
+            'customer_name' => '匯款專案客戶',
+            'customer_phone' => '0912345678',
+            'customer_address' => '台東市',
+            'customer_source' => 'phone',
+            'total_ac_units' => 4,
+            'ac_units' => 4,
+            'cleaning_price' => 4000,
+            'pricing_lines' => [['ac_units' => 4, 'unit_price' => 1000]],
+            'expects_company_remittance' => true,
+            'planned_start_date' => $workDate,
+            'planned_end_date' => $workDate,
+        ]);
+
+        $project->employees()->sync([
+            $this->employee->id => ['role' => 'member', 'assigned_units' => 4],
+        ]);
+
+        $schedule = DailySchedule::query()->create($this->scheduleAttributes([
+            'cleaning_project_id' => $project->id,
+            'schedule_kind' => CleaningProject::SCHEDULE_KIND_ASSIGNMENT,
+            'user_id' => $this->employee->id,
+            'work_date' => $workDate,
+            'pricing_lines' => [['ac_units' => 4, 'unit_price' => 1000]],
+            'ac_units' => 4,
+            'cleaning_price' => 4000,
+            'unit_price' => 1000,
+        ]));
+
+        $report = DailyReport::query()->create([
+            'schedule_id' => $schedule->id,
+            'planned_units' => 4,
+            'completed_units' => 4,
+            'collected_amount' => 4000,
+            'paid_to_company' => false,
+        ]);
+
+        $this->getJson('/api/admin/accounting?year_month='.$yearMonth)
+            ->assertOk()
+            ->assertJsonPath('data.totals.company_inbound_expected', 4000);
+
+        $report->refresh();
+        $this->assertTrue($report->paid_to_company);
+        $this->assertSame(0, (int) $report->collected_amount);
     }
 }
