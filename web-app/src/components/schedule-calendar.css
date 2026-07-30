@@ -17,6 +17,25 @@
   flex: 1 1 auto;
   min-height: clamp(420px, 68vh, 820px);
   min-width: 0;
+  position: relative;
+}
+
+.schedule-calendar-host.is-loading .schedule-workspace.schedule-calendar {
+  pointer-events: none;
+}
+
+.schedule-calendar-loading {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(251, 251, 252, 0.72);
+  color: #5f6368;
+  font-size: 14px;
+  font-weight: 600;
+  border-radius: 16px;
 }
 
 .schedule-calendar-scroll {

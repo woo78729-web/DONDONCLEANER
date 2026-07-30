@@ -277,7 +277,7 @@ export function ScheduleCalendar({
 
 
 
-  const calendarKey = `${safeDisplayDays}-${view}-${currentDate instanceof Date ? currentDate.getTime() : currentDate}`;
+  const calendarKey = `${safeDisplayDays}-${view}`;
 
 
 

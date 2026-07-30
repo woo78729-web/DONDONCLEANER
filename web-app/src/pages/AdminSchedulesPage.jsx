@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { Link, useNavigate } from 'react-router-dom';
 import { PageErrorBoundary } from '../components/PageErrorBoundary';
@@ -34,7 +34,7 @@ import {
   emptyScheduleForm,
   formatDateOnly,
   formatTimeValue,
-  getPlanningLeaveFetchRange,
+  getCalendarScheduleFetchRange,
   hasScheduleReport,
   isSlotInPast,
   scheduleToForm,
@@ -79,6 +79,13 @@ export default function AdminSchedulesPage() {
   const [successSummary, setSuccessSummary] = useState(null);
   const [pendingMailRedirect, setPendingMailRedirect] = useState(false);
   const [mobileFilterOpen, setMobileFilterOpen] = useState(false);
+  const [schedulesLoading, setSchedulesLoading] = useState(false);
+  const [calendarView, setCalendarView] = useState(() => (
+    typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches
+      ? 'month'
+      : 'week'
+  ));
+  const loadRequestRef = useRef(0);
 
   const schedules = useMemo(() => {
     if (!selectedAreas.length) {
@@ -96,44 +103,67 @@ export default function AdminSchedulesPage() {
     anchor = currentDate,
     employeeId = selectedEmployeeId,
     visibleDayCount = displayDays,
+    view = calendarView,
   ) => {
+    const requestId = loadRequestRef.current + 1;
+    loadRequestRef.current = requestId;
+    setSchedulesLoading(true);
     setError('');
+
     try {
-      const loadRange = getPlanningLeaveFetchRange(anchor, visibleDayCount);
+      const loadRange = getCalendarScheduleFetchRange(view, anchor, visibleDayCount);
 
-      const schedulesPromise = api.getCalendarSchedules({
-        date_from: loadRange.date_from,
-        date_to: loadRange.date_to,
-        user_id: employeeId || undefined,
-      }).then((result) => {
-        setAllSchedules(result.data.schedules);
-        return result;
-      });
+      const [scheduleResult, leaveResult] = await Promise.all([
+        api.getCalendarSchedules({
+          date_from: loadRange.date_from,
+          date_to: loadRange.date_to,
+          user_id: employeeId || undefined,
+        }),
+        api.getPlanningLeaves(loadRange),
+      ]);
 
-      const leavesPromise = api.getPlanningLeaves(loadRange).then((result) => {
-        setLeaves(result.data.leaves || []);
-        return result;
-      });
-
-      // Paint schedules as soon as they arrive; leave bands may land a beat later.
-      const results = await Promise.allSettled([schedulesPromise, leavesPromise]);
-      const firstError = results.find((result) => result.status === 'rejected');
-
-      if (firstError) {
-        throw firstError.reason;
+      if (requestId !== loadRequestRef.current) {
+        return;
       }
+
+      setAllSchedules(scheduleResult.data.schedules || []);
+      setLeaves(leaveResult.data.leaves || []);
     } catch (err) {
+      if (requestId !== loadRequestRef.current) {
+        return;
+      }
+
       setError(err.message);
+    } finally {
+      if (requestId === loadRequestRef.current) {
+        setSchedulesLoading(false);
+      }
     }
-  }, [currentDate, selectedEmployeeId, displayDays]);
+  }, [calendarView, currentDate, selectedEmployeeId, displayDays]);
 
   useEffect(() => {
     loadEmployees().catch((err) => setError(err.message));
   }, [loadEmployees]);
 
   useEffect(() => {
-    loadSchedules(currentDate, selectedEmployeeId, displayDays).catch((err) => setError(err.message));
-  }, [currentDate, selectedEmployeeId, displayDays, loadSchedules]);
+    loadSchedules(currentDate, selectedEmployeeId, displayDays, calendarView).catch((err) => setError(err.message));
+  }, [currentDate, selectedEmployeeId, displayDays, calendarView, loadSchedules]);
+
+  useEffect(() => {
+    function handleVisibilityChange() {
+      if (document.visibilityState !== 'visible') {
+        return;
+      }
+
+      loadSchedules(currentDate, selectedEmployeeId, displayDays, calendarView).catch((err) => setError(err.message));
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [calendarView, currentDate, displayDays, loadSchedules, selectedEmployeeId]);
 
   useEffect(() => {
     if (!isMobile) {
@@ -379,6 +409,8 @@ export default function AdminSchedulesPage() {
   }
 
   function handleCalendarViewChange(view) {
+    setCalendarView(view);
+
     const nextDisplayDays = view === 'day'
       ? 1
       : view === 'week'
@@ -457,8 +489,8 @@ export default function AdminSchedulesPage() {
   }
 
   const leaveRange = useMemo(
-    () => getPlanningLeaveFetchRange(currentDate, displayDays, lookaheadDays),
-    [currentDate, displayDays, lookaheadDays],
+    () => getCalendarScheduleFetchRange(calendarView, currentDate, displayDays),
+    [calendarView, currentDate, displayDays],
   );
 
   const calendarLeaves = useMemo(() => {
@@ -652,7 +684,12 @@ export default function AdminSchedulesPage() {
             <div className="schedule-main">
               {!isMobile && renderEmployeeStrip()}
 
-              <div className="schedule-calendar-host">
+              <div className={`schedule-calendar-host${schedulesLoading ? ' is-loading' : ''}`}>
+                {schedulesLoading && (
+                  <div className="schedule-calendar-loading" role="status" aria-live="polite">
+                    載入班表中…
+                  </div>
+                )}
                 <ScheduleCalendar
                   schedules={schedules}
                   leaves={calendarLeaves}
