@@ -205,7 +205,9 @@ class CustomerServiceApiTest extends TestCase
 
         $this->getJson('/api/employee/reports/summary?year_month='.now()->format('Y-m'))
             ->assertOk()
-            ->assertJsonPath('data.compensation_due_to_company', 3000);
+            ->assertJsonPath('data.compensation_due_to_company', 3000)
+            ->assertJsonPath('data.settlement_payment_to_finance', 0)
+            ->assertJsonPath('data.payment_to_finance', 3000);
     }
 
     public function test_admin_cannot_resolve_compensation_case_without_amount(): void

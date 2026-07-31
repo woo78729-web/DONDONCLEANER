@@ -90,10 +90,12 @@ class EmployeeMonthlySummary
         }
 
         $netSettlement = $totalRemittance - $totalAdvance;
-        $paymentToFinance = max(0, $netSettlement);
+        $settlementPayment = max(0, $netSettlement);
         $payoutFromFinance = max(0, -$netSettlement);
         $ownAmount = $totalCollected - $totalRemittance + $totalAdvance;
         $compensationDueToAtai = MaintenanceRecordSupport::employeeCompensationDue($userId, $yearMonth);
+        // 本月應繳 = (應交公司 − 公司應退) + 賠償應入公司
+        $paymentToFinance = $settlementPayment + $compensationDueToAtai;
 
         return [
             'year_month' => $yearMonth,
@@ -106,6 +108,7 @@ class EmployeeMonthlySummary
             'company_transfer' => $totalCompanyTransfer,
             'company_inbound_expected' => $companyInboundExpected,
             'advance_from_company_jobs' => $totalAdvance,
+            'settlement_payment_to_finance' => $settlementPayment,
             'payment_to_finance' => $paymentToFinance,
             'payout_from_finance' => $payoutFromFinance,
             'own_amount' => $ownAmount,

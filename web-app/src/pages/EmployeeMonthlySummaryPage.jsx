@@ -42,7 +42,7 @@ export default function EmployeeMonthlySummaryPage() {
         <div className="card-header">
           <div>
             <h2 className="card-title">本月帳務摘要</h2>
-            <p className="hint">匯款案件計入案件總額與公司應退師傅所得；月底應繳 = 現場應收 − 匯款件應退；有發票者現場應收含向客戶收的 5% 加價；維修賠款由公司代墊，師傅分擔款應入公司（交給阿泰代收）。</p>
+            <p className="hint">匯款案件計入案件總額與公司應退師傅所得；月底應繳 =（應交公司 − 公司應退）+ 賠償應入公司；有發票者現場應收含向客戶收的 5% 加價；維修賠款由公司代墊，師傅分擔款應入公司（交給阿泰代收）。</p>
           </div>
           <button type="button" className="btn btn-secondary btn-sm" onClick={() => loadSummary()} disabled={loading}>
             {loading ? '載入中...' : '重新整理'}
@@ -100,16 +100,21 @@ export default function EmployeeMonthlySummaryPage() {
             <article className="employee-summary-card employee-summary-card--highlight">
               <p className="employee-summary-card__label">本月應繳財務</p>
               <p className="employee-summary-card__value">{formatMoney(data.payment_to_finance)} 元</p>
-              <p className="hint">應交公司 − 公司應退</p>
+              <p className="hint">
+                應交公司 − 公司應退
+                {(data.compensation_due_to_company || data.compensation_due_to_atai || 0) > 0
+                  ? ` + 賠償 ${formatMoney(data.compensation_due_to_company ?? data.compensation_due_to_atai)}`
+                  : ''}
+              </p>
             </article>
 
             {(data.compensation_due_to_company || data.compensation_due_to_atai || 0) > 0 && (
-              <article className="employee-summary-card employee-summary-card--highlight">
-                <p className="employee-summary-card__label">賠償應入公司</p>
+              <article className="employee-summary-card">
+                <p className="employee-summary-card__label">其中：賠償應入公司</p>
                 <p className="employee-summary-card__value">
                   {formatMoney(data.compensation_due_to_company ?? data.compensation_due_to_atai)} 元
                 </p>
-                <p className="hint">賠款由公司代墊，請將分擔款交給阿泰代收入公司帳</p>
+                <p className="hint">已計入上方應繳總額；請將分擔款交給阿泰代收入公司帳</p>
               </article>
             )}
 
