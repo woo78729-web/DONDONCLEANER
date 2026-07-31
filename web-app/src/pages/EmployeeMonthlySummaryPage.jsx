@@ -36,6 +36,12 @@ export default function EmployeeMonthlySummaryPage() {
     loadSummary(yearMonth);
   }, [yearMonth]);
 
+  const compensationDue = Number(data?.compensation_due_to_company ?? data?.compensation_due_to_atai ?? 0);
+  const settlementPayment = Number(
+    data?.settlement_payment_to_finance
+      ?? Math.max(0, Number(data?.payment_to_finance || 0) - compensationDue),
+  );
+
   return (
     <Layout title="本月帳務">
       <section className="card">
@@ -100,20 +106,21 @@ export default function EmployeeMonthlySummaryPage() {
             <article className="employee-summary-card employee-summary-card--highlight">
               <p className="employee-summary-card__label">本月應繳財務</p>
               <p className="employee-summary-card__value">{formatMoney(data.payment_to_finance)} 元</p>
-              <p className="hint">
-                應交公司 − 公司應退
-                {(data.compensation_due_to_company || data.compensation_due_to_atai || 0) > 0
-                  ? ` + 賠償 ${formatMoney(data.compensation_due_to_company ?? data.compensation_due_to_atai)}`
-                  : ''}
-              </p>
+              {compensationDue > 0 ? (
+                <p className="hint">
+                  應交公司 − 公司應退 {formatMoney(settlementPayment)}
+                  <br />
+                  ＋ 維修賠償 {formatMoney(compensationDue)}
+                </p>
+              ) : (
+                <p className="hint">應交公司 − 公司應退</p>
+              )}
             </article>
 
-            {(data.compensation_due_to_company || data.compensation_due_to_atai || 0) > 0 && (
+            {compensationDue > 0 && (
               <article className="employee-summary-card">
-                <p className="employee-summary-card__label">其中：賠償應入公司</p>
-                <p className="employee-summary-card__value">
-                  {formatMoney(data.compensation_due_to_company ?? data.compensation_due_to_atai)} 元
-                </p>
+                <p className="employee-summary-card__label">其中：維修賠償</p>
+                <p className="employee-summary-card__value">{formatMoney(compensationDue)} 元</p>
                 <p className="hint">已計入上方應繳總額；請將分擔款交給阿泰代收入公司帳</p>
               </article>
             )}
