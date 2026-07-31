@@ -294,6 +294,31 @@ class CompanyRemittanceSupport
      *     advance_to_employee:int
      * }
      */
+    public static function displayCompanyInboundAmount(DailyReport $report): int
+    {
+        if (! $report->paid_to_company) {
+            return 0;
+        }
+
+        $report->loadMissing('dailySchedule.cleaningProject');
+        $project = $report->dailySchedule?->cleaningProject;
+
+        if ($project && (bool) $project->expects_company_remittance) {
+            $remittance = CompanyRemittance::query()
+                ->where('cleaning_project_id', $project->id)
+                ->orderBy('id')
+                ->first();
+
+            if (! $remittance || (int) $remittance->report_id !== (int) $report->id) {
+                return 0;
+            }
+
+            return (int) $remittance->amount;
+        }
+
+        return (int) (self::financialBreakdown($report)['company_inbound_amount'] ?? 0);
+    }
+
     public static function financialBreakdown(DailyReport $report): array
     {
         $report->loadMissing('dailySchedule');
@@ -734,7 +759,9 @@ class CompanyRemittanceSupport
             'confirmed_at' => $remittance->confirmed_at?->toDateTimeString(),
             'created_at' => $remittance->created_at?->toDateTimeString(),
             'work_date' => $isProjectTotal
-                ? ($project?->planned_end_date?->format('Y-m-d') ?? (string) $project?->planned_end_date)
+                ? (CleaningProjectSupport::lastReportWorkDate($project)
+                    ?? $project?->planned_end_date?->format('Y-m-d')
+                    ?? (string) $project?->planned_end_date)
                 : ($schedule?->work_date?->format('Y-m-d') ?? (string) $schedule?->work_date),
             'employee_name' => $employeeName,
             'customer_name' => $project?->customer_name ?? $schedule?->customer_name,
@@ -761,7 +788,7 @@ class CompanyRemittanceSupport
                 ->orderBy('id')
                 ->first();
 
-            if (! $remittance) {
+            if (! $remittance || (int) $remittance->report_id !== (int) $report->id) {
                 return null;
             }
 

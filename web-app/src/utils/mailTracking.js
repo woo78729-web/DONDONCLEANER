@@ -191,7 +191,6 @@ function mergeProjectMailRows(projectId, rows) {
     .map((row) => formatDateOnly(row.date))
     .filter(Boolean)
     .sort();
-  const earliestDate = dates[0] || primary.date;
   const latestDate = dates[dates.length - 1] || primary.date;
 
   const billing = projectBillingFromRows(sortedRows);
@@ -203,8 +202,9 @@ function mergeProjectMailRows(projectId, rows) {
     members: sortedRows.map(memberFromRow),
     billingUnits: billing.units,
     billingAmount: billing.amount,
-    date: earliestDate,
-    dateEnd: earliestDate !== latestDate ? latestDate : null,
+    // 專案以最後回報日與總台數顯示（整筆一額）
+    date: latestDate,
+    dateEnd: null,
     employee: [...new Set(sortedRows.map((row) => row.employee).filter((name) => name && name !== '-'))].join('、') || primary.employee,
     type: primary.type,
     status: sortedRows.every((row) => row.status === '已寄件完成') ? '已寄件完成' : '待處理',

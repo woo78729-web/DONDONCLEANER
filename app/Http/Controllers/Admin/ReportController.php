@@ -19,28 +19,24 @@ class ReportController extends Controller
     {
         $validated = ReportFilter::validate($request);
         $query = ReportFilter::apply($validated);
-        $summary = ReportFilter::summarize($query);
+        $collapsed = ReportFilter::collapseForAdminList($query->get());
+        $summary = ReportFilter::summarizeCollapsed($collapsed);
 
-        $perPage = $validated['per_page'] ?? 15;
-        $reports = $query->paginate(
-            $perPage,
-            ['*'],
-            'page',
-            $validated['page'] ?? 1
-        );
+        $perPage = (int) ($validated['per_page'] ?? 15);
+        $page = max(1, (int) ($validated['page'] ?? 1));
+        $total = $collapsed->count();
+        $lastPage = max(1, (int) ceil($total / max(1, $perPage)));
+        $page = min($page, $lastPage);
 
         return $this->success([
             'summary' => $summary,
             'filters' => ReportFilter::activeFilters($validated),
-            'reports' => collect($reports->items())
-                ->map(fn (DailyReport $report) => EmployeeReportSupport::reportPayload($report))
-                ->values()
-                ->all(),
+            'reports' => $collapsed->forPage($page, $perPage)->values()->all(),
             'pagination' => [
-                'current_page' => $reports->currentPage(),
-                'per_page' => $reports->perPage(),
-                'total' => $reports->total(),
-                'last_page' => $reports->lastPage(),
+                'current_page' => $page,
+                'per_page' => $perPage,
+                'total' => $total,
+                'last_page' => $lastPage,
             ],
         ], '回報資料查詢成功');
     }
@@ -184,7 +180,7 @@ class ReportController extends Controller
     public function export(Request $request): StreamedResponse
     {
         $validated = ReportFilter::validate($request, includePagination: false);
-        $reports = ReportFilter::apply($validated)->get();
+        $reports = ReportFilter::collapseForAdminList(ReportFilter::apply($validated)->get());
 
         $filename = 'daily-reports-'.now()->format('Ymd-His').'.csv';
 
@@ -204,23 +200,29 @@ class ReportController extends Controller
                 '清洗台數',
                 '收取金額',
                 '回報時間',
+                '專案編號',
             ]);
 
             foreach ($reports as $report) {
-                $schedule = $report->dailySchedule;
-                $user = $schedule?->user;
+                $schedule = $report['daily_schedule'] ?? [];
+                $user = $schedule['user'] ?? [];
 
                 fputcsv($handle, [
-                    $report->id,
-                    $schedule?->work_date?->toDateString(),
-                    $user?->name,
-                    $user?->account,
-                    $schedule?->customer_address,
-                    $schedule?->customer_phone,
-                    $schedule?->task_details,
-                    $report->completed_units,
-                    $report->collected_amount,
-                    $report->created_at?->toDateTimeString(),
+                    $report['id'] ?? '',
+                    is_string($schedule['work_date'] ?? null)
+                        ? substr($schedule['work_date'], 0, 10)
+                        : ($schedule['work_date'] ?? ''),
+                    $user['name'] ?? '',
+                    $user['account'] ?? '',
+                    $schedule['customer_address'] ?? '',
+                    $schedule['customer_phone'] ?? '',
+                    $schedule['task_details'] ?? '',
+                    $report['completed_units'] ?? 0,
+                    ! empty($report['paid_to_company'])
+                        ? ($report['company_inbound_amount'] ?? $report['total_amount'] ?? 0)
+                        : ($report['collected_amount'] ?? 0),
+                    $report['created_at'] ?? '',
+                    $report['project_code'] ?? '',
                 ]);
             }
 

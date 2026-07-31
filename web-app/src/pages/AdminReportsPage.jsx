@@ -111,10 +111,21 @@ export default function AdminReportsPage() {
                   {data.reports.map((report) => {
                     const hasUnitChange = Boolean(report.unit_mismatch);
                     const plannedUnits = report.planned_units ?? report.daily_schedule?.ac_units;
+                    const isProjectTotal = Boolean(report.is_project_total);
+                    const workDate = report.daily_schedule?.work_date?.slice?.(0, 10)
+                      ?? report.daily_schedule?.work_date;
 
                     return (
                     <tr key={report.id} className={hasUnitChange ? 'row-report-changed' : ''}>
-                      <td>{report.daily_schedule?.work_date?.slice?.(0, 10) ?? report.daily_schedule?.work_date}</td>
+                      <td>
+                        {workDate}
+                        {isProjectTotal && (
+                          <div className="hint">
+                            專案{report.project_code ? ` ${report.project_code}` : ''}
+                            {report.member_report_count > 1 ? ` · 合計 ${report.member_report_count} 筆` : ' · 總額'}
+                          </div>
+                        )}
+                      </td>
                       <td>{report.daily_schedule?.user?.name}</td>
                       <td>{report.daily_schedule?.customer_address}</td>
                       <td className="num">

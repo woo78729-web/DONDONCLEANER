@@ -558,12 +558,16 @@ class MonthlyAccounting
                 ->join('、') ?: $employeeName;
         }
 
-        $workDate = $isProjectTotal
-            ? ($project?->planned_end_date?->format('Y-m-d') ?? (string) $project?->planned_end_date)
-            : ($schedule?->work_date?->format('Y-m-d') ?? (string) $schedule?->work_date);
+        if ($isProjectTotal && $project) {
+            $workDate = CleaningProjectSupport::lastReportWorkDate($project)
+                ?? $project->planned_end_date?->format('Y-m-d')
+                ?? (string) $project->planned_end_date;
+        } else {
+            $workDate = $schedule?->work_date?->format('Y-m-d') ?? (string) $schedule?->work_date;
 
-        if ($remittance->expected_remittance_date !== null) {
-            $workDate = $remittance->expected_remittance_date->format('Y-m-d');
+            if ($remittance->expected_remittance_date !== null) {
+                $workDate = $remittance->expected_remittance_date->format('Y-m-d');
+            }
         }
 
         return [

@@ -88,7 +88,7 @@ class EmployeeRemittance
      */
     public static function scaleLines(array $lines, int $completedUnits, int $scheduledUnits): array
     {
-        if ($lines === []) {
+        if ($lines === [] || $completedUnits === 0) {
             return [];
         }
 

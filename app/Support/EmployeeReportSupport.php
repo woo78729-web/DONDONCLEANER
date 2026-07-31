@@ -240,6 +240,15 @@ class EmployeeReportSupport
     {
         $report->loadMissing(['dailySchedule.user:id,name,account', 'companyRemittance']);
         $financial = CompanyRemittanceSupport::financialBreakdown($report);
+        $companyInboundAmount = CompanyRemittanceSupport::displayCompanyInboundAmount($report);
+
+        if ($report->paid_to_company) {
+            $financial['company_inbound_amount'] = $companyInboundAmount;
+
+            if ($companyInboundAmount === 0) {
+                $financial['total_amount'] = 0;
+            }
+        }
 
         return [
             'id' => $report->id,

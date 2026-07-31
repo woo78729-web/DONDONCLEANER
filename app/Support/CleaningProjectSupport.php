@@ -31,6 +31,29 @@ class CleaningProjectSupport
     }
 
     /**
+     * 專案最後一筆有回報的工作日（整筆專案顯示用）。
+     */
+    public static function lastReportWorkDate(CleaningProject $project): ?string
+    {
+        $project->loadMissing('schedules.dailyReport');
+
+        return $project->schedules
+            ->filter(function (DailySchedule $schedule) {
+                if ($schedule->schedule_kind === CleaningProject::SCHEDULE_KIND_CALENDAR_BLOCK) {
+                    return false;
+                }
+
+                return $schedule->dailyReport !== null;
+            })
+            ->map(function (DailySchedule $schedule) {
+                return $schedule->work_date?->format('Y-m-d') ?? (string) $schedule->work_date;
+            })
+            ->filter()
+            ->sort()
+            ->last();
+    }
+
+    /**
      * @return list<string>
      */
     public static function allowedStatuses(): array

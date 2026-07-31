@@ -777,4 +777,85 @@ class RemittanceTrackingApiTest extends TestCase
             ->assertOk()
             ->assertJsonPath('data.amount', 1800);
     }
+
+    public function test_project_remittance_shows_inbound_amount_only_on_primary_report(): void
+    {
+        Sanctum::actingAs($this->admin);
+
+        $start = now()->subDays(10)->toDateString();
+        $end = now()->subDays(9)->toDateString();
+
+        $project = \App\Models\CleaningProject::query()->create([
+            'project_code' => 'PREM-002',
+            'status' => \App\Models\CleaningProject::STATUS_IN_PROGRESS,
+            'customer_name' => '兩天匯款客戶',
+            'customer_phone' => '0912345678',
+            'customer_address' => '台東市',
+            'customer_source' => 'phone',
+            'total_ac_units' => 4,
+            'ac_units' => 4,
+            'cleaning_price' => 4000,
+            'pricing_lines' => [['ac_units' => 4, 'unit_price' => 1000]],
+            'expects_company_remittance' => true,
+            'planned_start_date' => $start,
+            'planned_end_date' => $end,
+        ]);
+
+        $project->employees()->sync([
+            $this->employee->id => ['role' => 'member', 'assigned_units' => 4],
+        ]);
+
+        $primarySchedule = DailySchedule::query()->create($this->scheduleAttributes([
+            'cleaning_project_id' => $project->id,
+            'schedule_kind' => \App\Models\CleaningProject::SCHEDULE_KIND_REGULAR,
+            'user_id' => $this->employee->id,
+            'work_date' => $start,
+            'pricing_lines' => [['ac_units' => 4, 'unit_price' => 1000]],
+            'ac_units' => 4,
+            'cleaning_price' => 4000,
+            'unit_price' => 1000,
+        ]));
+
+        DailyReport::query()->create([
+            'schedule_id' => $primarySchedule->id,
+            'planned_units' => 4,
+            'completed_units' => 4,
+            'collected_amount' => 0,
+            'paid_to_company' => true,
+        ]);
+
+        $laterSchedule = DailySchedule::query()->create($this->scheduleAttributes([
+            'cleaning_project_id' => $project->id,
+            'schedule_kind' => \App\Models\CleaningProject::SCHEDULE_KIND_REGULAR,
+            'user_id' => $this->employee->id,
+            'work_date' => $end,
+            'pricing_lines' => [['ac_units' => 1, 'unit_price' => 1000]],
+            'ac_units' => 0,
+            'cleaning_price' => 0,
+            'unit_price' => 1000,
+        ]));
+
+        DailyReport::query()->create([
+            'schedule_id' => $laterSchedule->id,
+            'planned_units' => 0,
+            'completed_units' => 0,
+            'collected_amount' => 0,
+            'paid_to_company' => true,
+        ]);
+
+        CompanyRemittanceSupport::syncForProject($project);
+
+        $response = $this->getJson('/api/admin/reports?date_from='.$start.'&date_to='.$end)
+            ->assertOk();
+
+        $reports = collect($response->json('data.reports'))->values();
+
+        $this->assertCount(1, $reports);
+        $this->assertTrue($reports[0]['is_project_total']);
+        $this->assertSame($end, substr((string) $reports[0]['daily_schedule']['work_date'], 0, 10));
+        $this->assertSame(4, $reports[0]['completed_units']);
+        $this->assertSame(4000, $reports[0]['company_inbound_amount']);
+        $this->assertNotNull($reports[0]['company_remittance']);
+        $this->assertSame(2, $reports[0]['member_report_count']);
+    }
 }
