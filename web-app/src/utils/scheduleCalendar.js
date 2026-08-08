@@ -621,6 +621,9 @@ export function buildScheduleSuccessSummary(form, employees = [], { mode = 'crea
   const acUnits = serviceAddresses.length > 1
     ? serviceAddresses.reduce((total, row) => total + (Number(row.ac_units) || 0), 0)
     : Number(pricing.ac_units) || Number(synced.ac_units) || 0;
+  const addressList = serviceAddresses
+    .map((row) => String(row.address || '').trim())
+    .filter(Boolean);
 
   return {
     mode,
@@ -628,7 +631,8 @@ export function buildScheduleSuccessSummary(form, employees = [], { mode = 'crea
     start_time: synced.start_time,
     end_time: synced.end_time,
     customer_name: synced.customer_name,
-    customer_address: synced.customer_address,
+    customer_address: addressList[0] || synced.customer_address,
+    customer_addresses: addressList,
     customer_phone: synced.customer_phone,
     employee_name: employee?.name || '未指定',
     ac_units: acUnits,
