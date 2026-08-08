@@ -26,6 +26,14 @@ class TomorrowSchedulePushApiTest extends TestCase
             'customer_name' => '陳先生',
             'customer_phone' => '0911111111',
             'customer_address' => '台東市中華路一段1號',
+            'ac_units' => 2,
+            'unit_price' => 1500,
+            'pricing_lines' => [[
+                'ac_units' => 2,
+                'unit_price' => 1500,
+                'invoice_type' => 'none',
+                'charge_customer_tax' => false,
+            ]],
             'cleaning_price' => 3000,
         ]));
 
@@ -48,6 +56,96 @@ class TomorrowSchedulePushApiTest extends TestCase
             '🗺️ 導航：https://www.google.com/maps/search/?api=1&query='.rawurlencode('台東市中華路一段1號'),
             $message,
         );
+    }
+
+    public function test_build_message_uses_pricing_lines_per_stop_for_multi_address(): void
+    {
+        $first = new DailySchedule($this->scheduleAttributes([
+            'start_time' => '09:00',
+            'end_time' => '10:00',
+            'customer_name' => '測試',
+            'customer_phone' => '0919030203',
+            'customer_address' => '高雄市左營區富國路278號5樓',
+            'ac_units' => 1,
+            'cleaning_price' => 5500,
+            'pricing_lines' => [[
+                'ac_units' => 1,
+                'unit_price' => 1500,
+                'invoice_type' => 'none',
+                'charge_customer_tax' => false,
+            ]],
+            'notes' => '[多址 1/2·共5離5500]',
+        ]));
+
+        $second = new DailySchedule($this->scheduleAttributes([
+            'start_time' => '10:00',
+            'end_time' => '14:00',
+            'customer_name' => '測試',
+            'customer_phone' => '0919030203',
+            'customer_address' => '大昌二路150號',
+            'ac_units' => 4,
+            'cleaning_price' => 0,
+            'pricing_lines' => [[
+                'ac_units' => 4,
+                'unit_price' => 1000,
+                'invoice_type' => 'none',
+                'charge_customer_tax' => false,
+            ]],
+            'notes' => '[多址 2/2·共5離5500]',
+        ]));
+
+        $message = TomorrowSchedulePushSupport::buildMessage(
+            '測試人員',
+            '2026-08-09',
+            collect([$first, $second]),
+        );
+
+        $this->assertStringContainsString('💵 明日應收合計：5,500 元', $message);
+        $this->assertStringContainsString('📍 地址：高雄市左營區富國路278號5樓', $message);
+        $this->assertStringContainsString('💰 應收：1,500 元', $message);
+        $this->assertStringContainsString('📍 地址：大昌二路150號', $message);
+        $this->assertStringContainsString('💰 應收：4,000 元', $message);
+        $this->assertStringNotContainsString('💰 應收：5,500 元', $message);
+        $this->assertStringNotContainsString('💰 應收：0 元', $message);
+    }
+
+    public function test_build_message_splits_legacy_multi_address_total_on_first_stop(): void
+    {
+        $first = new DailySchedule($this->scheduleAttributes([
+            'start_time' => '09:00',
+            'end_time' => '10:00',
+            'customer_name' => '測試',
+            'customer_phone' => '0919030203',
+            'customer_address' => '高雄市左營區富國路278號5樓',
+            'ac_units' => 1,
+            'cleaning_price' => 5500,
+            'pricing_lines' => [],
+            'notes' => '[多址 1/2·共5離5500]',
+        ]));
+
+        $second = new DailySchedule($this->scheduleAttributes([
+            'start_time' => '10:00',
+            'end_time' => '14:00',
+            'customer_name' => '測試',
+            'customer_phone' => '0919030203',
+            'customer_address' => '大昌二路150號',
+            'ac_units' => 4,
+            'cleaning_price' => 0,
+            'pricing_lines' => [],
+            'notes' => '[多址 2/2·共5離5500]',
+        ]));
+
+        $message = TomorrowSchedulePushSupport::buildMessage(
+            '測試人員',
+            '2026-08-09',
+            collect([$first, $second]),
+        );
+
+        $this->assertStringContainsString('💵 明日應收合計：5,500 元', $message);
+        $this->assertStringContainsString('💰 應收：1,100 元', $message);
+        $this->assertStringContainsString('💰 應收：4,400 元', $message);
+        $this->assertStringNotContainsString('💰 應收：5,500 元', $message);
+        $this->assertStringNotContainsString('💰 應收：0 元', $message);
     }
 
     public function test_command_pushes_grouped_schedules_for_bound_employees(): void
