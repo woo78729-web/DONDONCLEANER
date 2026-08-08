@@ -52,6 +52,51 @@ class LineWebhookApiTest extends TestCase
         });
     }
 
+    public function test_bind_updates_all_accounts_sharing_the_same_phone(): void
+    {
+        config([
+            'services.line.channel_access_token' => 'test-token',
+            'services.line.channel_secret' => '',
+        ]);
+
+        Http::fake([
+            'https://api.line.me/v2/bot/message/reply' => Http::response(['sent' => true], 200),
+        ]);
+
+        $admin = User::query()->create([
+            'account' => 'admin1',
+            'password' => Hash::make('password123'),
+            'name' => '王管理員',
+            'phone' => '0912345678',
+            'role' => 'admin',
+            'is_active' => true,
+        ]);
+
+        $employee = User::query()->create([
+            'account' => 'shifu1',
+            'password' => Hash::make('password123'),
+            'name' => '王師傅',
+            'phone' => '0912-345-678',
+            'role' => 'employee',
+            'is_active' => true,
+            'rules_accepted_at' => now(),
+            'must_change_password' => false,
+        ]);
+
+        $this->postJson('/api/line/webhook', $this->textEventPayload(
+            text: '綁定 0912345678',
+            lineUserId: 'Usharedlineid',
+            replyToken: 'reply-token-shared',
+        ))->assertOk();
+
+        $this->assertSame('Usharedlineid', $admin->fresh()->line_user_id);
+        $this->assertSame('Usharedlineid', $employee->fresh()->line_user_id);
+
+        Http::assertSent(function ($request) {
+            return str_contains($request['messages'][0]['text'], '綁定成功！您好，王師傅');
+        });
+    }
+
     public function test_bind_unknown_phone_replies_not_found(): void
     {
         config([

@@ -68,39 +68,42 @@ class LineWebhookController extends Controller
             return;
         }
 
-        $employee = $this->findEmployeeByPhone($normalizedPhone);
+        $matchedUserIds = User::query()
+            ->whereNotNull('phone')
+            ->get(['id', 'phone', 'name', 'role'])
+            ->filter(function (User $user) use ($normalizedPhone) {
+                return $this->normalizePhone((string) $user->phone) === $normalizedPhone;
+            })
+            ->pluck('id')
+            ->all();
 
-        if (! $employee) {
+        if ($matchedUserIds === []) {
             $this->reply($replyToken, '找不到此手機號碼，請確認後再試一次。');
 
             return;
         }
 
-        // 同一個 LINE 帳號只綁一位員工
-        User::query()
-            ->where('line_user_id', $lineUserId)
-            ->where('id', '!=', $employee->id)
-            ->update(['line_user_id' => null]);
+        // 同一手機號的所有帳號（管理員／師傅等）同步寫入同一個 line_user_id
+        $updated = User::query()
+            ->whereIn('id', $matchedUserIds)
+            ->update(['line_user_id' => $lineUserId]);
 
-        $employee->line_user_id = $lineUserId;
-        $employee->save();
+        // 有找到符合手機號的帳號即成功；update 回傳 0 可能只是原本已綁定相同 ID
+        if ($updated <= 0 && User::query()->whereIn('id', $matchedUserIds)->where('line_user_id', $lineUserId)->count() === 0) {
+            $this->reply($replyToken, '找不到此手機號碼，請確認後再試一次。');
+
+            return;
+        }
+
+        $displayName = User::query()
+            ->whereIn('id', $matchedUserIds)
+            ->orderByRaw("CASE WHEN role = 'employee' THEN 0 ELSE 1 END")
+            ->value('name') ?: '員工';
 
         $this->reply(
             $replyToken,
-            "綁定成功！您好，{$employee->name}，以後明天的班表都會自動傳送到這裡囉！"
+            "綁定成功！您好，{$displayName}，以後明天的班表都會自動傳送到這裡囉！"
         );
-    }
-
-    private function findEmployeeByPhone(string $normalizedPhone): ?User
-    {
-        return User::query()
-            ->where('role', 'employee')
-            ->where('is_active', true)
-            ->whereNotNull('phone')
-            ->get()
-            ->first(function (User $user) use ($normalizedPhone) {
-                return $this->normalizePhone((string) $user->phone) === $normalizedPhone;
-            });
     }
 
     private function normalizePhone(string $phone): string
