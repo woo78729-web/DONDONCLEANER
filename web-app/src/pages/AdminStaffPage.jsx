@@ -357,6 +357,11 @@ export default function AdminStaffPage() {
             />
           </label>
 
+          <div className="staff-field staff-field--status" title={staff.line_user_id || '尚未綁定 LINE'}>
+            <span className="staff-field__label">LINE</span>
+            <StatusBadge status={staff.line_bound || staff.line_user_id ? 'line_bound' : 'line_unbound'} />
+          </div>
+
           <label className="staff-field">
             <span className="staff-field__label">Google</span>
             <input
