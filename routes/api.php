@@ -10,6 +10,7 @@ use App\Http\Controllers\Admin\ReportController as AdminReportController;
 use App\Http\Controllers\Admin\SchedulePlanningController as AdminSchedulePlanningController;
 use App\Http\Controllers\Admin\UserController as AdminUserController;
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\Cron\SendTomorrowSchedulesController;
 use App\Http\Controllers\LineWebhookController;
 use App\Http\Controllers\Employee\MaintenanceReportController as EmployeeMaintenanceReportController;
 use App\Http\Controllers\Employee\ReportController as EmployeeReportController;
@@ -23,6 +24,9 @@ Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:lo
 
 // LINE Webhook（公開、無 CSRF／無登入；由 LINE Platform 呼叫）
 Route::post('/line/webhook', LineWebhookController::class);
+
+// 外部 Cron（Zeabur／cron-job.org 等）觸發明日班表推播；需 CRON_SECRET
+Route::match(['get', 'post'], '/cron/send-tomorrow-schedules', SendTomorrowSchedulesController::class);
 
 Route::middleware('auth:sanctum')->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);

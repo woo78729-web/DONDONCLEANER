@@ -10,6 +10,7 @@ use App\Console\Commands\DedupeProjectRemittances;
 use App\Console\Commands\EnsureAdminAccount;
 use App\Console\Commands\EnsureDevAccounts;
 use App\Console\Commands\ResetBusinessData;
+use App\Console\Commands\SendTomorrowSchedules;
 use App\Support\PublicStorageLink;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Console\Application as ArtisanApplication;
@@ -33,6 +34,7 @@ class AppServiceProvider extends ServiceProvider
             $artisan->resolve(EnsureAdminAccount::class);
             $artisan->resolve(EnsureDevAccounts::class);
             $artisan->resolve(ResetBusinessData::class);
+            $artisan->resolve(SendTomorrowSchedules::class);
         });
     }
 

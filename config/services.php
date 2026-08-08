@@ -46,4 +46,8 @@ return [
         'channel_secret' => env('LINE_BOT_CHANNEL_SECRET'),
     ],
 
+    'cron' => [
+        'secret' => env('CRON_SECRET'),
+    ],
+
 ];
