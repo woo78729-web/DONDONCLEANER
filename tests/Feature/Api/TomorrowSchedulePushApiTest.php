@@ -26,6 +26,7 @@ class TomorrowSchedulePushApiTest extends TestCase
             'customer_name' => '陳先生',
             'customer_phone' => '0911111111',
             'customer_address' => '台東市中華路一段1號',
+            'cleaning_price' => 3000,
         ]));
 
         $message = TomorrowSchedulePushSupport::buildMessage(
@@ -37,10 +38,12 @@ class TomorrowSchedulePushApiTest extends TestCase
         $this->assertStringContainsString('📅 明日班表提醒 (2026-08-09)', $message);
         $this->assertStringContainsString('👨‍🔧 師傅：王師傅', $message);
         $this->assertStringContainsString('共有 1 件行程', $message);
+        $this->assertStringContainsString('💵 明日應收合計：3,000 元', $message);
         $this->assertStringContainsString('⏰ 09:00 - 11:00', $message);
         $this->assertStringContainsString('👤 客戶：陳先生', $message);
         $this->assertStringContainsString('📞 電話：0911111111', $message);
         $this->assertStringContainsString('📍 地址：台東市中華路一段1號', $message);
+        $this->assertStringContainsString('💰 應收：3,000 元', $message);
         $this->assertStringContainsString(
             '🗺️ 導航：https://www.google.com/maps/search/?api=1&query='.rawurlencode('台東市中華路一段1號'),
             $message,

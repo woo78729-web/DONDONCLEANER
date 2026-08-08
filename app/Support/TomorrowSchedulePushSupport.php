@@ -112,10 +112,13 @@ class TomorrowSchedulePushSupport
      */
     public static function buildMessage(string $employeeName, string $date, Collection $schedules): string
     {
+        $totalReceivable = (int) $schedules->sum(fn (DailySchedule $schedule) => max(0, (int) ($schedule->cleaning_price ?? 0)));
+
         $lines = [
             "📅 明日班表提醒 ({$date})",
             "👨‍🔧 師傅：{$employeeName}",
             '共有 '.$schedules->count().' 件行程',
+            '💵 明日應收合計：'.self::formatMoney($totalReceivable).' 元',
         ];
 
         foreach ($schedules as $schedule) {
@@ -123,18 +126,25 @@ class TomorrowSchedulePushSupport
             $mapsUrl = $address !== ''
                 ? 'https://www.google.com/maps/search/?api=1&query='.rawurlencode($address)
                 : '（無地址）';
+            $amount = max(0, (int) ($schedule->cleaning_price ?? 0));
 
             $lines[] = '----------------------';
             $lines[] = '⏰ '.self::formatTime($schedule->start_time).' - '.self::formatTime($schedule->end_time);
             $lines[] = '👤 客戶：'.(trim((string) ($schedule->customer_name ?? '')) ?: '-');
             $lines[] = '📞 電話：'.(trim((string) ($schedule->customer_phone ?? '')) ?: '-');
             $lines[] = '📍 地址：'.($address !== '' ? $address : '-');
+            $lines[] = '💰 應收：'.self::formatMoney($amount).' 元';
             $lines[] = '🗺️ 導航：'.$mapsUrl;
         }
 
         $lines[] = '----------------------';
 
         return implode("\n", $lines);
+    }
+
+    private static function formatMoney(int $amount): string
+    {
+        return number_format($amount, 0, '.', ',');
     }
 
     private static function formatTime(mixed $time): string
