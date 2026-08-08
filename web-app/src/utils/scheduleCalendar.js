@@ -44,6 +44,59 @@ export function resolveSegmentPricingLine(lines, index) {
   return normalized[index] ?? normalized[normalized.length - 1];
 }
 
+/**
+ * 依台數順序，把清洗項目單價分配到各站地址。
+ * 例：項目 [1台1500, 4台1000] + 地址 [1台, 4台] → [[1×1500], [4×1000]]
+ */
+export function allocatePricingLinesToAddressSegments(pricingLines, addressUnitCounts) {
+  const queue = normalizePricingLines(pricingLines).map((line) => ({
+    template: line,
+    remaining: Math.max(0, Number(line.ac_units) || 0),
+  }));
+
+  if (queue.length === 0) {
+    queue.push({
+      template: createPricingLine(),
+      remaining: Number.POSITIVE_INFINITY,
+    });
+  }
+
+  return addressUnitCounts.map((rawUnits, addressIndex) => {
+    let need = Math.max(1, Number(rawUnits) || 1);
+    const allocated = [];
+
+    for (const item of queue) {
+      if (need <= 0) {
+        break;
+      }
+
+      if (!(item.remaining > 0)) {
+        continue;
+      }
+
+      const take = Math.min(item.remaining, need);
+      allocated.push({
+        ...item.template,
+        id: `${item.template.id || 'line'}-a${addressIndex}-${allocated.length}`,
+        ac_units: String(take),
+      });
+      item.remaining -= take;
+      need -= take;
+    }
+
+    if (need > 0) {
+      const fallback = queue[queue.length - 1]?.template || createPricingLine();
+      allocated.push({
+        ...fallback,
+        id: `${fallback.id || 'line'}-a${addressIndex}-pad`,
+        ac_units: String(need),
+      });
+    }
+
+    return allocated;
+  });
+}
+
 export function clonePricingLineInvoiceSettings(line) {
   const invoiceType = line?.invoice_type || INVOICE_TYPE_NONE;
   const chargeCustomerTax = line?.charge_customer_tax !== false;
@@ -1151,12 +1204,8 @@ export function getScheduleSegmentTotal(schedule) {
 export function getScheduleSegmentDisplayPrice(schedule, relatedSchedules = []) {
   const multi = parseMultiAddressNote(schedule?.notes);
   const groupTotals = resolveMultiAddressGroupTotals(schedule, relatedSchedules);
-  const fromGroup = getMultiAddressSegmentDisplayPrice(schedule, groupTotals);
 
-  if (fromGroup != null && fromGroup > 0) {
-    return fromGroup;
-  }
-
+  // 優先用本站 pricing_lines／cleaning_price（保留分段單價），勿先用總額平均分攤
   const lines = normalizePricingLines(schedule?.pricing_lines);
 
   if (lines.length > 0) {
@@ -1170,11 +1219,18 @@ export function getScheduleSegmentDisplayPrice(schedule, relatedSchedules = []) 
   const stored = Number(schedule?.cleaning_price);
 
   if (Number.isFinite(stored) && stored > 0) {
+    // 舊資料：第一站誤存整單總額時，才退回按台數比例分攤
     if (multi?.index === 1 && groupTotals?.groupPrice != null && stored === groupTotals.groupPrice) {
       return getMultiAddressSegmentDisplayPrice(schedule, groupTotals) || 0;
     }
 
     return stored;
+  }
+
+  const fromGroup = getMultiAddressSegmentDisplayPrice(schedule, groupTotals);
+
+  if (fromGroup != null && fromGroup > 0) {
+    return fromGroup;
   }
 
   return getScheduleSegmentTotal(schedule);
@@ -2368,13 +2424,26 @@ export function buildSchedulePayloads(form, options = {}) {
 
   let currentStart = form.start_time;
   const payloads = [];
+  const addressUnitCounts = addresses.map((row) => Math.max(1, Number(row.ac_units) || 1));
+  const segmentPricingLinesList = allocatePricingLinesToAddressSegments(
+    normalizedLines,
+    addressUnitCounts,
+  );
+  const primaryInvoiceSettings = clonePricingLineInvoiceSettings(normalizedLines[0]);
 
   addresses.forEach((row, index) => {
-    const units = Math.max(1, Number(row.ac_units) || 1);
+    const units = addressUnitCounts[index];
     const endTime = calculateEndTimeFromUnits(currentStart, units);
     const isFirst = index === 0;
-    const segmentLine = resolveSegmentPricingLine(normalizedLines, index);
-    const primaryInvoiceSettings = clonePricingLineInvoiceSettings(normalizedLines[0]);
+    const segmentPricingLines = (segmentPricingLinesList[index] || []).map((line) => ({
+      ...line,
+      ...primaryInvoiceSettings,
+    }));
+    const segmentAddress = createServiceAddress({
+      ...row,
+      ac_units: String(units),
+      address: row.address,
+    });
 
     payloads.push(buildSchedulePayload({
       ...form,
@@ -2382,11 +2451,9 @@ export function buildSchedulePayloads(form, options = {}) {
       end_time: endTime,
       customer_address: row.address,
       customer_phone: row.same_as_customer ? form.customer_phone : (row.phone || form.customer_phone),
-      pricing_lines: [{
-        ...segmentLine,
-        ...primaryInvoiceSettings,
-        ac_units: String(units),
-      }],
+      // 每站各自一份，避免多地址時全部寫成第一站地址
+      service_addresses: [segmentAddress],
+      pricing_lines: segmentPricingLines,
       needs_mail: isFirst ? form.needs_mail : false,
       needs_invoice: isFirst ? needsInvoice : false,
       needs_receipt: isFirst ? form.needs_receipt : false,
