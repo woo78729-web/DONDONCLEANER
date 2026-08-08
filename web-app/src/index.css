@@ -774,6 +774,7 @@ select option {
     max-content
     minmax(88px, 1fr)
     minmax(72px, 0.78fr)
+    max-content
     minmax(76px, 0.82fr)
     minmax(68px, 0.74fr)
     minmax(52px, 0.58fr)
@@ -835,6 +836,53 @@ select option {
   white-space: nowrap;
   padding: 3px 8px;
   font-size: 11px;
+}
+
+.staff-field--line {
+  align-items: flex-start;
+  width: max-content;
+}
+
+.staff-line-bind {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 8px 0 3px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.03);
+  color: rgba(232, 238, 247, 0.55);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.staff-line-bind__icon {
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.staff-line-bind__icon rect {
+  fill: #3a4454;
+}
+
+.staff-line-bind.is-bound {
+  border-color: rgba(6, 199, 85, 0.5);
+  background: rgba(6, 199, 85, 0.12);
+  color: #9dffc0;
+}
+
+.staff-line-bind.is-bound .staff-line-bind__icon {
+  color: #ffffff;
+}
+
+.staff-line-bind.is-bound .staff-line-bind__icon rect {
+  fill: #06c755;
 }
 
 .staff-card__actions {

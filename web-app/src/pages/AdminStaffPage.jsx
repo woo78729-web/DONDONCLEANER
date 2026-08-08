@@ -21,6 +21,29 @@ const defaultForm = {
   google_email: '',
 };
 
+function LineBindStatus({ bound, lineUserId }) {
+  const title = bound
+    ? `LINE 已綁定成功${lineUserId ? `：${lineUserId}` : ''}`
+    : '尚未綁定 LINE';
+
+  return (
+    <span
+      className={`staff-line-bind${bound ? ' is-bound' : ''}`}
+      title={title}
+      aria-label={title}
+    >
+      <svg className="staff-line-bind__icon" viewBox="0 0 36 36" aria-hidden="true">
+        <rect width="36" height="36" rx="10" />
+        <path
+          fill="currentColor"
+          d="M18 8.2c-5.4 0-9.8 3.5-9.8 7.8 0 3.5 2.9 6.5 7 7.5.3.1.6.3.7.6l.4 1.5c.1.3.4.4.7.3l1.8-.9c.2-.1.4-.1.6 0 2.1.5 4.3.2 6.1-.9 3.3-2 5.3-5.1 5.3-8.1 0-4.3-4.4-7.8-9.8-7.8Zm-4.2 6.4c0 .5-.4.9-.9.9s-.9-.4-.9-.9v-2.2c0-.5.4-.9.9-.9s.9.4.9.9v2.2Zm2.9 0c0 .5-.4.9-.9.9s-.9-.4-.9-.9v-2.2c0-.5.4-.9.9-.9s.9.4.9.9v2.2Zm5.1.9h-2.1c-.5 0-.9-.4-.9-.9v-2.2c0-.5.4-.9.9-.9h2.1c.5 0 .9.4.9.9s-.4.9-.9.9h-1.2v1.3c0 .5-.4.9-.9.9Zm3.4 0c-.5 0-.9-.4-.9-.9v-2.2c0-.5.4-.9.9-.9s.9.4.9.9v2.2c0 .5-.4.9-.9.9Z"
+        />
+      </svg>
+      <span className="staff-line-bind__text">{bound ? '已綁定' : '未綁定'}</span>
+    </span>
+  );
+}
+
 function PasswordField({
   value,
   onChange,
@@ -357,9 +380,12 @@ export default function AdminStaffPage() {
             />
           </label>
 
-          <div className="staff-field staff-field--status" title={staff.line_user_id || '尚未綁定 LINE'}>
+          <div className="staff-field staff-field--line">
             <span className="staff-field__label">LINE</span>
-            <StatusBadge status={staff.line_bound || staff.line_user_id ? 'line_bound' : 'line_unbound'} />
+            <LineBindStatus
+              bound={Boolean(staff.line_bound || staff.line_user_id)}
+              lineUserId={staff.line_user_id}
+            />
           </div>
 
           <label className="staff-field">
