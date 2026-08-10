@@ -148,43 +148,149 @@ class AccountingController extends Controller
             'year_month' => ['nullable', 'regex:/^\d{4}-\d{2}$/'],
             'mailed_at' => ['nullable', 'date'],
             'amount' => ['nullable', 'integer', 'min:1', 'max:9999'],
+            'billing_amount' => ['nullable', 'integer', 'min:0', 'max:9999999'],
+            'needs_receipt' => ['nullable', 'boolean'],
+            'needs_invoice' => ['nullable', 'boolean'],
+            'invoice_charge_customer_tax' => ['nullable', 'boolean'],
+            'invoice_title' => ['nullable', 'string', 'max:255'],
+            'invoice_tax_id' => ['nullable', 'string', 'max:20'],
+            'mail_tracking_number' => ['nullable', 'string', 'max:100'],
             'mail_recipient' => ['required', 'string', 'max:255'],
             'mail_phone' => ['required', 'string', 'max:50'],
             'mail_address' => ['required', 'string', 'max:255'],
             'notes' => ['required', 'string', 'max:255'],
+            'as_pending' => ['nullable', 'boolean'],
+            'invoice_sent' => ['nullable', 'boolean'],
         ]);
 
-        $mailedAt = MailPostageAccounting::resolveMailedAt(
-            $validated['mailed_at'] ?? null,
-            true,
-        );
-        $yearMonth = $validated['year_month'] ?? substr((string) $mailedAt, 0, 7);
+        // 預設進待寄清單；舊呼叫若直接帶 mailed_at 仍視為已寄出補登
+        $asPending = $request->has('as_pending')
+            ? $request->boolean('as_pending')
+            : ! $request->filled('mailed_at');
+
+        $markSent = ! $asPending && $request->boolean('invoice_sent', true);
+        $mailedAt = $markSent
+            ? MailPostageAccounting::resolveMailedAt($validated['mailed_at'] ?? null, true)
+            : null;
+        $yearMonth = $validated['year_month']
+            ?? ($mailedAt ? substr((string) $mailedAt, 0, 7) : now()->format('Y-m'));
+
+        $needsReceipt = array_key_exists('needs_receipt', $validated)
+            ? (bool) $validated['needs_receipt']
+            : true;
+        $needsInvoice = array_key_exists('needs_invoice', $validated)
+            ? (bool) $validated['needs_invoice']
+            : false;
+
+        if (! $needsReceipt && ! $needsInvoice) {
+            $needsReceipt = true;
+        }
 
         $entry = ManualPostageEntry::query()->create([
             'year_month' => $yearMonth,
             'mailed_at' => $mailedAt,
             'amount' => $validated['amount'] ?? MonthlyAccounting::POSTAGE_UNIT,
+            'billing_amount' => (int) ($validated['billing_amount'] ?? 0),
+            'needs_receipt' => $needsReceipt,
+            'needs_invoice' => $needsInvoice,
+            'invoice_charge_customer_tax' => (bool) ($validated['invoice_charge_customer_tax'] ?? false),
             'mail_recipient' => trim($validated['mail_recipient']),
             'mail_phone' => trim($validated['mail_phone']),
             'mail_address' => trim($validated['mail_address']),
+            'invoice_title' => trim((string) ($validated['invoice_title'] ?? '')) ?: null,
+            'invoice_tax_id' => trim((string) ($validated['invoice_tax_id'] ?? '')) ?: null,
+            'mail_tracking_number' => trim((string) ($validated['mail_tracking_number'] ?? '')) ?: null,
             'notes' => trim($validated['notes']),
+            'invoice_sent' => $markSent,
             'created_by' => $request->user()->id,
         ]);
 
+        $summaryMonth = $entry->mailed_at?->format('Y-m') ?? $entry->year_month;
+
         return $this->success([
-            'entry' => [
-                'id' => $entry->id,
-                'year_month' => $entry->year_month,
-                'mailed_at' => $entry->mailed_at?->format('Y-m-d'),
-                'amount' => (int) $entry->amount,
-                'mail_recipient' => $entry->mail_recipient,
-                'mail_phone' => $entry->mail_phone,
-                'mail_address' => $entry->mail_address,
-                'notes' => $entry->notes,
-                'created_at' => $entry->created_at?->toDateTimeString(),
-            ],
-            'summary' => MonthlyAccounting::buildSummary($yearMonth),
-        ], '補寄郵資已新增', 201);
+            'entry' => MailPostageAccounting::manualPostagePayload($entry),
+            'summary' => MonthlyAccounting::buildSummary($summaryMonth),
+        ], $markSent ? '補寄郵資已新增' : '補寄項目已加入待寄清單', 201);
+    }
+
+    public function updateManualPostage(Request $request, ManualPostageEntry $manualPostage): JsonResponse
+    {
+        $validated = $request->validate([
+            'mailed_at' => ['nullable', 'date'],
+            'amount' => ['nullable', 'integer', 'min:1', 'max:9999'],
+            'billing_amount' => ['nullable', 'integer', 'min:0', 'max:9999999'],
+            'needs_receipt' => ['nullable', 'boolean'],
+            'needs_invoice' => ['nullable', 'boolean'],
+            'invoice_charge_customer_tax' => ['nullable', 'boolean'],
+            'invoice_title' => ['nullable', 'string', 'max:255'],
+            'invoice_tax_id' => ['nullable', 'string', 'max:20'],
+            'mail_tracking_number' => ['nullable', 'string', 'max:100'],
+            'mail_recipient' => ['nullable', 'string', 'max:255'],
+            'mail_phone' => ['nullable', 'string', 'max:50'],
+            'mail_address' => ['nullable', 'string', 'max:255'],
+            'notes' => ['nullable', 'string', 'max:255'],
+            'invoice_sent' => ['nullable', 'boolean'],
+        ]);
+
+        foreach (['mail_recipient', 'mail_phone', 'mail_address', 'notes', 'invoice_title', 'invoice_tax_id', 'mail_tracking_number'] as $field) {
+            if (array_key_exists($field, $validated)) {
+                $value = trim((string) ($validated[$field] ?? ''));
+                $manualPostage->{$field} = $value !== '' ? $value : null;
+            }
+        }
+
+        if (array_key_exists('amount', $validated) && $validated['amount'] !== null) {
+            $manualPostage->amount = (int) $validated['amount'];
+        }
+
+        if (array_key_exists('billing_amount', $validated) && $validated['billing_amount'] !== null) {
+            $manualPostage->billing_amount = (int) $validated['billing_amount'];
+        }
+
+        if (array_key_exists('needs_receipt', $validated)) {
+            $manualPostage->needs_receipt = (bool) $validated['needs_receipt'];
+        }
+
+        if (array_key_exists('needs_invoice', $validated)) {
+            $manualPostage->needs_invoice = (bool) $validated['needs_invoice'];
+        }
+
+        if (array_key_exists('invoice_charge_customer_tax', $validated)) {
+            $manualPostage->invoice_charge_customer_tax = (bool) $validated['invoice_charge_customer_tax'];
+        }
+
+        if (! $manualPostage->needs_receipt && ! $manualPostage->needs_invoice) {
+            $manualPostage->needs_receipt = true;
+        }
+
+        $wasSent = (bool) $manualPostage->invoice_sent;
+        $markSent = array_key_exists('invoice_sent', $validated)
+            ? (bool) $validated['invoice_sent']
+            : $wasSent;
+
+        if ($markSent) {
+            $manualPostage->invoice_sent = true;
+            $manualPostage->mailed_at = MailPostageAccounting::resolveMailedAt(
+                $validated['mailed_at'] ?? $manualPostage->mailed_at?->format('Y-m-d'),
+                true,
+            );
+            $manualPostage->year_month = substr((string) $manualPostage->mailed_at, 0, 7);
+        } elseif ($wasSent && ! $markSent) {
+            $manualPostage->invoice_sent = false;
+            $manualPostage->mailed_at = null;
+        } elseif (array_key_exists('mailed_at', $validated) && $validated['mailed_at']) {
+            $manualPostage->mailed_at = $validated['mailed_at'];
+            $manualPostage->year_month = substr((string) $validated['mailed_at'], 0, 7);
+        }
+
+        $manualPostage->save();
+
+        $summaryMonth = $manualPostage->mailed_at?->format('Y-m') ?? $manualPostage->year_month;
+
+        return $this->success([
+            'entry' => MailPostageAccounting::manualPostagePayload($manualPostage->fresh()),
+            'summary' => MonthlyAccounting::buildSummary($summaryMonth),
+        ], $markSent && ! $wasSent ? '補寄已標記寄出完成' : '補寄資料已更新');
     }
 
     public function destroyManualPostage(ManualPostageEntry $manualPostage): JsonResponse

@@ -326,6 +326,10 @@ class AcCleaningApi {
     return this.request('POST', '/admin/accounting/manual-postage', { body: payload });
   }
 
+  updateManualPostage(entryId, payload) {
+    return this.request('PATCH', `/admin/accounting/manual-postage/${entryId}`, { body: payload });
+  }
+
   deleteManualPostage(entryId) {
     return this.request('DELETE', `/admin/accounting/manual-postage/${entryId}`);
   }

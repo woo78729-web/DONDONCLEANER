@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Layout } from '../components/Layout';
 import { PageAlert } from '../components/PageAlert';
@@ -70,6 +70,10 @@ const emptyManualPostageDraft = () => ({
   mail_phone: '',
   mail_address: '',
   notes: '',
+  needs_receipt: true,
+  needs_invoice: false,
+  billing_amount: '',
+  mark_sent_now: false,
   mailed_at: todayDateString(),
 });
 
@@ -92,7 +96,7 @@ function ManualPostageModal({ open, onClose, onSave, saving }) {
         <div className="modal-header">
           <div>
             <h2 className="modal-title">新增補寄郵資</h2>
-            <p className="hint">填寫收件資料與原因；依「實際寄出時間」歸屬月份，每筆計 28 元郵資。</p>
+            <p className="hint">新增後會進入下方待寄清單填寫金額／收據；28 元運費公司吸收，不跟客人收。</p>
           </div>
           <button type="button" className="modal-close" onClick={onClose} aria-label="關閉">×</button>
         </div>
@@ -143,30 +147,73 @@ function ManualPostageModal({ open, onClose, onSave, saving }) {
               className="field-control"
               value={draft.notes}
               onChange={(event) => setDraft((previous) => ({ ...previous, notes: event.target.value }))}
-              placeholder="例：發票抬頭更正補寄"
+              placeholder="例：發票抬頭更正補寄、補寄收據"
               maxLength={255}
               required
             />
           </label>
 
           <label className="field">
-            <span className="field-label">實際寄出時間</span>
+            <span className="field-label">開立金額（可稍後在待寄清單填）</span>
             <input
               className="field-control"
-              type="date"
-              value={draft.mailed_at}
-              onChange={(event) => setDraft((previous) => ({ ...previous, mailed_at: event.target.value }))}
-              required
+              type="number"
+              min="0"
+              step="1"
+              value={draft.billing_amount}
+              onChange={(event) => setDraft((previous) => ({ ...previous, billing_amount: event.target.value }))}
+              placeholder="收據／發票金額，不含 28 運費"
             />
-            <span className="hint">補登舊帳時請改為實際寄出日期，會計入該月自動開支。</span>
           </label>
+
+          <div className="field">
+            <span className="field-label">文件類型</span>
+            <label className="field field-checkbox">
+              <input
+                type="checkbox"
+                checked={Boolean(draft.needs_receipt)}
+                onChange={(event) => setDraft((previous) => ({ ...previous, needs_receipt: event.target.checked }))}
+              />
+              <span>收據（預設；不跟客人收稅金）</span>
+            </label>
+            <label className="field field-checkbox">
+              <input
+                type="checkbox"
+                checked={Boolean(draft.needs_invoice)}
+                onChange={(event) => setDraft((previous) => ({ ...previous, needs_invoice: event.target.checked }))}
+              />
+              <span>發票</span>
+            </label>
+          </div>
+
+          <label className="field field-checkbox">
+            <input
+              type="checkbox"
+              checked={Boolean(draft.mark_sent_now)}
+              onChange={(event) => setDraft((previous) => ({ ...previous, mark_sent_now: event.target.checked }))}
+            />
+            <span>已寄出補登（直接計入 28 元郵資，不進待寄）</span>
+          </label>
+
+          {draft.mark_sent_now && (
+            <label className="field">
+              <span className="field-label">實際寄出時間</span>
+              <input
+                className="field-control"
+                type="date"
+                value={draft.mailed_at}
+                onChange={(event) => setDraft((previous) => ({ ...previous, mailed_at: event.target.value }))}
+                required
+              />
+            </label>
+          )}
 
           <div className="modal-actions">
             <button type="button" className="btn btn-secondary btn-pill" onClick={onClose} disabled={saving}>
               取消
             </button>
             <button type="submit" className="btn btn-primary btn-pill" disabled={saving}>
-              {saving ? '新增中…' : '確認新增 28 元'}
+              {saving ? '新增中…' : (draft.mark_sent_now ? '確認新增 28 元' : '新增並至待寄清單')}
             </button>
           </div>
         </form>
@@ -203,17 +250,46 @@ function buildReportDraft(report) {
   };
 }
 
+function buildManualPostageDraft(entry) {
+  return {
+    mail_recipient: entry?.mail_recipient || '',
+    mail_phone: entry?.mail_phone || '',
+    mail_address: entry?.mail_address || '',
+    invoice_tax_id: entry?.invoice_tax_id || '',
+    invoice_title: entry?.invoice_title || '',
+    mail_tracking_number: entry?.mail_tracking_number || '',
+    notes: entry?.notes || '',
+    billing_amount: entry?.billing_amount != null ? String(entry.billing_amount) : '',
+    needs_receipt: entry?.needs_receipt !== false,
+    needs_invoice: Boolean(entry?.needs_invoice),
+    invoice_charge_customer_tax: Boolean(entry?.invoice_charge_customer_tax),
+    invoice_sent: Boolean(entry?.invoice_sent),
+    mailed_at: resolveMailedAt(entry) || todayDateString(),
+  };
+}
+
+function buildEditDraft(item, kind) {
+  if (kind === 'manual_postage') {
+    return buildManualPostageDraft(item);
+  }
+
+  if (kind === 'schedule') {
+    return buildScheduleDraft(item);
+  }
+
+  return buildReportDraft(item);
+}
+
 function MailTrackingEditModal({ item, kind, open, onClose, onSave, saving, sentEdit = false, mergedCount = 1 }) {
-  const [draft, setDraft] = useState(() => (
-    kind === 'schedule' ? buildScheduleDraft(item) : buildReportDraft(item)
-  ));
+  const [draft, setDraft] = useState(() => buildEditDraft(item, kind));
+  const isManualPostage = kind === 'manual_postage';
 
   useEffect(() => {
     if (!open) {
       return;
     }
 
-    setDraft(kind === 'schedule' ? buildScheduleDraft(item) : buildReportDraft(item));
+    setDraft(buildEditDraft(item, kind));
   }, [item, kind, open]);
 
   if (!open || !item) {
@@ -223,7 +299,7 @@ function MailTrackingEditModal({ item, kind, open, onClose, onSave, saving, sent
   const schedule = kind === 'schedule' ? item : item.daily_schedule;
   const title = sentEdit
     ? '修改寄件資料'
-    : (kind === 'schedule' ? '班表寄件資料' : '回報寄件資料');
+    : (isManualPostage ? '補寄寄件資料' : (kind === 'schedule' ? '班表寄件資料' : '回報寄件資料'));
 
   return (
     <div className="modal-overlay schedule-form-overlay" role="presentation" onClick={onClose}>
@@ -232,12 +308,22 @@ function MailTrackingEditModal({ item, kind, open, onClose, onSave, saving, sent
           <div>
             <h2 className="modal-title">{title}</h2>
             <p className="hint">
-              {formatDateOnly(schedule?.work_date)}
-              {' · '}
-              {schedule?.user?.name || '-'}
-              {' · '}
-              {kind === 'schedule' ? scheduleTypeLabel(item) : reportTypeLabel(item)}
-              {mergedCount > 1 && ` · 已合併 ${mergedCount} 筆同天寄件`}
+              {isManualPostage ? (
+                <>
+                  補寄郵資 · {item.notes || '-'}
+                  <br />
+                  28 元運費公司吸收，不跟客人收取；開立金額僅填收據／發票金額。
+                </>
+              ) : (
+                <>
+                  {formatDateOnly(schedule?.work_date)}
+                  {' · '}
+                  {schedule?.user?.name || '-'}
+                  {' · '}
+                  {kind === 'schedule' ? scheduleTypeLabel(item) : reportTypeLabel(item)}
+                  {mergedCount > 1 && ` · 已合併 ${mergedCount} 筆同天寄件`}
+                </>
+              )}
             </p>
           </div>
           <button type="button" className="modal-close" onClick={onClose} aria-label="關閉">×</button>
@@ -279,6 +365,56 @@ function MailTrackingEditModal({ item, kind, open, onClose, onSave, saving, sent
               placeholder="請輸入寄送地址"
             />
           </label>
+
+          {isManualPostage && (
+            <>
+              <label className="field">
+                <span className="field-label">開立金額</span>
+                <input
+                  className="field-control"
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={draft.billing_amount}
+                  onChange={(event) => setDraft((previous) => ({ ...previous, billing_amount: event.target.value }))}
+                  placeholder="收據／發票金額"
+                />
+                <span className="hint">不包含 28 元運費（運費公司吸收）。</span>
+              </label>
+
+              <div className="field">
+                <span className="field-label">文件類型</span>
+                <label className="field field-checkbox">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(draft.needs_receipt)}
+                    onChange={(event) => setDraft((previous) => ({ ...previous, needs_receipt: event.target.checked }))}
+                  />
+                  <span>收據</span>
+                </label>
+                <label className="field field-checkbox">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(draft.needs_invoice)}
+                    onChange={(event) => setDraft((previous) => ({ ...previous, needs_invoice: event.target.checked }))}
+                  />
+                  <span>發票</span>
+                </label>
+              </div>
+
+              <label className="field field-checkbox">
+                <input
+                  type="checkbox"
+                  checked={Boolean(draft.invoice_charge_customer_tax)}
+                  onChange={(event) => setDraft((previous) => ({
+                    ...previous,
+                    invoice_charge_customer_tax: event.target.checked,
+                  }))}
+                />
+                <span>跟客人收稅金（預設不勾；多數補寄收據不用收）</span>
+              </label>
+            </>
+          )}
 
           <label className="field">
             <span className="field-label">統編</span>
@@ -326,7 +462,7 @@ function MailTrackingEditModal({ item, kind, open, onClose, onSave, saving, sent
                 }));
               }}
             />
-            <span>已寄件完成</span>
+            <span>已寄件完成{isManualPostage ? '（確認後才計入 28 元郵資）' : ''}</span>
           </label>
 
           {(draft.invoice_sent || sentEdit) && (
@@ -405,7 +541,7 @@ function MailTrackingTable({
                   <input
                     type="checkbox"
                     checked={selectedKeySet.has(row.key)}
-                    disabled={Boolean(row.cleaningProjectId)}
+                    disabled={Boolean(row.cleaningProjectId) || row.selectable === false || row.kind === 'manual_postage'}
                     onChange={() => onToggleRow?.(row)}
                     aria-label={`選取 ${formatDateOnly(row.date)} 寄件`}
                   />
@@ -509,6 +645,7 @@ export default function MailTrackingPage() {
   const [selectedRowKeys, setSelectedRowKeys] = useState([]);
   const [mergeSaving, setMergeSaving] = useState(false);
   const [yearMonth, setYearMonth] = useState(() => searchParams.get('year_month') || currentYearMonth());
+  const pendingSectionRef = useRef(null);
 
   async function loadTracking(nextYearMonth = yearMonth) {
     setLoading(true);
@@ -554,7 +691,26 @@ export default function MailTrackingPage() {
       const members = editTarget.members || [{ kind: editTarget.kind, source: editTarget.item }];
 
       for (const member of members) {
-        if (member.kind === 'schedule') {
+        if (member.kind === 'manual_postage') {
+          const billingAmount = draft.billing_amount === '' || draft.billing_amount == null
+            ? 0
+            : Number(draft.billing_amount);
+
+          await api.updateManualPostage(member.source.id, {
+            mail_recipient: draft.mail_recipient,
+            mail_phone: draft.mail_phone,
+            mail_address: draft.mail_address,
+            invoice_tax_id: draft.invoice_tax_id,
+            invoice_title: draft.invoice_title,
+            mail_tracking_number: draft.mail_tracking_number,
+            billing_amount: Number.isFinite(billingAmount) ? billingAmount : 0,
+            needs_receipt: Boolean(draft.needs_receipt),
+            needs_invoice: Boolean(draft.needs_invoice),
+            invoice_charge_customer_tax: Boolean(draft.invoice_charge_customer_tax),
+            invoice_sent: Boolean(draft.invoice_sent),
+            mailed_at: draft.invoice_sent ? (draft.mailed_at || todayDateString()) : null,
+          });
+        } else if (member.kind === 'schedule') {
           await api.updateScheduleMailTracking(member.source.id, draft);
         } else {
           await api.updateReportMailTracking(member.source.id, draft);
@@ -562,10 +718,13 @@ export default function MailTrackingPage() {
       }
 
       const mergedCount = members.length;
+      const isManual = editTarget.kind === 'manual_postage';
       setMessage(
         editTarget.sentEdit || !draft.invoice_sent
           ? (mergedCount > 1 ? `已更新 ${mergedCount} 筆合併寄件資料` : '寄件資料已更新')
-          : (mergedCount > 1 ? `已標記 ${mergedCount} 筆同天寄件完成` : '已標記寄出完成'),
+          : (isManual
+            ? '補寄已標記寄出，28 元郵資已計入公司開支'
+            : (mergedCount > 1 ? `已標記 ${mergedCount} 筆同天寄件完成` : '已標記寄出完成')),
       );
       setEditTarget(null);
       await loadTracking(yearMonth);
@@ -658,25 +817,61 @@ export default function MailTrackingPage() {
       return;
     }
 
+    if (!draft.needs_receipt && !draft.needs_invoice) {
+      setError('請至少勾選收據或發票');
+      return;
+    }
+
     setManualPostageSaving(true);
     setError('');
     setMessage('');
 
     try {
-      await api.createManualPostage({
-        mailed_at: draft.mailed_at || todayDateString(),
+      const billingAmount = draft.billing_amount === '' || draft.billing_amount == null
+        ? 0
+        : Number(draft.billing_amount);
+      const markSentNow = Boolean(draft.mark_sent_now);
+
+      const result = await api.createManualPostage({
+        as_pending: !markSentNow,
+        invoice_sent: markSentNow,
+        mailed_at: markSentNow ? (draft.mailed_at || todayDateString()) : null,
         mail_recipient,
         mail_phone,
         mail_address,
         notes,
+        needs_receipt: Boolean(draft.needs_receipt),
+        needs_invoice: Boolean(draft.needs_invoice),
+        invoice_charge_customer_tax: false,
+        billing_amount: Number.isFinite(billingAmount) ? billingAmount : 0,
       });
+
       setManualPostageOpen(false);
-      setMessage('補寄郵資已新增');
-      const mailedMonth = (draft.mailed_at || todayDateString()).slice(0, 7);
-      if (mailedMonth !== yearMonth) {
-        handleYearMonthChange(mailedMonth);
+
+      if (markSentNow) {
+        setMessage('補寄郵資已新增（直接計入 28 元）');
+        const mailedMonth = (draft.mailed_at || todayDateString()).slice(0, 7);
+        if (mailedMonth !== yearMonth) {
+          handleYearMonthChange(mailedMonth);
+        } else {
+          await loadTracking(yearMonth);
+        }
       } else {
+        setMessage('補寄已加入待寄清單，請填寫開立金額後標記寄出');
         await loadTracking(yearMonth);
+
+        const entry = result?.data?.entry;
+        if (entry) {
+          window.setTimeout(() => {
+            pendingSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            setEditTarget({
+              item: entry,
+              kind: 'manual_postage',
+              members: [{ kind: 'manual_postage', source: entry }],
+              sentEdit: false,
+            });
+          }, 80);
+        }
       }
     } catch (err) {
       setError(err.message);
@@ -703,6 +898,28 @@ export default function MailTrackingPage() {
   }
 
   async function handleDeleteRow(row) {
+    if (row.kind === 'manual_postage' || row.members?.[0]?.kind === 'manual_postage') {
+      const entryId = row.source?.id || row.members?.[0]?.source?.id;
+
+      if (!entryId || !window.confirm('確定刪除此筆補寄項目？')) {
+        return;
+      }
+
+      setError('');
+      setMessage('');
+
+      try {
+        await api.deleteManualPostage(entryId);
+        setMessage('補寄項目已刪除');
+        setSelectedRowKeys((previous) => previous.filter((key) => key !== row.key));
+        await loadTracking(yearMonth);
+      } catch (err) {
+        setError(err.message);
+      }
+
+      return;
+    }
+
     const scheduleIds = collectScheduleIdsFromMailRow(row);
 
     if (!scheduleIds.length) {
@@ -801,7 +1018,11 @@ export default function MailTrackingPage() {
     }
   }
 
-  const pendingRows = mergePendingMailRows(data?.pending?.schedules, data?.pending?.reports);
+  const pendingRows = mergePendingMailRows(
+    data?.pending?.schedules,
+    data?.pending?.reports,
+    data?.pending?.manual_postage,
+  );
 
   const sentMonthRows = mergeHistoryRows(
     data?.sent_month?.schedules || data?.sent_this_month?.schedules,
@@ -813,8 +1034,8 @@ export default function MailTrackingPage() {
   const sentSectionTitle = isCurrentMonth ? '當月寄出紀錄' : `${yearMonth} 寄出紀錄`;
   const sentEmptyText = isCurrentMonth ? '本月尚無寄出紀錄。' : `${yearMonth} 尚無寄出紀錄。`;
   const manualPostageHint = isCurrentMonth
-    ? '填寫收件資料與原因；依「實際寄出時間」歸屬月份，每筆計 28 元郵資。'
-    : `以下為 ${yearMonth} 的補寄郵資紀錄；切換月份可查看其他月份。`;
+    ? '新增後會進入待寄清單填寫開立金額／收據；確認寄出後才計入 28 元（公司吸收，不跟客人收）。'
+    : `以下為 ${yearMonth} 已寄出的補寄郵資紀錄；切換月份可查看其他月份。`;
 
   return (
     <Layout title="寄件追蹤">
@@ -854,14 +1075,14 @@ export default function MailTrackingPage() {
       <section className="card">
         <h3 className="section-label mail-tracking-section-title">補寄郵資（發票更正等）</h3>
         <p className="hint">{manualPostageHint}</p>
-        <p className="hint">不需重新派工時，可在此新增 28 元補寄郵資；依實際寄出時間歸屬月份。</p>
+        <p className="hint">不需重新派工時可新增補寄；預設只要收據、不收客人稅金，28 運費公司吸收。</p>
         <div className="mail-tracking-manual-postage">
           <button
             type="button"
             className="btn btn-primary btn-sm btn-pill"
             onClick={() => setManualPostageOpen(true)}
           >
-            ＋ 新增 28 元
+            ＋ 新增補寄
           </button>
         </div>
         {manualPostageEntries.length > 0 && (
@@ -908,11 +1129,11 @@ export default function MailTrackingPage() {
 
       {data && (
         <>
-          <section className="card table-card">
+          <section className="card table-card" ref={pendingSectionRef}>
             <div className="card-header">
               <div>
                 <h3 className="section-label mail-tracking-section-title">待寄清單</h3>
-                <p className="hint">勾選多筆同一客戶（同電話）後，可合併成一次寄出。</p>
+                <p className="hint">勾選多筆同一客戶（同電話）後，可合併成一次寄出。補寄項目也可在此填寫金額後標記寄出。</p>
               </div>
               <button
                 type="button"

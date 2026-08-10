@@ -287,6 +287,7 @@ class MaintenanceRecordController extends Controller
             'pending' => [
                 'schedules' => $pendingSchedules,
                 'reports' => $pendingReports,
+                'manual_postage' => MailPostageAccounting::pendingManualPostageEntries(),
             ],
             'sent_month' => $sentMonth,
             'sent_this_month' => $sentMonth,

@@ -610,17 +610,7 @@ class MonthlyAccounting
      */
     private static function manualPostagePayload(ManualPostageEntry $entry): array
     {
-        return [
-            'id' => $entry->id,
-            'year_month' => $entry->year_month,
-            'mailed_at' => $entry->mailed_at?->format('Y-m-d'),
-            'amount' => (int) $entry->amount,
-            'mail_recipient' => $entry->mail_recipient,
-            'mail_phone' => $entry->mail_phone,
-            'mail_address' => $entry->mail_address,
-            'notes' => $entry->notes,
-            'created_at' => $entry->created_at?->toDateTimeString(),
-        ];
+        return MailPostageAccounting::manualPostagePayload($entry);
     }
 
     /**

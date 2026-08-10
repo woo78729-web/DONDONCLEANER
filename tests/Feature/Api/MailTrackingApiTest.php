@@ -64,11 +64,62 @@ class MailTrackingApiTest extends TestCase
             ->assertJsonPath('data.pending.schedules.0.needs_invoice', true)
             ->assertJsonStructure([
                 'data' => [
-                    'pending' => ['schedules', 'reports'],
+                    'pending' => ['schedules', 'reports', 'manual_postage'],
                     'sent_this_month' => ['schedules', 'reports'],
                 ],
             ])
             ->assertJsonMissingPath('data.sent_history');
+    }
+
+    public function test_manual_postage_pending_appears_in_mail_tracking_until_sent(): void
+    {
+        Sanctum::actingAs($this->admin);
+
+        $create = $this->postJson('/api/admin/accounting/manual-postage', [
+            'as_pending' => true,
+            'mail_recipient' => '張均愷',
+            'mail_phone' => '0912345678',
+            'mail_address' => '高雄市測試路1號',
+            'notes' => '要收據',
+            'needs_receipt' => true,
+            'needs_invoice' => false,
+            'billing_amount' => 0,
+            'invoice_charge_customer_tax' => false,
+        ])->assertCreated();
+
+        $entryId = $create->json('data.entry.id');
+
+        $this->assertFalse((bool) $create->json('data.entry.invoice_sent'));
+        $this->assertNull($create->json('data.entry.mailed_at'));
+
+        $this->getJson('/api/admin/mail-tracking')
+            ->assertOk()
+            ->assertJsonPath('data.pending.manual_postage.0.id', $entryId)
+            ->assertJsonPath('data.pending.manual_postage.0.mail_recipient', '張均愷')
+            ->assertJsonPath('data.pending.manual_postage.0.needs_receipt', true)
+            ->assertJsonPath('data.totals.manual_postage_count', 0);
+
+        $this->patchJson('/api/admin/accounting/manual-postage/'.$entryId, [
+            'billing_amount' => 3150,
+            'needs_receipt' => true,
+            'needs_invoice' => false,
+            'invoice_charge_customer_tax' => false,
+            'invoice_title' => '測試抬頭',
+            'invoice_tax_id' => '12345678',
+            'invoice_sent' => true,
+            'mailed_at' => now()->toDateString(),
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.entry.billing_amount', 3150)
+            ->assertJsonPath('data.entry.invoice_sent', true);
+
+        $this->getJson('/api/admin/mail-tracking')
+            ->assertOk()
+            ->assertJsonPath('data.pending.manual_postage', [])
+            ->assertJsonPath('data.manual_postage_entries.0.id', $entryId)
+            ->assertJsonPath('data.manual_postage_entries.0.billing_amount', 3150)
+            ->assertJsonPath('data.totals.manual_postage_count', 1)
+            ->assertJsonPath('data.totals.postage_total', 28);
     }
 
     public function test_admin_can_update_schedule_mail_tracking_and_mark_sent(): void

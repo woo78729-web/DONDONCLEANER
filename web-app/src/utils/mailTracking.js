@@ -44,6 +44,10 @@ export function mailRecipientKeyFromSchedule(schedule) {
 }
 
 export function mailRecipientKeyFromRow(row) {
+  if (row.kind === 'manual_postage') {
+    return `manual-postage-${row.source?.id || row.key}`;
+  }
+
   const projectId = cleaningProjectIdFromRow(row);
 
   if (projectId) {
@@ -405,11 +409,53 @@ function mapReportRow(report) {
   };
 }
 
-export function mergePendingMailRows(schedules, reports) {
+function manualPostageTypeLabel(entry) {
+  const parts = [];
+
+  if (entry?.needs_invoice) {
+    parts.push('補寄發票');
+  }
+
+  if (entry?.needs_receipt || (!entry?.needs_invoice && !entry?.needs_receipt)) {
+    parts.push('補寄收據');
+  }
+
+  return parts.join('＋') || '補寄';
+}
+
+export function mapManualPostageRow(entry) {
+  return {
+    key: `manual-postage-${entry.id}`,
+    kind: 'manual_postage',
+    source: entry,
+    date: entry.created_at?.slice(0, 10) || entry.year_month || null,
+    plannedDate: null,
+    sourceColor: '#f59e0b',
+    sourceLabel: '補寄郵資',
+    contactId: entry.notes || '補寄',
+    employee: '-',
+    customer: entry.mail_recipient,
+    type: manualPostageTypeLabel(entry),
+    billingUnits: 0,
+    billingAmount: Number(entry.billing_amount || 0),
+    recipient: entry.mail_recipient,
+    invoiceTitle: entry.invoice_title,
+    taxId: entry.invoice_tax_id,
+    phone: entry.mail_phone,
+    address: entry.mail_address,
+    trackingNumber: entry.mail_tracking_number,
+    sentAt: entry.mailed_at,
+    status: entry.invoice_sent ? '已寄件完成' : '待處理',
+    selectable: false,
+  };
+}
+
+export function mergePendingMailRows(schedules, reports, manualPostageEntries = []) {
   const filteredSchedules = (schedules || []).filter((schedule) => !scheduleHasPendingReportMail(schedule));
   const rows = [
     ...(filteredSchedules || []).map((schedule) => mapScheduleRow(schedule)),
     ...(reports || []).map((report) => mapReportRow(report)),
+    ...(manualPostageEntries || []).map((entry) => mapManualPostageRow(entry)),
   ];
 
   return dedupeMailRowsByOrder(groupAllMailRows(rows));
