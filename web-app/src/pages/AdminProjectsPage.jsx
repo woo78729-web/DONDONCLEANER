@@ -5,10 +5,12 @@ import { Layout } from '../components/Layout';
 import { PageAlert } from '../components/PageAlert';
 import { PageErrorBoundary } from '../components/PageErrorBoundary';
 import { emptyProjectForm, ProjectFormModal, ProjectStatusBadge } from '../components/ProjectFormModal';
+import { ScheduleSuccessModal } from '../components/ScheduleSuccessModal';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../api/client';
 import {
   buildProjectPayload,
+  buildProjectSuccessSummary,
   createPricingLine,
   formatDateOnly,
   getProjectDurationDays,
@@ -66,6 +68,8 @@ export default function AdminProjectsPage() {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
+  const [successSummary, setSuccessSummary] = useState(null);
+  const [pendingRemittanceRedirect, setPendingRemittanceRedirect] = useState(null);
 
   const statusOptions = useMemo(
     () => Object.entries(PROJECT_STATUS_LABELS).map(([value, label]) => ({ value, label })),
@@ -123,27 +127,39 @@ export default function AdminProjectsPage() {
     }
 
     try {
+      const summaryPayload = buildProjectSuccessSummary(form, employees);
       const redirectToRemittance = Boolean(form.expects_company_remittance);
       const result = await api.createProject(buildProjectPayload(form));
       setFormOpen(false);
       setForm(emptyProjectForm());
       setSearchParams({});
 
-      if (redirectToRemittance || result.data?.expects_company_remittance) {
-        const remittanceMonth = String(form.planned_start_date || result.data?.planned_start_date || '').slice(0, 7);
-        navigate(
-          remittanceMonth
-            ? `/admin/remittance-tracking?year_month=${remittanceMonth}`
-            : '/admin/remittance-tracking',
-          { replace: true },
-        );
-        return;
-      }
-
+      const remittanceMonth = String(form.planned_start_date || result.data?.planned_start_date || '').slice(0, 7);
+      setPendingRemittanceRedirect(
+        (redirectToRemittance || result.data?.expects_company_remittance)
+          ? (remittanceMonth || true)
+          : null,
+      );
+      setSuccessSummary(summaryPayload);
       setMessage('專案建立成功，行事曆已同步顯示');
       await loadProjects();
     } catch (err) {
       setError(err.message);
+    }
+  }
+
+  function handleSuccessConfirm() {
+    const remittanceMonth = pendingRemittanceRedirect;
+    setSuccessSummary(null);
+    setPendingRemittanceRedirect(null);
+
+    if (remittanceMonth) {
+      navigate(
+        remittanceMonth === true
+          ? '/admin/remittance-tracking'
+          : `/admin/remittance-tracking?year_month=${remittanceMonth}`,
+        { replace: true },
+      );
     }
   }
 
@@ -677,6 +693,12 @@ export default function AdminProjectsPage() {
             setSearchParams({});
           }}
           onSubmit={handleCreateProject}
+        />
+
+        <ScheduleSuccessModal
+          open={Boolean(successSummary)}
+          summary={successSummary}
+          onConfirm={handleSuccessConfirm}
         />
 
         <PageAlert type="success" message={message} />

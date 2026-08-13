@@ -694,6 +694,41 @@ export function buildScheduleSuccessSummary(form, employees = [], { mode = 'crea
   };
 }
 
+/** 專案建立成功截圖：對齊一般派班的預約完成摘要格式 */
+export function buildProjectSuccessSummary(form, employees = [], { mode = 'create' } = {}) {
+  const synced = syncInvoiceTaxFlags(form);
+  const pricing = summarizePricingLines(
+    synced.pricing_lines,
+    synced.ac_units ?? 1,
+    synced.unit_price ?? 1500,
+    synced,
+  );
+  const selectedEmployees = (form.employee_ids || [])
+    .map((id) => employees.find((item) => String(item.id) === String(id)))
+    .filter(Boolean);
+  const employeeName = selectedEmployees
+    .map((item) => String(item.name || '').trim())
+    .filter(Boolean)
+    .join('、') || '未指定';
+  const address = String(form.customer_address || '').trim();
+
+  return {
+    mode,
+    work_date: form.planned_start_date,
+    planned_end_date: form.planned_end_date,
+    start_time: form.start_time,
+    end_time: form.end_time,
+    customer_name: form.customer_name,
+    customer_address: address,
+    customer_addresses: address ? [address] : [],
+    customer_phone: form.customer_phone,
+    employee_name: employeeName,
+    ac_units: Number(pricing.ac_units) || Number(form.ac_units) || 1,
+    cleaning_price: Number(pricing.cleaning_price) || Number(form.cleaning_price) || 0,
+    pricing_lines: pricing.pricing_lines,
+  };
+}
+
 export function buildScheduleSuccessScreenshotName(summary) {
   const prefix = summary?.mode === 'update' ? '班表更新' : '預約完成';
   const customerName = String(summary?.customer_name || '客戶').replace(/[\\/:*?"<>|]/g, '').trim() || '客戶';
@@ -1384,9 +1419,18 @@ export function formatScheduleSuccessDateTime(summary) {
 
   const dateText = formatDateOnly(summary.work_date);
   const parsed = dateText ? new Date(`${dateText}T12:00:00`) : null;
-  const monthDay = parsed && !Number.isNaN(parsed.getTime())
+  let monthDay = parsed && !Number.isNaN(parsed.getTime())
     ? `${parsed.getMonth() + 1}月${parsed.getDate()}日`
     : formatScheduleDateLabel(summary.work_date);
+
+  const endDateText = formatDateOnly(summary.planned_end_date);
+  if (endDateText && dateText && endDateText !== dateText) {
+    const endParsed = new Date(`${endDateText}T12:00:00`);
+    if (!Number.isNaN(endParsed.getTime())) {
+      monthDay = `${monthDay} - ${endParsed.getMonth() + 1}月${endParsed.getDate()}日`;
+    }
+  }
+
   const timeRange = formatChineseTimeRange({
     start_time: summary.start_time,
     end_time: summary.end_time,
