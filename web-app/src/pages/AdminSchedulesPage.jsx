@@ -19,6 +19,7 @@ import { useAuth } from '../context/AuthContext';
 import { canAccess, canManageSchedulePricing } from '../utils/permissions';
 import { loadCalendarSettings, saveCalendarSettings } from '../utils/calendarSettings';
 import { loadAvailabilityDays } from '../utils/taitungAreas';
+import { loadWithRetry } from '../utils/pageLoad';
 import {
   buildSchedulePayload,
   buildSchedulePayloads,
@@ -113,14 +114,14 @@ export default function AdminSchedulesPage() {
     try {
       const loadRange = getCalendarScheduleFetchRange(view, anchor, visibleDayCount);
 
-      const [scheduleResult, leaveResult] = await Promise.all([
+      const [scheduleResult, leaveResult] = await loadWithRetry(() => Promise.all([
         api.getCalendarSchedules({
           date_from: loadRange.date_from,
           date_to: loadRange.date_to,
           user_id: employeeId || undefined,
         }),
         api.getPlanningLeaves(loadRange),
-      ]);
+      ]));
 
       if (requestId !== loadRequestRef.current) {
         return;

@@ -34,10 +34,6 @@ function buildWeeklyDateSet(leaves, employeeId, gridStart, gridEnd) {
 }
 
 function getDayVisualState(dateKey, draftDateLeaves, baselineDateLeaves, weeklyDateKeys, showWeeklyLeaveDays) {
-  if (showWeeklyLeaveDays && weeklyDateKeys.has(dateKey)) {
-    return { kind: 'weekly', pending: null };
-  }
-
   const inDraft = draftDateLeaves.has(dateKey);
   const inBaseline = baselineDateLeaves.has(dateKey);
 
@@ -51,6 +47,10 @@ function getDayVisualState(dateKey, draftDateLeaves, baselineDateLeaves, weeklyD
 
   if (inDraft && inBaseline) {
     return { kind: 'date', pending: null };
+  }
+
+  if (showWeeklyLeaveDays && weeklyDateKeys.has(dateKey)) {
+    return { kind: 'weekly', pending: null };
   }
 
   return { kind: null, pending: null };

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { PageErrorBoundary } from '../components/PageErrorBoundary';
 import { Layout } from '../components/Layout';
@@ -12,6 +12,7 @@ import { api } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { canAccess } from '../utils/permissions';
 import { loadAvailabilityDays } from '../utils/taitungAreas';
+import { loadWithRetry, useRefreshOnVisible } from '../utils/pageLoad';
 import {
   applyPriceCalculation,
   buildSchedulePayload,
@@ -47,6 +48,7 @@ export default function AdminRegionalSchedulingPage() {
   const [error, setError] = useState('');
   const [successSummary, setSuccessSummary] = useState(null);
   const [pendingMailRedirect, setPendingMailRedirect] = useState(false);
+  const scheduleRequestRef = useRef(0);
 
   const loadEmployees = useCallback(async () => {
     const result = await api.getEmployees();
@@ -54,24 +56,41 @@ export default function AdminRegionalSchedulingPage() {
   }, []);
 
   const loadSchedules = useCallback(async () => {
+    const requestId = scheduleRequestRef.current + 1;
+    scheduleRequestRef.current = requestId;
     setError('');
 
     try {
       const anchor = new Date();
       const availabilityRange = getAvailabilityLoadRange(lookaheadDays, anchor);
 
-      const [result, leaveResult] = await Promise.all([
-        api.getCalendarSchedules({
-          date_from: availabilityRange.date_from,
-          date_to: availabilityRange.date_to,
-          user_id: selectedEmployeeId || undefined,
-        }),
-        api.getPlanningLeaves(availabilityRange),
-      ]);
+      const payload = await loadWithRetry(async () => {
+        const [result, leaveResult] = await Promise.all([
+          api.getCalendarSchedules({
+            date_from: availabilityRange.date_from,
+            date_to: availabilityRange.date_to,
+            user_id: selectedEmployeeId || undefined,
+          }),
+          api.getPlanningLeaves(availabilityRange),
+        ]);
 
-      setAllSchedules(result.data.schedules);
-      setLeaves(leaveResult.data.leaves || []);
+        return {
+          schedules: result.data?.schedules || [],
+          leaves: leaveResult.data?.leaves || [],
+        };
+      });
+
+      if (scheduleRequestRef.current !== requestId) {
+        return;
+      }
+
+      setAllSchedules(payload.schedules);
+      setLeaves(payload.leaves);
     } catch (err) {
+      if (scheduleRequestRef.current !== requestId) {
+        return;
+      }
+
       setError(err.message);
     }
   }, [lookaheadDays, selectedEmployeeId]);
@@ -83,6 +102,10 @@ export default function AdminRegionalSchedulingPage() {
   useEffect(() => {
     loadSchedules().catch((err) => setError(err.message));
   }, [loadSchedules]);
+
+  useRefreshOnVisible(() => {
+    loadSchedules().catch((err) => setError(err.message));
+  });
 
   function closeModal() {
     setModalOpen(false);

@@ -1,4 +1,5 @@
 import { Component } from 'react';
+import { canAutoReloadForChunk, clearChunkReload, isChunkLoadError } from '../utils/lazyRetry';
 
 export class AppErrorBoundary extends Component {
   constructor(props) {
@@ -10,19 +11,35 @@ export class AppErrorBoundary extends Component {
     return { error };
   }
 
+  componentDidCatch(error) {
+    if (!isChunkLoadError(error)) {
+      return;
+    }
+
+    if (!canAutoReloadForChunk()) {
+      return;
+    }
+
+    sessionStorage.setItem('spa-chunk-reload-at', String(Date.now()));
+    window.location.reload();
+  }
+
   render() {
     if (this.state.error) {
       return (
         <div className="app-shell">
           <div className="app-shell__content page-content">
-            <section className="card">
+            <section className="card page-error-boundary__card">
               <h2 className="card-title">頁面載入失敗</h2>
               <p className="hint">請重新整理頁面；若仍失敗，請清除瀏覽器快取後再試。</p>
               <p className="hint">{this.state.error?.message || '未知錯誤'}</p>
               <button
                 type="button"
                 className="btn btn-primary btn-sm"
-                onClick={() => window.location.reload()}
+                onClick={() => {
+                  clearChunkReload();
+                  window.location.reload();
+                }}
               >
                 重新整理
               </button>

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { format, parseISO } from 'date-fns';
 import { zhTW } from 'date-fns/locale';
@@ -12,6 +12,7 @@ import { ScheduleTechnicianBadge } from '../components/ScheduleTechnicianBadge';
 import { api } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { canManageSchedulePricing } from '../utils/permissions';
+import { loadWithRetry, useRefreshOnVisible } from '../utils/pageLoad';
 import {
   buildSchedulePayload,
   buildSchedulePayloads,
@@ -71,6 +72,7 @@ export default function AdminScheduleDayPage() {
   const [loading, setLoading] = useState(false);
   const [successSummary, setSuccessSummary] = useState(null);
   const [pendingMailRedirect, setPendingMailRedirect] = useState(false);
+  const scheduleRequestRef = useRef(0);
 
   const sortedSchedules = useMemo(
     () => [...schedules].sort((left, right) => (
@@ -121,26 +123,45 @@ export default function AdminScheduleDayPage() {
       return;
     }
 
+    const requestId = scheduleRequestRef.current + 1;
+    scheduleRequestRef.current = requestId;
     setLoading(true);
     setError('');
 
     try {
       const leaveRange = getCalendarLoadRange(parseISO(dateParam));
-      const [result, leaveResult] = await Promise.all([
-        api.getCalendarSchedules({
-          date_from: dateParam,
-          date_to: dateParam,
-          user_id: selectedEmployeeId || undefined,
-        }),
-        api.getPlanningLeaves(leaveRange),
-      ]);
+      const payload = await loadWithRetry(async () => {
+        const [result, leaveResult] = await Promise.all([
+          api.getCalendarSchedules({
+            date_from: dateParam,
+            date_to: dateParam,
+            user_id: selectedEmployeeId || undefined,
+          }),
+          api.getPlanningLeaves(leaveRange),
+        ]);
 
-      setSchedules(result.data.schedules);
-      setLeaves(leaveResult.data.leaves || []);
+        return {
+          schedules: result.data?.schedules || [],
+          leaves: leaveResult.data?.leaves || [],
+        };
+      });
+
+      if (scheduleRequestRef.current !== requestId) {
+        return;
+      }
+
+      setSchedules(payload.schedules);
+      setLeaves(payload.leaves);
     } catch (err) {
+      if (scheduleRequestRef.current !== requestId) {
+        return;
+      }
+
       setError(err.message);
     } finally {
-      setLoading(false);
+      if (scheduleRequestRef.current === requestId) {
+        setLoading(false);
+      }
     }
   }, [dateParam, selectedEmployeeId]);
 
@@ -156,6 +177,10 @@ export default function AdminScheduleDayPage() {
   useEffect(() => {
     loadSchedules().catch((err) => setError(err.message));
   }, [loadSchedules]);
+
+  useRefreshOnVisible(() => {
+    loadSchedules().catch((err) => setError(err.message));
+  });
 
   function openCreate() {
     const start = new Date(`${dateParam}T09:00:00`);

@@ -1,10 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  addMonths,
   endOfMonth,
-  endOfWeek,
   format,
   startOfMonth,
-  startOfWeek,
 } from 'date-fns';
 import { zhTW } from 'date-fns/locale';
 import { Layout } from '../components/Layout';
@@ -53,6 +52,29 @@ function formatLeaveDateLabel(dateKey) {
   return format(date, 'M/d (EEEEE)', { locale: zhTW });
 }
 
+function formatMonthKeyLabel(monthKey) {
+  const date = new Date(`${monthKey}-01T12:00:00`);
+
+  if (Number.isNaN(date.getTime())) {
+    return monthKey;
+  }
+
+  return format(date, 'yyyy年M月', { locale: zhTW });
+}
+
+function preferredLeaveMonth(dateKeys, currentMonthKey) {
+  const keys = [...dateKeys].sort();
+
+  if (keys.length === 0 || keys.some((key) => key.startsWith(currentMonthKey))) {
+    return '';
+  }
+
+  const todayKey = formatDateOnly(new Date());
+  const upcoming = keys.find((key) => key >= todayKey) || keys[keys.length - 1];
+
+  return upcoming.slice(0, 7);
+}
+
 export default function AdminLeaveCalendarPage() {
   const [employees, setEmployees] = useState([]);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState('');
@@ -65,16 +87,18 @@ export default function AdminLeaveCalendarPage() {
   const [saveErrors, setSaveErrors] = useState([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const visibleMonthRef = useRef(visibleMonth);
+  const leaveRequestRef = useRef(0);
+  visibleMonthRef.current = visibleMonth;
 
   const loadRange = useMemo(() => {
-    const monthStart = startOfMonth(visibleMonth);
-    const monthEnd = endOfMonth(visibleMonth);
+    const today = startOfMonth(new Date());
 
     return {
-      date_from: formatDateOnly(startOfWeek(monthStart, { weekStartsOn: 1 })),
-      date_to: formatDateOnly(endOfWeek(monthEnd, { weekStartsOn: 1 })),
+      date_from: formatDateOnly(addMonths(today, -6)),
+      date_to: formatDateOnly(endOfMonth(addMonths(today, 6))),
     };
-  }, [visibleMonth]);
+  }, []);
 
   const hasPendingChanges = useMemo(
     () => !leaveSetsEqual(baselineDateLeaves, draftDateLeaves),
@@ -90,7 +114,9 @@ export default function AdminLeaveCalendarPage() {
     setSelectedEmployeeId((current) => current || (list[0] ? String(list[0].id) : ''));
   }, []);
 
-  const loadLeaves = useCallback(async () => {
+  const loadLeaves = useCallback(async ({ followLeaves = false } = {}) => {
+    const requestId = leaveRequestRef.current + 1;
+    leaveRequestRef.current = requestId;
     setLoading(true);
     setError('');
     setSaveErrors([]);
@@ -105,16 +131,34 @@ export default function AdminLeaveCalendarPage() {
       }
 
       const result = await api.getPlanningLeaves(params);
+
+      if (leaveRequestRef.current !== requestId) {
+        return;
+      }
+
       const nextLeaves = result.data.leaves || [];
       const baseline = extractDateLeaveKeys(nextLeaves, selectedEmployeeId);
 
       setLeaves(nextLeaves);
       setBaselineDateLeaves(baseline);
       setDraftDateLeaves(new Set(baseline));
+
+      if (followLeaves) {
+        const currentMonthKey = format(visibleMonthRef.current, 'yyyy-MM');
+        const targetMonthKey = preferredLeaveMonth(baseline, currentMonthKey);
+
+        if (targetMonthKey) {
+          setVisibleMonth(startOfMonth(new Date(`${targetMonthKey}-01T12:00:00`)));
+        }
+      }
     } catch (err) {
-      setError(err.message);
+      if (leaveRequestRef.current === requestId) {
+        setError(err.message);
+      }
     } finally {
-      setLoading(false);
+      if (leaveRequestRef.current === requestId) {
+        setLoading(false);
+      }
     }
   }, [loadRange, selectedEmployeeId]);
 
@@ -127,7 +171,7 @@ export default function AdminLeaveCalendarPage() {
       return;
     }
 
-    loadLeaves().catch((err) => setError(err.message));
+    loadLeaves({ followLeaves: true }).catch((err) => setError(err.message));
   }, [loadLeaves, selectedEmployeeId]);
 
   const weeklyLeaves = useMemo(
@@ -142,6 +186,21 @@ export default function AdminLeaveCalendarPage() {
     () => employees.find((employee) => String(employee.id) === String(selectedEmployeeId)),
     [employees, selectedEmployeeId],
   );
+
+  const visibleMonthKey = format(visibleMonth, 'yyyy-MM');
+
+  const leaveMonthCounts = useMemo(() => {
+    const counts = new Map();
+
+    baselineDateLeaves.forEach((dateKey) => {
+      const monthKey = dateKey.slice(0, 7);
+      counts.set(monthKey, (counts.get(monthKey) || 0) + 1);
+    });
+
+    return [...counts.entries()].sort(([left], [right]) => left.localeCompare(right));
+  }, [baselineDateLeaves]);
+
+  const otherLeaveMonths = leaveMonthCounts.filter(([monthKey]) => monthKey !== visibleMonthKey);
 
   function confirmDiscardPendingChanges() {
     if (!hasPendingChanges) {
@@ -166,13 +225,13 @@ export default function AdminLeaveCalendarPage() {
   }
 
   function handleMonthChange(nextMonth) {
-    if (!confirmDiscardPendingChanges()) {
-      return;
-    }
-
     setMessage('');
     setError('');
-    setVisibleMonth(nextMonth);
+    setVisibleMonth(startOfMonth(nextMonth));
+  }
+
+  function jumpToLeaveMonth(monthKey) {
+    handleMonthChange(new Date(`${monthKey}-01T12:00:00`));
   }
 
   function handleDayClick(dateKey) {
@@ -300,7 +359,7 @@ export default function AdminLeaveCalendarPage() {
         <div className="card-header">
           <div>
             <h2 className="card-title">師傅排假</h2>
-            <p className="hint">選擇師傅後，在月曆複選指定日期休假，再按「儲存本次修改」。月曆只顯示指定日期假；每週固定休見下方列表，派班行事曆會合併顯示。</p>
+            <p className="hint">選擇師傅後，在月曆複選指定日期休假，再按「儲存本次修改」。黃底是指定日期假，虛線是每週固定休。若這個月是空白，下方可切到有排假的月份。</p>
           </div>
         </div>
 
@@ -348,38 +407,32 @@ export default function AdminLeaveCalendarPage() {
           </p>
         )}
 
-        <LeaveMonthCalendar
-          visibleMonth={visibleMonth}
-          onMonthChange={handleMonthChange}
-          leaves={leaves}
-          employeeId={selectedEmployeeId}
-          baselineDateLeaves={baselineDateLeaves}
-          draftDateLeaves={draftDateLeaves}
-          onDayClick={handleDayClick}
-          busy={busy || loading}
-        />
-
-        <div className="admin-leave-page__actions">
-          <button
-            type="button"
-            className="btn btn-ghost"
-            onClick={handleDiscardChanges}
-            disabled={!hasPendingChanges || busy}
-          >
-            取消修改
-          </button>
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={() => handleSave()}
-            disabled={!hasPendingChanges || busy}
-          >
-            儲存本次修改
-          </button>
-        </div>
+        {otherLeaveMonths.length > 0 && (
+          <div className="admin-leave-page__other-months">
+            <span>
+              {leaveMonthCounts.some(([monthKey]) => monthKey === visibleMonthKey)
+                ? '其他月份也有指定日期假：'
+                : '這個月沒有指定日期假：'}
+            </span>
+            {otherLeaveMonths.map(([monthKey, count]) => (
+              <button
+                key={monthKey}
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={() => jumpToLeaveMonth(monthKey)}
+                disabled={busy}
+              >
+                {formatMonthKeyLabel(monthKey)}
+                {' '}
+                {count}
+                天
+              </button>
+            ))}
+          </div>
+        )}
 
         {weeklyLeaves.length > 0 && (
-          <div className="admin-leave-page__weekly">
+          <div className="admin-leave-page__weekly admin-leave-page__weekly--above">
             <h3 className="admin-leave-page__weekly-title">每週固定休</h3>
             <ul className="admin-leave-page__weekly-list">
               {weeklyLeaves.map((leave) => (
@@ -402,6 +455,37 @@ export default function AdminLeaveCalendarPage() {
             </ul>
           </div>
         )}
+
+        <LeaveMonthCalendar
+          visibleMonth={visibleMonth}
+          onMonthChange={handleMonthChange}
+          leaves={leaves}
+          employeeId={selectedEmployeeId}
+          baselineDateLeaves={baselineDateLeaves}
+          draftDateLeaves={draftDateLeaves}
+          onDayClick={handleDayClick}
+          busy={busy || loading}
+          showWeeklyLeaveDays
+        />
+
+        <div className="admin-leave-page__actions">
+          <button
+            type="button"
+            className="btn btn-ghost"
+            onClick={handleDiscardChanges}
+            disabled={!hasPendingChanges || busy}
+          >
+            取消修改
+          </button>
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={() => handleSave()}
+            disabled={!hasPendingChanges || busy}
+          >
+            儲存本次修改
+          </button>
+        </div>
 
         {loading && <p className="hint">載入中…</p>}
       </section>

@@ -1,7 +1,23 @@
 import { Navigate } from 'react-big-calendar';
 import TimeGridModule from 'react-big-calendar/lib/TimeGrid';
 
-const TimeGrid = TimeGridModule?.default ?? TimeGridModule;
+function resolveComponent(module) {
+  if (typeof module === 'function') {
+    return module;
+  }
+
+  if (typeof module?.default === 'function') {
+    return module.default;
+  }
+
+  if (typeof module?.default?.default === 'function') {
+    return module.default.default;
+  }
+
+  return null;
+}
+
+const TimeGrid = resolveComponent(TimeGridModule);
 
 export function createMultiDayView(dayCount) {
   const safeCount = Math.min(7, Math.max(2, Number(dayCount) || 2));
