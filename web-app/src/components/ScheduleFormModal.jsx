@@ -26,6 +26,7 @@ import { TAITUNG_SERVICE_AREAS } from '../utils/taitungAreas';
 import { canManageSchedulePricing } from '../utils/permissions';
 import { Link } from 'react-router-dom';
 import { useEffect, useState } from 'react';
+import { api, ApiError } from '../api/client';
 import { GoogleMapsLink } from './GoogleMapsLink';
 import { AddressAutocompleteInput } from './AddressAutocompleteInput';
 import { CustomerWashHistory } from './CustomerWashHistory';
@@ -54,12 +55,18 @@ export function ScheduleFormModal({
   onClose,
   onSubmit,
   onDelete,
+  onLeaveCreated,
 }) {
   const [validationError, setValidationError] = useState('');
+  const [entryKind, setEntryKind] = useState('job');
+  const [savingLeave, setSavingLeave] = useState(false);
+  const isLeave = entryKind === 'leave' && !editId;
 
   useEffect(() => {
     if (open) {
       setValidationError('');
+      setEntryKind('job');
+      setSavingLeave(false);
     }
   }, [open]);
 
@@ -67,9 +74,57 @@ export function ScheduleFormModal({
     return null;
   }
 
+  async function submitLeave(force) {
+    if (!form.user_id) {
+      setValidationError('請選擇清洗師傅');
+      return;
+    }
+
+    if (!form.work_date) {
+      setValidationError('請選擇日期');
+      return;
+    }
+
+    if (String(form.start_time) >= String(form.end_time)) {
+      setValidationError('排假結束時間要晚於開始時間');
+      return;
+    }
+
+    setSavingLeave(true);
+
+    try {
+      await api.createTimedLeave({
+        user_id: Number(form.user_id),
+        leave_date: form.work_date,
+        start_time: form.start_time,
+        end_time: form.end_time,
+        note: form.notes || null,
+        force,
+      });
+      onLeaveCreated?.();
+      onClose();
+    } catch (err) {
+      if (!force && err instanceof ApiError && err.status === 409) {
+        if (window.confirm('這天已經有派工。仍要排這段假嗎？')) {
+          await submitLeave(true);
+        }
+        return;
+      }
+
+      setValidationError(err.message || '排假失敗');
+    } finally {
+      setSavingLeave(false);
+    }
+  }
+
   function handleFormSubmit(event) {
     event.preventDefault();
     setValidationError('');
+
+    if (isLeave) {
+      submitLeave(false);
+      return;
+    }
 
     const validation = validateScheduleForm(form, {
       userRole,
@@ -325,7 +380,7 @@ export function ScheduleFormModal({
         onClick={(event) => event.stopPropagation()}
       >
         <div className="modal-header">
-          <h2 className="modal-title">{title}</h2>
+          <h2 className="modal-title">{isLeave ? '新增排假' : title}</h2>
           <button type="button" className="modal-close" onClick={onClose} aria-label="關閉">×</button>
         </div>
 
@@ -350,14 +405,27 @@ export function ScheduleFormModal({
             <div className="field" style={{ gridColumn: '1 / -1' }}>
               <span className="field-label">派單類型</span>
               <div className="option-chip-group">
-                <button type="button" className="option-chip is-active">一般派單</button>
+                <button
+                  type="button"
+                  className={`option-chip${isLeave ? '' : ' is-active'}`}
+                  onClick={() => setEntryKind('job')}
+                >
+                  一般派單
+                </button>
+                <button
+                  type="button"
+                  className={`option-chip${isLeave ? ' is-active' : ''}`}
+                  onClick={() => setEntryKind('leave')}
+                >
+                  排假
+                </button>
                 <Link className="option-chip" to="/admin/projects?new=1" onClick={onClose}>專案派單</Link>
               </div>
             </div>
           )}
 
           <label className="field schedule-form-modal__date-field">
-            <span className="field-label">預約日期</span>
+            <span className="field-label">{isLeave ? '排假日期' : '預約日期'}</span>
             <DatePickerInput
               value={form.work_date}
               min={getMinScheduleWorkDate(userRole)}
@@ -389,6 +457,7 @@ export function ScheduleFormModal({
             )}
           </div>
 
+          {!isLeave && (
           <div className="field" style={{ gridColumn: '1 / -1' }}>
             <span className="field-label">客戶來源</span>
             <div className="option-chip-group" role="radiogroup" aria-label="客戶來源">
@@ -408,6 +477,7 @@ export function ScheduleFormModal({
               ))}
             </div>
           </div>
+          )}
 
           {showDaySchedule && (
             <div className="schedule-form-modal__sidebar schedule-form-modal__sidebar--mobile">
@@ -416,7 +486,8 @@ export function ScheduleFormModal({
           )}
 
           <label className="field">
-            <span className="field-label">預約開始時間</span>
+            <span className="field-label">{isLeave ? '排假開始時間' : '預約開始時間'}</span>
+            {!isLeave && (
             <div className="shift-preset-row">
               <button
                 type="button"
@@ -433,7 +504,19 @@ export function ScheduleFormModal({
                 第二班 14:00
               </button>
             </div>
-            <select className="field-control" value={form.start_time} onChange={(e) => updateForm(onChange, form, { start_time: e.target.value })} required>
+            )}
+            <select
+              className="field-control"
+              value={form.start_time}
+              onChange={(e) => {
+                if (isLeave) {
+                  onChange(patchScheduleForm(form, { start_time: e.target.value }));
+                  return;
+                }
+                updateForm(onChange, form, { start_time: e.target.value });
+              }}
+              required
+            >
               {SCHEDULE_TIME_OPTIONS.map((time) => (
                 <option key={time} value={time}>{time}</option>
               ))}
@@ -441,15 +524,20 @@ export function ScheduleFormModal({
           </label>
 
           <label className="field">
-            <span className="field-label">預約結束時間</span>
+            <span className="field-label">{isLeave ? '排假結束時間' : '預約結束時間'}</span>
             <select className="field-control" value={form.end_time} onChange={(e) => onChange(patchScheduleForm(form, { end_time: e.target.value }))} required>
               {SCHEDULE_TIME_OPTIONS.map((time) => (
                 <option key={time} value={time}>{time}</option>
               ))}
             </select>
-            <span className="hint">依台數自動估算（每台約 1 小時），仍可手動調整</span>
+            {isLeave ? (
+              <span className="hint">這段時間會在行事曆標成休假，不會蓋住其他時段的班。</span>
+            ) : (
+              <span className="hint">依台數自動估算（每台約 1 小時），仍可手動調整</span>
+            )}
           </label>
 
+          {!isLeave && (<>
           {canManagePricing ? (
           <div className="field schedule-form-modal__pricing-section" style={{ gridColumn: '1 / -1' }}>
             <PricingLineEditor
@@ -819,8 +907,10 @@ export function ScheduleFormModal({
             </div>
           )}
 
+          </>)}
+
           <label className="field" style={{ gridColumn: '1 / -1' }}>
-            <span className="field-label">備註</span>
+            <span className="field-label">{isLeave ? '排假備註' : '備註'}</span>
             <textarea className="field-control" rows={3} value={form.notes} onChange={(e) => handleChange({ notes: e.target.value })} />
           </label>
 
@@ -830,7 +920,9 @@ export function ScheduleFormModal({
                 {validationError || error}
               </div>
             )}
-            <button type="submit" className="btn btn-primary btn-pill">{editId ? '儲存變更' : '建立行程'}</button>
+            <button type="submit" className="btn btn-primary btn-pill" disabled={savingLeave}>
+              {editId ? '儲存變更' : (isLeave ? '儲存排假' : '建立行程')}
+            </button>
             <button type="button" className="btn btn-secondary btn-pill" onClick={onClose}>取消</button>
             {canDelete && editId && (
               <button

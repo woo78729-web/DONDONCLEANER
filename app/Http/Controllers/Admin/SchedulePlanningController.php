@@ -152,6 +152,69 @@ class SchedulePlanningController extends Controller
         ], '排假已登記', 201);
     }
 
+    public function storeTimedLeave(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'user_id' => ['required', 'integer', 'exists:users,id'],
+            'leave_date' => ['required', 'date'],
+            'start_time' => ['required', 'date_format:H:i'],
+            'end_time' => ['required', 'date_format:H:i', 'after:start_time'],
+            'note' => ['nullable', 'string', 'max:500'],
+            'force' => ['sometimes', 'boolean'],
+        ]);
+
+        $user = User::query()->findOrFail($validated['user_id']);
+
+        if (! $user->isEmployee()) {
+            return $this->error('僅能為員工排假', 422);
+        }
+
+        $leaveDate = $validated['leave_date'];
+        $force = (bool) ($validated['force'] ?? false);
+        $userLeaves = EmployeeLeave::query()->where('user_id', $user->id)->get();
+        $weeklyLeave = $userLeaves->first(
+            fn (EmployeeLeave $leave) => $leave->leave_type === EmployeeLeave::TYPE_WEEKLY
+                && (int) $leave->weekday === \Carbon\Carbon::parse($leaveDate)->dayOfWeek
+        );
+
+        if ($weeklyLeave) {
+            return $this->error('此日為每週固定休，請先刪除固定休假設定', 422);
+        }
+
+        if (SchedulePlanningSupport::hasScheduleOnDate((int) $user->id, $leaveDate) && ! $force) {
+            return $this->error('當日已有派工', 409);
+        }
+
+        $leave = EmployeeLeave::query()
+            ->where('user_id', $user->id)
+            ->where('leave_type', EmployeeLeave::TYPE_DATE)
+            ->whereDate('leave_date', $leaveDate)
+            ->first();
+
+        $times = [
+            'start_time' => $validated['start_time'],
+            'end_time' => $validated['end_time'],
+            'note' => $validated['note'] ?? null,
+        ];
+
+        if ($leave) {
+            $leave->update($times);
+        } else {
+            $leave = EmployeeLeave::query()->create([
+                'user_id' => $user->id,
+                'leave_type' => EmployeeLeave::TYPE_DATE,
+                'leave_date' => $leaveDate,
+                ...$times,
+            ]);
+        }
+
+        $leave->load('user:id,name,account');
+
+        return $this->success([
+            'leave' => SchedulePlanningSupport::leavePayload($leave),
+        ], '排假時間已儲存', 201);
+    }
+
     public function batchLeave(Request $request): JsonResponse
     {
         $validated = $request->validate([
@@ -271,6 +334,8 @@ class SchedulePlanningController extends Controller
             'user_id' => $user->id,
             'leave_type' => EmployeeLeave::TYPE_DATE,
             'leave_date' => $leaveDate,
+            'start_time' => EmployeeLeave::DEFAULT_START_TIME,
+            'end_time' => EmployeeLeave::DEFAULT_END_TIME,
         ]);
 
         return [

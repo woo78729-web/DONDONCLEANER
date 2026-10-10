@@ -127,6 +127,8 @@ class SchedulePlanningSupport
             'user_id' => $leave->user_id,
             'leave_type' => $leave->leave_type,
             'leave_date' => $leave->leave_date?->format('Y-m-d'),
+            'start_time' => self::formatLeaveClock($leave->start_time),
+            'end_time' => self::formatLeaveClock($leave->end_time),
             'weekday' => $leave->weekday,
             'weekday_label' => $leave->weekday !== null
                 ? self::weekdayLabel((int) $leave->weekday)
@@ -143,6 +145,13 @@ class SchedulePlanningSupport
     public static function weekdayLabel(int $weekday): string
     {
         return ['日', '一', '二', '三', '四', '五', '六'][$weekday] ?? (string) $weekday;
+    }
+
+    public static function formatLeaveClock(mixed $value): ?string
+    {
+        $clock = substr((string) $value, 0, 5);
+
+        return preg_match('/^\d{2}:\d{2}$/', $clock) ? $clock : null;
     }
 
     public static function isOnLeave(Collection $leaves, int $userId, string $date): bool

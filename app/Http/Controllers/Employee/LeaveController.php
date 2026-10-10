@@ -88,6 +88,8 @@ class LeaveController extends Controller
             'user_id' => $user->id,
             'leave_type' => EmployeeLeave::TYPE_WEEKLY,
             'weekday' => $validated['weekday'],
+            'start_time' => EmployeeLeave::DEFAULT_START_TIME,
+            'end_time' => EmployeeLeave::DEFAULT_END_TIME,
             'note' => $validated['note'] ?? null,
         ]);
 
@@ -229,6 +231,8 @@ class LeaveController extends Controller
             'user_id' => $user->id,
             'leave_type' => EmployeeLeave::TYPE_DATE,
             'leave_date' => $leaveDate,
+            'start_time' => EmployeeLeave::DEFAULT_START_TIME,
+            'end_time' => EmployeeLeave::DEFAULT_END_TIME,
             'note' => $note,
         ]);
 

@@ -356,6 +356,10 @@ class AcCleaningApi {
     return this.request('GET', '/admin/planning/leaves', { params: filters });
   }
 
+  createTimedLeave(payload) {
+    return this.request('POST', '/admin/planning/leaves', { body: payload });
+  }
+
   toggleAdminLeave(payload) {
     return this.request('POST', '/admin/planning/leaves/toggle', { body: payload });
   }

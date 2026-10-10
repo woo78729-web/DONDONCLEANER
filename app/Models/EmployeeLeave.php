@@ -11,10 +11,16 @@ class EmployeeLeave extends Model
 
     public const TYPE_WEEKLY = 'weekly';
 
+    public const DEFAULT_START_TIME = '09:00';
+
+    public const DEFAULT_END_TIME = '21:00';
+
     protected $fillable = [
         'user_id',
         'leave_type',
         'leave_date',
+        'start_time',
+        'end_time',
         'weekday',
         'note',
     ];

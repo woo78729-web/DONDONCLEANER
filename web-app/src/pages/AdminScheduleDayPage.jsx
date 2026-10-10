@@ -13,6 +13,7 @@ import { api } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { canManageSchedulePricing } from '../utils/permissions';
 import { loadWithRetry, useRefreshOnVisible } from '../utils/pageLoad';
+import { commitScheduleCache, mergeSchedulesForDate, readScheduleCache, scheduleCacheHasBoard, schedulesOnDate } from '../utils/scheduleDataCache';
 import {
   buildSchedulePayload,
   buildSchedulePayloads,
@@ -30,10 +31,10 @@ import {
   formatTimeValue,
   getCalendarLoadRange,
   getLeaveEventStyle,
+  getScheduleDisplayTimes,
   getScheduleEventStyle,
   hasScheduleReport,
   isSlotInPast,
-  LEAVE_BAND_END_HOUR,
   LEAVE_BAND_START_HOUR,
   scheduleToForm,
   slotToForm,
@@ -58,9 +59,9 @@ export default function AdminScheduleDayPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const userRole = user?.role || 'admin';
-  const [employees, setEmployees] = useState([]);
-  const [schedules, setSchedules] = useState([]);
-  const [leaves, setLeaves] = useState([]);
+  const [employees, setEmployees] = useState(() => readScheduleCache().employees);
+  const [schedules, setSchedules] = useState(() => schedulesOnDate(readScheduleCache().schedules, dateParam));
+  const [leaves, setLeaves] = useState(() => readScheduleCache().leaves);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState('');
   const [form, setForm] = useState(emptyScheduleForm);
   const [editId, setEditId] = useState(null);
@@ -69,17 +70,21 @@ export default function AdminScheduleDayPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(() => !scheduleCacheHasBoard());
   const [successSummary, setSuccessSummary] = useState(null);
   const [pendingMailRedirect, setPendingMailRedirect] = useState(false);
   const scheduleRequestRef = useRef(0);
 
-  const sortedSchedules = useMemo(
-    () => [...schedules].sort((left, right) => (
+  const sortedSchedules = useMemo(() => {
+    const daySchedules = schedulesOnDate(schedules, dateParam);
+    const visible = selectedEmployeeId
+      ? daySchedules.filter((schedule) => String(schedule.user_id) === String(selectedEmployeeId))
+      : daySchedules;
+
+    return [...visible].sort((left, right) => (
       formatTimeValue(left.start_time).localeCompare(formatTimeValue(right.start_time))
-    )),
-    [schedules],
-  );
+    ));
+  }, [dateParam, schedules, selectedEmployeeId]);
 
   const dayLeaveEvents = useMemo(() => {
     let events = expandLeavesToEvents(leaves, dateParam, dateParam);
@@ -96,7 +101,7 @@ export default function AdminScheduleDayPage() {
       kind: 'leave',
       key: event.id,
       leave: event.resource,
-      sortKey: `${String(LEAVE_BAND_START_HOUR).padStart(2, '0')}:00`,
+      sortKey: formatTimeValue(event.resource?.start_time || `${String(LEAVE_BAND_START_HOUR).padStart(2, '0')}:00`),
     }));
 
     const scheduleEntries = sortedSchedules.map((schedule) => ({
@@ -111,11 +116,12 @@ export default function AdminScheduleDayPage() {
     ));
   }, [dayLeaveEvents, sortedSchedules]);
 
-  const leaveTimeLabel = `${String(LEAVE_BAND_START_HOUR).padStart(2, '0')}:00 - ${String(LEAVE_BAND_END_HOUR).padStart(2, '0')}:00`;
-
   const loadEmployees = useCallback(async () => {
+    const startedAt = Date.now();
     const result = await api.getEmployees();
-    setEmployees(result.data.filter((item) => item.role === 'employee' && item.is_active));
+    const nextEmployees = result.data.filter((item) => item.role === 'employee' && item.is_active);
+    setEmployees(nextEmployees);
+    commitScheduleCache(startedAt, { employees: nextEmployees });
   }, []);
 
   const loadSchedules = useCallback(async () => {
@@ -124,8 +130,22 @@ export default function AdminScheduleDayPage() {
     }
 
     const requestId = scheduleRequestRef.current + 1;
+    const startedAt = Date.now();
     scheduleRequestRef.current = requestId;
-    setLoading(true);
+
+    const cached = readScheduleCache();
+    const cachedDay = schedulesOnDate(cached.schedules, dateParam);
+    const cachedLeaveEvents = expandLeavesToEvents(cached.leaves, dateParam, dateParam);
+
+    if (cachedDay.length) {
+      setSchedules(cachedDay);
+    }
+
+    if (cached.leaves.length) {
+      setLeaves(cached.leaves);
+    }
+
+    setLoading(cachedDay.length === 0 && cachedLeaveEvents.length === 0);
     setError('');
 
     try {
@@ -135,7 +155,6 @@ export default function AdminScheduleDayPage() {
           api.getCalendarSchedules({
             date_from: dateParam,
             date_to: dateParam,
-            user_id: selectedEmployeeId || undefined,
           }),
           api.getPlanningLeaves(leaveRange),
         ]);
@@ -152,6 +171,9 @@ export default function AdminScheduleDayPage() {
 
       setSchedules(payload.schedules);
       setLeaves(payload.leaves);
+      mergeSchedulesForDate(startedAt, dateParam, payload.schedules, {
+        leaves: payload.leaves,
+      });
     } catch (err) {
       if (scheduleRequestRef.current !== requestId) {
         return;
@@ -163,7 +185,7 @@ export default function AdminScheduleDayPage() {
         setLoading(false);
       }
     }
-  }, [dateParam, selectedEmployeeId]);
+  }, [dateParam]);
 
   useEffect(() => {
     if (!isValidDateParam(dateParam)) {
@@ -427,8 +449,10 @@ export default function AdminScheduleDayPage() {
         </div>
 
         <div className="schedule-workspace schedule-workspace--day-list">
-          {!dayTimelineEntries.length && !loading && (
-            <p className="hint schedule-day-empty">這天目前沒有派工或排休。</p>
+          {!dayTimelineEntries.length && (
+            <p className="hint schedule-day-empty">
+              {loading ? '班表載入中...' : '這天目前沒有派工或排休。'}
+            </p>
           )}
 
           <div className="schedule-day-timeline">
@@ -449,7 +473,9 @@ export default function AdminScheduleDayPage() {
                         className="schedule-day-block__technician"
                       />
                       <p className="schedule-day-block__line">{name} 休假</p>
-                      <p className="schedule-day-block__time">{leaveTimeLabel}</p>
+                      <p className="schedule-day-block__time">
+                        {formatChineseTimeRange(getScheduleDisplayTimes(leave))}
+                      </p>
                     </div>
                   </article>
                 );
@@ -514,6 +540,7 @@ export default function AdminScheduleDayPage() {
         onClose={closeModal}
         onSubmit={handleSubmit}
         onDelete={handleDelete}
+        onLeaveCreated={loadSchedules}
       />
     </Layout>
   );

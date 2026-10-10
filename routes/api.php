@@ -52,6 +52,7 @@ Route::middleware(['auth:sanctum', 'role:admin|customer_service'])->prefix('admi
     Route::get('/schedules', [AdminScheduleController::class, 'index']);
     Route::get('/planning/availability', [AdminSchedulePlanningController::class, 'availability']);
     Route::get('/planning/leaves', [AdminSchedulePlanningController::class, 'leaves']);
+    Route::post('/planning/leaves', [AdminSchedulePlanningController::class, 'storeTimedLeave']);
     Route::post('/planning/leaves/toggle', [AdminSchedulePlanningController::class, 'toggleLeave']);
     Route::post('/planning/leaves/batch', [AdminSchedulePlanningController::class, 'batchLeave']);
     Route::delete('/planning/leaves/{employeeLeave}', [AdminSchedulePlanningController::class, 'destroyLeave']);

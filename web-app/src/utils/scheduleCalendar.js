@@ -1509,7 +1509,9 @@ export function getScheduleBlockColor(schedule) {
 
 export function getScheduleEventClassName(schedule) {
   if (schedule?.type === 'leave') {
-    return 'rbc-event-leave';
+    return schedule.start_time && schedule.end_time
+      ? 'rbc-event-leave rbc-event-leave--timed'
+      : 'rbc-event-leave';
   }
 
   const source = schedule?.customer_source || 'phone';
@@ -1577,8 +1579,8 @@ export const PROJECT_BAND_END_HOUR = 21;
 export function getScheduleDisplayTimes(schedule) {
   if (schedule?.type === 'leave') {
     return {
-      start_time: `${String(LEAVE_BAND_START_HOUR).padStart(2, '0')}:00`,
-      end_time: `${String(LEAVE_BAND_END_HOUR).padStart(2, '0')}:00`,
+      start_time: schedule.start_time || `${String(LEAVE_BAND_START_HOUR).padStart(2, '0')}:00`,
+      end_time: schedule.end_time || `${String(LEAVE_BAND_END_HOUR).padStart(2, '0')}:00`,
     };
   }
 
@@ -1728,9 +1730,12 @@ export function extractDateLeaveKeys(leaves, dateFrom, dateTo, userId = null) {
 
 export function leaveToEvent(leave, dateStr) {
   const [year, month, day] = dateStr.split('-').map(Number);
-  const start = new Date(year, month - 1, day, LEAVE_BAND_START_HOUR, 0, 0, 0);
-  const end = new Date(year, month - 1, day, LEAVE_BAND_END_HOUR, 0, 0, 0);
+  const startClock = parseLeaveClock(leave.start_time, LEAVE_BAND_START_HOUR);
+  const endClock = parseLeaveClock(leave.end_time, LEAVE_BAND_END_HOUR);
+  const start = new Date(year, month - 1, day, startClock.hour, startClock.minute, 0, 0);
+  const end = new Date(year, month - 1, day, endClock.hour, endClock.minute, 0, 0);
   const name = leave.user?.name || leave.user?.account || '師傅';
+  const timed = Boolean(leave.start_time && leave.end_time);
 
   return {
     id: `leave-${leave.id}-${dateStr}`,
@@ -1742,8 +1747,20 @@ export function leaveToEvent(leave, dateStr) {
       type: 'leave',
       ...leave,
       leave_date: dateStr,
+      start_time: timed ? leave.start_time : null,
+      end_time: timed ? leave.end_time : null,
     },
   };
+}
+
+function parseLeaveClock(value, fallbackHour) {
+  const match = String(value || '').match(/^(\d{1,2}):(\d{2})/);
+
+  if (!match) {
+    return { hour: fallbackHour, minute: 0 };
+  }
+
+  return { hour: Number(match[1]), minute: Number(match[2]) };
 }
 
 export function parseTaskDetails(taskDetails) {

@@ -20,6 +20,7 @@ import { canAccess, canManageSchedulePricing } from '../utils/permissions';
 import { loadCalendarSettings, saveCalendarSettings } from '../utils/calendarSettings';
 import { loadAvailabilityDays } from '../utils/taitungAreas';
 import { loadWithRetry } from '../utils/pageLoad';
+import { commitScheduleCache, mergeSchedulesForRange, readScheduleCache, scheduleCacheHasBoard } from '../utils/scheduleDataCache';
 import {
   buildSchedulePayload,
   buildSchedulePayloads,
@@ -58,8 +59,8 @@ export default function AdminSchedulesPage() {
   const isMobile = useIsMobile();
   const isDesktop = !useIsMobile(980);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [employees, setEmployees] = useState([]);
-  const [allSchedules, setAllSchedules] = useState([]);
+  const [employees, setEmployees] = useState(() => readScheduleCache().employees);
+  const [allSchedules, setAllSchedules] = useState(() => readScheduleCache().schedules);
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedEmployeeId, setSelectedEmployeeId] = useState('');
   const [form, setForm] = useState(emptyScheduleForm);
@@ -75,12 +76,12 @@ export default function AdminSchedulesPage() {
   });
   const [selectedAreas, setSelectedAreas] = useState([]);
   const [lookaheadDays, setLookaheadDays] = useState(() => loadAvailabilityDays(14));
-  const [leaves, setLeaves] = useState([]);
+  const [leaves, setLeaves] = useState(() => readScheduleCache().leaves);
   const [snapshotSchedule, setSnapshotSchedule] = useState(null);
   const [successSummary, setSuccessSummary] = useState(null);
   const [pendingMailRedirect, setPendingMailRedirect] = useState(false);
   const [mobileFilterOpen, setMobileFilterOpen] = useState(false);
-  const [schedulesLoading, setSchedulesLoading] = useState(false);
+  const [schedulesLoading, setSchedulesLoading] = useState(() => !scheduleCacheHasBoard());
   const [calendarView, setCalendarView] = useState(() => (
     typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches
       ? 'month'
@@ -96,8 +97,11 @@ export default function AdminSchedulesPage() {
   }, [allSchedules, selectedAreas]);
 
   const loadEmployees = useCallback(async () => {
+    const startedAt = Date.now();
     const result = await api.getEmployees();
-    setEmployees(result.data.filter((item) => item.role === 'employee' && item.is_active));
+    const nextEmployees = result.data.filter((item) => item.role === 'employee' && item.is_active);
+    setEmployees(nextEmployees);
+    commitScheduleCache(startedAt, { employees: nextEmployees });
   }, []);
 
   const loadSchedules = useCallback(async (
@@ -107,8 +111,11 @@ export default function AdminSchedulesPage() {
     view = calendarView,
   ) => {
     const requestId = loadRequestRef.current + 1;
+    const startedAt = Date.now();
     loadRequestRef.current = requestId;
-    setSchedulesLoading(true);
+    if (!scheduleCacheHasBoard()) {
+      setSchedulesLoading(true);
+    }
     setError('');
 
     try {
@@ -127,8 +134,18 @@ export default function AdminSchedulesPage() {
         return;
       }
 
-      setAllSchedules(scheduleResult.data.schedules || []);
-      setLeaves(leaveResult.data.leaves || []);
+      const nextSchedules = scheduleResult.data.schedules || [];
+      const nextLeaves = leaveResult.data.leaves || [];
+      setAllSchedules(nextSchedules);
+      setLeaves(nextLeaves);
+      mergeSchedulesForRange(
+        startedAt,
+        loadRange.date_from,
+        loadRange.date_to,
+        nextSchedules,
+        employeeId || null,
+        { leaves: nextLeaves },
+      );
     } catch (err) {
       if (requestId !== loadRequestRef.current) {
         return;
@@ -141,6 +158,10 @@ export default function AdminSchedulesPage() {
       }
     }
   }, [calendarView, currentDate, selectedEmployeeId, displayDays]);
+
+  useEffect(() => {
+    import('./AdminScheduleDayPage');
+  }, []);
 
   useEffect(() => {
     loadEmployees().catch((err) => setError(err.message));
@@ -777,6 +798,7 @@ export default function AdminSchedulesPage() {
           onClose={closeModal}
           onSubmit={handleSubmit}
           onDelete={handleDelete}
+          onLeaveCreated={() => loadSchedules(currentDate, selectedEmployeeId, displayDays, calendarView)}
         />
       </Layout>
     </PageErrorBoundary>
