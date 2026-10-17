@@ -71,6 +71,20 @@ EOF
 RUN chown -R www-data:www-data /var/www
 COPY --link --chown=www-data:www-data --chmod=755 . /var/www
 
+# .dockerignore 會排除 cache/sessions/views 內容，建置前必須先建立目錄，
+# 否則 realpath(storage/framework/views) 為 false → Please provide a valid cache path
+RUN set -eux \
+	&& mkdir -p \
+		/var/www/storage/framework/cache/data \
+		/var/www/storage/framework/sessions \
+		/var/www/storage/framework/testing \
+		/var/www/storage/framework/views \
+		/var/www/storage/logs \
+		/var/www/storage/app/public \
+		/var/www/bootstrap/cache \
+	&& chown -R www-data:www-data /var/www/storage /var/www/bootstrap/cache \
+	&& chmod -R ug+rwx /var/www/storage /var/www/bootstrap/cache
+
 USER www-data
 RUN set -eux \
 	&& if [ -f composer.json ]; then composer install --optimize-autoloader --classmap-authoritative --no-dev; fi \
@@ -117,7 +131,7 @@ USER root
 
 RUN if [ -d /var/www/public ]; then sed -i 's|root /var/www;|root /var/www/public;|' /etc/nginx/sites-enabled/default; fi
 
-ARG START_COMMAND="_startup() { nginx; php-fpm; }; php artisan migrate --force && php artisan storage:link --force && _startup"
+ARG START_COMMAND="_startup() { nginx; php-fpm; }; mkdir -p storage/framework/cache/data storage/framework/sessions storage/framework/views storage/logs bootstrap/cache && php artisan migrate --force && php artisan storage:link --force && _startup"
 ENV START_COMMAND=${START_COMMAND}
 CMD eval ${START_COMMAND}
 
