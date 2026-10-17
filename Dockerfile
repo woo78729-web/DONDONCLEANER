@@ -131,7 +131,8 @@ USER root
 
 RUN if [ -d /var/www/public ]; then sed -i 's|root /var/www;|root /var/www/public;|' /etc/nginx/sites-enabled/default; fi
 
-ARG START_COMMAND="_startup() { nginx; php-fpm; }; mkdir -p storage/framework/cache/data storage/framework/sessions storage/framework/views storage/logs bootstrap/cache && php artisan migrate --force && php artisan storage:link --force && _startup"
+# php-fpm 必須用 -F 前景執行，否則 process 結束後 Railway/容器會一直重啟（看起來像卡在 migrate）
+ARG START_COMMAND="mkdir -p storage/framework/cache/data storage/framework/sessions storage/framework/views storage/logs bootstrap/cache && php artisan migrate --force && php artisan storage:link --force && nginx && exec php-fpm -F"
 ENV START_COMMAND=${START_COMMAND}
 CMD eval ${START_COMMAND}
 
