@@ -75,37 +75,46 @@
 
 .schedule-workspace.schedule-calendar .rbc-time-content {
   flex: 1 0 0%;
-  min-height: 0;
+  min-height: calc(var(--calendar-hour-count, 15) * var(--calendar-hour-height, 32px));
   align-items: stretch;
   flex-direction: row;
   overflow-y: auto !important;
   overflow-x: hidden;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
-  scroll-behavior: smooth;
+  scroll-behavior: auto;
 }
 
 .schedule-workspace.schedule-calendar .rbc-time-content > .rbc-time-gutter {
   flex: none;
   width: 64px;
   min-width: 64px;
+  min-height: calc(var(--calendar-hour-count, 15) * var(--calendar-hour-height, 32px));
+  height: 100%;
 }
 
 .schedule-workspace.schedule-calendar .rbc-time-content > .rbc-day-slot {
   flex: 1 1 0;
   width: 0;
   min-width: 0;
-}
-
-.schedule-workspace.schedule-calendar .rbc-time-content > .rbc-day-slot {
+  min-height: calc(var(--calendar-hour-count, 15) * var(--calendar-hour-height, 32px));
+  height: 100%;
   position: relative;
   isolation: isolate;
 }
 
+.schedule-workspace.schedule-calendar .rbc-time-column {
+  min-height: calc(var(--calendar-hour-count, 15) * var(--calendar-hour-height, 32px));
+  height: 100%;
+}
+
 .schedule-workspace.schedule-calendar .rbc-day-slot .rbc-events-container {
   margin: 0 6px 0 4px;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
   z-index: 2;
-  overflow: hidden;
 }
 
 .schedule-workspace.schedule-calendar .rbc-day-slot .rbc-event-label {
@@ -132,7 +141,10 @@
 }
 
 .schedule-workspace.schedule-calendar .rbc-timeslot-group {
-  min-height: 32px;
+  flex: 1 1 0;
+  height: auto;
+  min-height: var(--calendar-hour-height, 32px);
+  max-height: none;
   border-color: #f1f3f4;
 }
 
@@ -1209,7 +1221,7 @@
   }
 
   .schedule-workspace.schedule-calendar .rbc-timeslot-group {
-    min-height: 24px;
+    min-height: var(--calendar-hour-height, 32px);
   }
 
   .schedule-calendar--draggable .rbc-event {
@@ -1684,9 +1696,9 @@
 .schedule-workspace.schedule-calendar .rbc-day-slot .rbc-event {
   align-items: flex-start !important;
   justify-content: flex-start !important;
-  margin-left: 2px;
-  margin-right: 2px;
-  max-width: calc(100% - 4px);
+  margin-left: 1px;
+  margin-right: 1px;
+  max-width: none;
 }
 
 .schedule-workspace.schedule-calendar .rbc-day-slot .rbc-event .rbc-event-content {
@@ -1760,10 +1772,15 @@
   visibility: hidden;
 }
 
-/* DnD: keep wrapper in normal flow; never absolute-position it across the week row. */
+/* DnD wrapper fills its own day column so event times stay on the hour lines. */
 .schedule-calendar--draggable .rbc-day-slot > div:has(.rbc-events-container) {
-  position: static !important;
-  inset: auto !important;
+  position: absolute !important;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  width: auto;
+  height: auto;
   pointer-events: none;
 }
 
@@ -3443,6 +3460,20 @@
   word-break: break-word;
 }
 
+.schedule-success-modal__row--emphasis {
+  background: rgba(255, 140, 0, 0.12);
+  margin: 0 -10px;
+  padding-left: 10px;
+  padding-right: 10px;
+  border-radius: 10px;
+  border-bottom-color: transparent;
+}
+
+.schedule-success-modal__row--emphasis dd {
+  font-size: 17px;
+  font-weight: 800;
+}
+
 .schedule-success-modal__hint {
   margin: 0 0 14px;
   font-size: 12px;
@@ -3789,7 +3820,7 @@
   }
 
   .schedule-layout--calendar-large .schedule-workspace.schedule-calendar .rbc-timeslot-group {
-    min-height: 30px;
+    min-height: var(--calendar-hour-height, 32px);
   }
 
   .schedule-layout--calendar-large .schedule-workspace.schedule-calendar .rbc-toolbar-label {
