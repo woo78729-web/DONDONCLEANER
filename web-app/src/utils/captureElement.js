@@ -124,7 +124,7 @@ function drawSuccessCard(rows, title) {
     ctx.fillText(row.label, contentLeft, cursorY + ROW_PADDING_Y * SCALE);
 
     ctx.fillStyle = row.emphasis ? '#102a43' : '#1a1a1a';
-    ctx.font = `${row.emphasis ? 800 : 600} ${row.emphasis ? 17 : 15}px ${FONT_FAMILY}`;
+    ctx.font = `${row.emphasis ? 800 : 600} ${(row.emphasis ? 17 : 15) * SCALE}px ${FONT_FAMILY}`;
     row.lines.forEach((line, lineIndex) => {
       ctx.fillText(line, valueLeft, cursorY + ROW_PADDING_Y * SCALE + lineIndex * row.lineHeight * SCALE);
     });
