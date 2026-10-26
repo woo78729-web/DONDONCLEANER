@@ -9,6 +9,20 @@ const ROW_PADDING_Y = 10;
 const VALUE_LINE_HEIGHT = 22;
 const FONT_FAMILY = '"Microsoft JhengHei", "PingFang TC", "Noto Sans TC", sans-serif';
 
+// 東東品牌：深色底 + 橘色強調（勿用萬兔白底海軍藍）
+const COLORS = {
+  background: '#121214',
+  border: 'rgba(255, 255, 255, 0.14)',
+  divider: 'rgba(255, 255, 255, 0.08)',
+  title: '#ececee',
+  label: '#9a9aa3',
+  value: '#ececee',
+  emphasisBg: 'rgba(255, 140, 0, 0.16)',
+  emphasisText: '#ffab40',
+  iconBg: 'rgba(67, 160, 71, 0.22)',
+  icon: '#81c784',
+};
+
 function wrapText(ctx, text, maxWidth) {
   const value = String(text || '-');
   const lines = [];
@@ -73,10 +87,10 @@ function drawSuccessCard(rows, title) {
   canvas.width = CARD_WIDTH * SCALE;
   canvas.height = height * SCALE;
 
-  ctx.fillStyle = '#ffffff';
+  ctx.fillStyle = COLORS.background;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  ctx.strokeStyle = 'rgba(16, 42, 67, 0.14)';
+  ctx.strokeStyle = COLORS.border;
   ctx.lineWidth = SCALE;
   roundRect(ctx, SCALE, SCALE, canvas.width - SCALE * 2, canvas.height - SCALE * 2, 18 * SCALE);
   ctx.stroke();
@@ -85,15 +99,15 @@ function drawSuccessCard(rows, title) {
   const iconY = (PADDING_TOP + 26) * SCALE;
   ctx.beginPath();
   ctx.arc(centerX, iconY, 26 * SCALE, 0, Math.PI * 2);
-  ctx.fillStyle = '#e8f5e9';
+  ctx.fillStyle = COLORS.iconBg;
   ctx.fill();
-  ctx.fillStyle = '#2e7d32';
+  ctx.fillStyle = COLORS.icon;
   ctx.font = `800 ${28 * SCALE}px ${FONT_FAMILY}`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText('✓', centerX, iconY + SCALE);
 
-  ctx.fillStyle = '#1a1a1a';
+  ctx.fillStyle = COLORS.title;
   ctx.font = `800 ${20 * SCALE}px ${FONT_FAMILY}`;
   ctx.fillText(title || '預約完成', centerX, (PADDING_TOP + 78) * SCALE);
 
@@ -105,11 +119,11 @@ function drawSuccessCard(rows, title) {
     const rowHeight = row.height * SCALE;
 
     if (row.emphasis) {
-      ctx.fillStyle = '#e8f2ff';
+      ctx.fillStyle = COLORS.emphasisBg;
       roundRect(ctx, 16 * SCALE, cursorY, (CARD_WIDTH - 32) * SCALE, rowHeight, 10 * SCALE);
       ctx.fill();
     } else if (index < measured.length - 1) {
-      ctx.strokeStyle = 'rgba(16, 42, 67, 0.12)';
+      ctx.strokeStyle = COLORS.divider;
       ctx.lineWidth = SCALE;
       ctx.beginPath();
       ctx.moveTo(contentLeft, cursorY + rowHeight);
@@ -119,11 +133,11 @@ function drawSuccessCard(rows, title) {
 
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
-    ctx.fillStyle = '#3d4f60';
+    ctx.fillStyle = COLORS.label;
     ctx.font = `700 ${13 * SCALE}px ${FONT_FAMILY}`;
     ctx.fillText(row.label, contentLeft, cursorY + ROW_PADDING_Y * SCALE);
 
-    ctx.fillStyle = row.emphasis ? '#102a43' : '#1a1a1a';
+    ctx.fillStyle = row.emphasis ? COLORS.emphasisText : COLORS.value;
     ctx.font = `${row.emphasis ? 800 : 600} ${(row.emphasis ? 17 : 15) * SCALE}px ${FONT_FAMILY}`;
     row.lines.forEach((line, lineIndex) => {
       ctx.fillText(line, valueLeft, cursorY + ROW_PADDING_Y * SCALE + lineIndex * row.lineHeight * SCALE);
