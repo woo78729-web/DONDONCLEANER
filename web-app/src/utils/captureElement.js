@@ -1,12 +1,13 @@
-const CARD_WIDTH = 420;
+// 傳 LINE 時需夠大：畫布約 1440px 寬，字級一併放大
+const CARD_WIDTH = 720;
 const SCALE = 2;
-const PADDING_X = 28;
-const PADDING_TOP = 28;
-const PADDING_BOTTOM = 28;
-const LABEL_WIDTH = 76;
-const COLUMN_GAP = 12;
-const ROW_PADDING_Y = 10;
-const VALUE_LINE_HEIGHT = 22;
+const PADDING_X = 40;
+const PADDING_TOP = 40;
+const PADDING_BOTTOM = 40;
+const LABEL_WIDTH = 110;
+const COLUMN_GAP = 18;
+const ROW_PADDING_Y = 14;
+const VALUE_LINE_HEIGHT = 32;
 const FONT_FAMILY = '"Microsoft JhengHei", "PingFang TC", "Noto Sans TC", sans-serif';
 
 // 東東品牌：深色底 + 橘色強調（勿用萬兔白底海軍藍）
@@ -60,10 +61,10 @@ function roundRect(ctx, x, y, width, height, radius) {
 
 function measureRows(ctx, rows, valueWidth) {
   return rows.map((row) => {
-    const size = row.emphasis ? 17 : 15;
+    const size = row.emphasis ? 28 : 24;
     ctx.font = `${row.emphasis ? 800 : 600} ${size * SCALE}px ${FONT_FAMILY}`;
     const lines = wrapText(ctx, row.value, valueWidth);
-    const lineHeight = row.emphasis ? 24 : VALUE_LINE_HEIGHT;
+    const lineHeight = row.emphasis ? 36 : VALUE_LINE_HEIGHT;
     const height = Math.max(lineHeight, lines.length * lineHeight) + ROW_PADDING_Y * 2;
 
     return { ...row, lines, lineHeight, height };
@@ -80,7 +81,7 @@ function drawSuccessCard(rows, title) {
   }
 
   const measured = measureRows(ctx, rows, valueWidth);
-  const headerHeight = 108;
+  const headerHeight = 150;
   const bodyHeight = measured.reduce((total, row) => total + row.height, 0);
   const height = PADDING_TOP + headerHeight + bodyHeight + PADDING_BOTTOM;
 
@@ -92,24 +93,24 @@ function drawSuccessCard(rows, title) {
 
   ctx.strokeStyle = COLORS.border;
   ctx.lineWidth = SCALE;
-  roundRect(ctx, SCALE, SCALE, canvas.width - SCALE * 2, canvas.height - SCALE * 2, 18 * SCALE);
+  roundRect(ctx, SCALE, SCALE, canvas.width - SCALE * 2, canvas.height - SCALE * 2, 24 * SCALE);
   ctx.stroke();
 
   const centerX = canvas.width / 2;
-  const iconY = (PADDING_TOP + 26) * SCALE;
+  const iconY = (PADDING_TOP + 36) * SCALE;
   ctx.beginPath();
-  ctx.arc(centerX, iconY, 26 * SCALE, 0, Math.PI * 2);
+  ctx.arc(centerX, iconY, 36 * SCALE, 0, Math.PI * 2);
   ctx.fillStyle = COLORS.iconBg;
   ctx.fill();
   ctx.fillStyle = COLORS.icon;
-  ctx.font = `800 ${28 * SCALE}px ${FONT_FAMILY}`;
+  ctx.font = `800 ${40 * SCALE}px ${FONT_FAMILY}`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText('✓', centerX, iconY + SCALE);
 
   ctx.fillStyle = COLORS.title;
-  ctx.font = `800 ${20 * SCALE}px ${FONT_FAMILY}`;
-  ctx.fillText(title || '預約完成', centerX, (PADDING_TOP + 78) * SCALE);
+  ctx.font = `800 ${32 * SCALE}px ${FONT_FAMILY}`;
+  ctx.fillText(title || '預約完成', centerX, (PADDING_TOP + 108) * SCALE);
 
   let cursorY = (PADDING_TOP + headerHeight) * SCALE;
   const contentLeft = PADDING_X * SCALE;
@@ -120,7 +121,7 @@ function drawSuccessCard(rows, title) {
 
     if (row.emphasis) {
       ctx.fillStyle = COLORS.emphasisBg;
-      roundRect(ctx, 16 * SCALE, cursorY, (CARD_WIDTH - 32) * SCALE, rowHeight, 10 * SCALE);
+      roundRect(ctx, 24 * SCALE, cursorY, (CARD_WIDTH - 48) * SCALE, rowHeight, 14 * SCALE);
       ctx.fill();
     } else if (index < measured.length - 1) {
       ctx.strokeStyle = COLORS.divider;
@@ -134,11 +135,11 @@ function drawSuccessCard(rows, title) {
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
     ctx.fillStyle = COLORS.label;
-    ctx.font = `700 ${13 * SCALE}px ${FONT_FAMILY}`;
+    ctx.font = `700 ${20 * SCALE}px ${FONT_FAMILY}`;
     ctx.fillText(row.label, contentLeft, cursorY + ROW_PADDING_Y * SCALE);
 
     ctx.fillStyle = row.emphasis ? COLORS.emphasisText : COLORS.value;
-    ctx.font = `${row.emphasis ? 800 : 600} ${(row.emphasis ? 17 : 15) * SCALE}px ${FONT_FAMILY}`;
+    ctx.font = `${row.emphasis ? 800 : 600} ${(row.emphasis ? 28 : 24) * SCALE}px ${FONT_FAMILY}`;
     row.lines.forEach((line, lineIndex) => {
       ctx.fillText(line, valueLeft, cursorY + ROW_PADDING_Y * SCALE + lineIndex * row.lineHeight * SCALE);
     });

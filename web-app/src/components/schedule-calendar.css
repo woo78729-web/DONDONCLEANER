@@ -1465,25 +1465,25 @@
   }
 
   .schedule-success-modal {
-    width: min(380px, calc(100vw - 32px));
-    max-height: min(72vh, 480px);
+    width: min(520px, calc(100vw - 24px));
+    max-height: min(90vh, 760px);
     overflow: auto;
-    padding: 20px 16px calc(16px + var(--safe-bottom, 0px));
+    padding: 24px 18px calc(18px + var(--safe-bottom, 0px));
     border-radius: 16px;
   }
 
   .schedule-success-modal__row {
     grid-template-columns: 1fr;
     gap: 4px;
-    padding: 12px 0;
+    padding: 14px 0;
   }
 
   .schedule-success-modal__row dt {
-    font-size: 12px;
+    font-size: 14px;
   }
 
   .schedule-success-modal__row dd {
-    font-size: 16px;
+    font-size: 18px;
   }
 
   .schedule-form-modal .service-address-row__grid,
@@ -3378,8 +3378,8 @@
 }
 
 .schedule-success-modal {
-  width: min(420px, calc(100vw - 32px));
-  padding: 24px 22px calc(20px + var(--safe-bottom, 0px));
+  width: min(520px, calc(100vw - 24px));
+  padding: 28px 26px calc(22px + var(--safe-bottom, 0px));
   border-radius: 16px;
   background: var(--glass-bg-strong);
   color: var(--text);
@@ -3411,20 +3411,20 @@
 }
 
 .schedule-success-modal__icon {
-  width: 52px;
-  height: 52px;
-  margin: 0 auto 12px;
+  width: 64px;
+  height: 64px;
+  margin: 0 auto 14px;
   border-radius: 999px;
   background: rgba(67, 160, 71, 0.18);
   color: #81c784;
-  font-size: 28px;
+  font-size: 34px;
   font-weight: 800;
-  line-height: 52px;
+  line-height: 64px;
 }
 
 .schedule-success-modal__title {
-  margin: 0 0 16px;
-  font-size: 20px;
+  margin: 0 0 18px;
+  font-size: 24px;
   font-weight: 800;
 }
 
@@ -3435,9 +3435,9 @@
 
 .schedule-success-modal__row {
   display: grid;
-  grid-template-columns: 76px 1fr;
-  gap: 10px;
-  padding: 10px 0;
+  grid-template-columns: 92px 1fr;
+  gap: 12px;
+  padding: 12px 0;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
@@ -3448,13 +3448,13 @@
 .schedule-success-modal__row dt {
   margin: 0;
   color: var(--text-muted);
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 700;
 }
 
 .schedule-success-modal__row dd {
   margin: 0;
-  font-size: 15px;
+  font-size: 18px;
   font-weight: 600;
   line-height: 1.45;
   word-break: break-word;
@@ -3470,7 +3470,7 @@
 }
 
 .schedule-success-modal__row--emphasis dd {
-  font-size: 17px;
+  font-size: 20px;
   font-weight: 800;
 }
 
