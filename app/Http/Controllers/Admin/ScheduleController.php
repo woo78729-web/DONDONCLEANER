@@ -119,6 +119,7 @@ class ScheduleController extends Controller
         $validated = ScheduleCustomerServicePolicy::preparePayload($validated, $request->user());
         $validated = $this->normalizeSchedulePayload($validated);
         $validated = ScheduleCustomerServicePolicy::finalizePayload($validated, $request->user());
+        $validated['created_by'] = $request->user()?->id;
 
         $schedule = DailySchedule::query()->create($validated);
         ScheduleBackfillSupport::createReportIfPastBackfill($schedule);

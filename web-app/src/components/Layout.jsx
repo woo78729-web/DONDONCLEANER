@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { assetUrl } from '../utils/assetUrl';
 import { getMobileTabItems, getNavStructure } from '../utils/navItems';
 import { canAccess, getRoleLabel } from '../utils/permissions';
 import { UnitChangeAlertModal } from './UnitChangeAlertModal';
+import { DailyAnnouncementModal } from './DailyAnnouncementModal';
 import { api } from '../api/client';
 
 function NavItemLink({ item, onNavigate, className = 'nav-link' }) {
@@ -126,10 +127,15 @@ export function Layout({ title, children }) {
   const [unitChangeAlerts, setUnitChangeAlerts] = useState([]);
   const [unitChangeAlertOpen, setUnitChangeAlertOpen] = useState(false);
   const [dismissingUnitAlerts, setDismissingUnitAlerts] = useState(false);
+  const [announcementOpen, setAnnouncementOpen] = useState(false);
+  const [announcementLoading, setAnnouncementLoading] = useState(false);
+  const [announcementError, setAnnouncementError] = useState('');
+  const [announcementData, setAnnouncementData] = useState(null);
 
   const navStructure = user ? getNavStructure(user) : [];
   const mobileTabItems = user ? getMobileTabItems(user) : [];
   const isAdmin = user?.role === 'admin';
+  const canViewAnnouncement = user?.role === 'admin' || user?.role === 'customer_service';
 
   useEffect(() => {
     if (!user || !isAdmin) {
@@ -199,9 +205,58 @@ export function Layout({ title, children }) {
     }
   }
 
+  const loadAnnouncement = useCallback(async () => {
+    if (!canViewAnnouncement) {
+      return;
+    }
+
+    setAnnouncementLoading(true);
+    setAnnouncementError('');
+
+    try {
+      const result = await api.getDailyAnnouncement();
+      setAnnouncementData(result.data || null);
+    } catch (err) {
+      setAnnouncementError(err?.message || '公告載入失敗');
+    } finally {
+      setAnnouncementLoading(false);
+    }
+  }, [canViewAnnouncement]);
+
+  useEffect(() => {
+    if (!canViewAnnouncement) {
+      setAnnouncementData(null);
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    api.getDailyAnnouncement()
+      .then((result) => {
+        if (!cancelled) {
+          setAnnouncementData(result.data || null);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setAnnouncementData(null);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [canViewAnnouncement, location.pathname]);
+
+  async function openAnnouncement() {
+    setAnnouncementOpen(true);
+    await loadAnnouncement();
+  }
+
   useEffect(() => {
     setMenuOpen(false);
     setOpenNavGroup(null);
+    setAnnouncementOpen(false);
   }, [location.pathname]);
 
   useEffect(() => {
@@ -243,6 +298,20 @@ export function Layout({ title, children }) {
           </div>
           {user && (
             <div className="topbar-actions">
+              {canViewAnnouncement && (
+                <button
+                  type="button"
+                  className="btn btn-glass btn-sm topbar-announcement-btn"
+                  onClick={openAnnouncement}
+                >
+                  公告
+                  {(announcementData?.todos?.total_count || 0) > 0 && (
+                    <span className="topbar-announcement-btn__badge">
+                      {announcementData.todos.total_count}
+                    </span>
+                  )}
+                </button>
+              )}
               <span className="user-chip hide-mobile">{user.name}</span>
               <span className="role-chip">{getRoleLabel(user.role)}</span>
               <button type="button" className="btn btn-glass btn-sm" onClick={logout}>登出</button>
@@ -275,6 +344,15 @@ export function Layout({ title, children }) {
           items={unitChangeAlerts}
           onClose={closeUnitChangeAlerts}
           dismissing={dismissingUnitAlerts}
+        />
+
+        <DailyAnnouncementModal
+          open={announcementOpen}
+          loading={announcementLoading}
+          error={announcementError}
+          data={announcementData}
+          onClose={() => setAnnouncementOpen(false)}
+          onRefresh={loadAnnouncement}
         />
 
         {user && (

@@ -259,6 +259,163 @@ a {
   flex-wrap: wrap;
 }
 
+.topbar-announcement-btn {
+  position: relative;
+  min-width: 56px;
+}
+
+.topbar-announcement-btn__badge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: #ef5350;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 18px;
+  text-align: center;
+}
+
+.daily-announcement-modal {
+  width: min(720px, calc(100vw - 24px));
+  max-height: min(86vh, 900px);
+  display: flex;
+  flex-direction: column;
+}
+
+.daily-announcement__body {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 0 16px 16px;
+  overflow: auto;
+}
+
+.daily-announcement__section-title {
+  margin: 0 0 10px;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.daily-announcement__todo-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+
+.daily-announcement__todo-block {
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 12px;
+  padding: 12px;
+  background: rgba(248, 250, 252, 0.9);
+}
+
+.daily-announcement__todo-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.daily-announcement__todo-head h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.daily-announcement__count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: #1565c0;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.daily-announcement__link {
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 600;
+  color: #1565c0;
+  text-decoration: none;
+}
+
+.daily-announcement__list,
+.daily-announcement__timeline {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 220px;
+  overflow: auto;
+}
+
+.daily-announcement__section--activity .daily-announcement__timeline {
+  max-height: 280px;
+}
+
+.daily-announcement__item-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.daily-announcement__timeline-item {
+  display: block;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(248, 250, 252, 0.95);
+  border: 1px solid rgba(15, 23, 42, 0.06);
+}
+
+.daily-announcement__timeline-item.is-dispatch {
+  border-left: 3px solid #1e88e5;
+}
+
+.daily-announcement__timeline-item.is-report {
+  border-left: 3px solid #43a047;
+}
+
+.daily-announcement__time {
+  font-size: 12px;
+  font-weight: 700;
+  color: #1565c0;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.daily-announcement__badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.daily-announcement__badge.is-dispatch {
+  background: rgba(30, 136, 229, 0.14);
+  color: #1565c0;
+}
+
+.daily-announcement__badge.is-report {
+  background: rgba(67, 160, 71, 0.14);
+  color: #2e7d32;
+}
+
 .user-chip,
 .role-chip {
   padding: 6px 12px;
@@ -2639,4 +2796,36 @@ select option {
   .mail-tracking-search {
     grid-template-columns: 1fr;
   }
+}
+
+.schedule-preview {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  min-height: 420px;
+  padding: 12px;
+  background: #fbfbfc;
+  border: 1px solid #e8eaed;
+  border-radius: 16px;
+}
+
+.schedule-preview__day {
+  flex: 1 0 240px;
+  min-width: 0;
+}
+
+.schedule-preview__date {
+  margin: 0 0 8px;
+  font-size: 15px;
+}
+
+.schedule-preview__job {
+  display: grid;
+  gap: 2px;
+  margin: 0 0 8px;
+  padding: 8px 10px;
+  border-left: 3px solid #ff8c00;
+  border-radius: 8px;
+  background: #fff6eb;
+  font-size: 13px;
 }

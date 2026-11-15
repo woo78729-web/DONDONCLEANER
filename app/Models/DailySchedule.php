@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 
 #[Fillable([
     'user_id',
+    'created_by',
     'cleaning_project_id',
     'schedule_kind',
     'work_date',
@@ -50,6 +51,11 @@ class DailySchedule extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class)->withTrashed();
+    }
+
+    public function creator(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'created_by')->withTrashed();
     }
 
     public function cleaningProject(): BelongsTo

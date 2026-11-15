@@ -458,6 +458,10 @@ class AcCleaningApi {
     });
   }
 
+  getDailyAnnouncement(params = {}) {
+    return this.request('GET', '/admin/daily-announcement', { params });
+  }
+
   getUnitChangeAlerts() {
     return this.request('GET', '/admin/reports/unit-change-alerts');
   }

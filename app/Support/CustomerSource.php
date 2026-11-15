@@ -27,4 +27,9 @@ class CustomerSource
             default => $source,
         };
     }
+
+    public static function isFacebookFamily(string $source): bool
+    {
+        return $source === self::FB;
+    }
 }

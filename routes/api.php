@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Admin\AccountingController as AdminAccountingController;
 use App\Http\Controllers\Admin\CleaningProjectController as AdminCleaningProjectController;
+use App\Http\Controllers\Admin\DailyAnnouncementController as AdminDailyAnnouncementController;
 use App\Http\Controllers\Admin\LegacyLedgerController as AdminLegacyLedgerController;
 use App\Http\Controllers\Admin\CustomerLookupController;
 use App\Http\Controllers\Admin\MaintenanceRecordController;
@@ -71,6 +72,7 @@ Route::middleware(['auth:sanctum', 'role:admin|customer_service'])->prefix('admi
     Route::post('/mail-tracking/unmerge', [MaintenanceRecordController::class, 'unmergeMailTracking']);
     Route::patch('/reports/{report}/mail-sent', [MaintenanceRecordController::class, 'markReportMailSent']);
     Route::patch('/reports/{report}/mail-tracking', [MaintenanceRecordController::class, 'updateReportMailTracking']);
+    Route::get('/daily-announcement', [AdminDailyAnnouncementController::class, 'show']);
 });
 
 Route::middleware(['auth:sanctum', 'role:admin|customer_service|finance'])->prefix('admin')->group(function () {
