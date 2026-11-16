@@ -6,6 +6,7 @@ use App\Models\DailyReport;
 use App\Models\DailySchedule;
 use App\Models\MaintenanceRecord;
 use App\Models\User;
+use App\Support\CustomerSource;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
@@ -87,12 +88,13 @@ class DailyAnnouncementApiTest extends TestCase
             'status' => MaintenanceRecord::STATUS_OPEN,
         ]);
 
-        $response = $this->getJson('/api/admin/daily-announcement')
+        $response = $this->getJson('/api/admin/daily-announcement?year_month=2026-11')
             ->assertOk()
             ->assertJsonPath('data.date', '2026-11-15')
             ->assertJsonPath('data.todos.pending_mail_count', 1)
             ->assertJsonPath('data.todos.pending_maintenance_count', 1)
-            ->assertJsonPath('data.todos.total_count', 2);
+            ->assertJsonPath('data.todos.total_count', 2)
+            ->assertJsonPath('data.monthly.year_month', '2026-11');
 
         $activity = collect($response->json('data.activity'));
         $this->assertContains('dispatch', $activity->pluck('type')->all());
@@ -106,6 +108,10 @@ class DailyAnnouncementApiTest extends TestCase
         $this->assertSame('13:40', $reportActivity['time']);
         $this->assertStringStartsWith('13:40 王加和 回報', $reportActivity['detail_line']);
 
+        $monthly = collect($response->json('data.monthly.activity'));
+        $monthlyDispatch = $monthly->firstWhere('type', 'dispatch');
+        $this->assertSame('11/15 09:15 邱泰翔 派單 FB 王加和 台東市 leo 3台', $monthlyDispatch['detail_line']);
+
         Carbon::setTestNow();
     }
 
@@ -114,5 +120,36 @@ class DailyAnnouncementApiTest extends TestCase
         Sanctum::actingAs($this->employee);
 
         $this->getJson('/api/admin/daily-announcement')->assertForbidden();
+    }
+
+    public function test_deleting_schedule_creates_cancel_announcement(): void
+    {
+        Carbon::setTestNow(Carbon::create(2026, 11, 15, 16, 20, 0, 'Asia/Taipei'));
+        Sanctum::actingAs($this->admin);
+        $this->admin->forceFill(['name' => '邱泰翔'])->save();
+        $this->employee->forceFill(['name' => '王加和'])->save();
+
+        $schedule = DailySchedule::query()->create($this->scheduleAttributes([
+            'user_id' => $this->employee->id,
+            'created_by' => $this->admin->id,
+            'work_date' => '2026-11-19',
+            'customer_source' => CustomerSource::FB,
+            'fb_display_name' => 'leo',
+            'service_area' => 'taitung_city',
+            'ac_units' => 2,
+        ]));
+
+        $this->deleteJson('/api/admin/schedules/'.$schedule->id)->assertOk();
+        $this->assertDatabaseMissing('daily_schedules', ['id' => $schedule->id]);
+
+        $response = $this->getJson('/api/admin/daily-announcement?year_month=2026-11')
+            ->assertOk();
+
+        $cancel = collect($response->json('data.activity'))->firstWhere('type', 'cancel');
+        $this->assertNotNull($cancel);
+        $this->assertSame('16:20 邱泰翔 取消 FB 王加和 台東市 leo 2台', $cancel['detail_line']);
+        $this->assertStringContainsString('原班表 #'.$schedule->id, $cancel['summary']);
+
+        Carbon::setTestNow();
     }
 }

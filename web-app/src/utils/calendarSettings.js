@@ -3,8 +3,8 @@ const STORAGE_KEY = 'schedule-calendar-settings';
 export const DEFAULT_CALENDAR_SETTINGS = {
   defaultView: 'week',
   weekStartsOn: 1,
-  startHour: 5,
-  endHour: 24,
+  startHour: 8,
+  endHour: 23,
   slotMinutes: 30,
   colorMode: 'source',
   displayDays: 7,
@@ -25,9 +25,12 @@ export function loadCalendarSettings() {
       displayDays: Math.min(7, Math.max(1, Number(parsed.displayDays) || DEFAULT_CALENDAR_SETTINGS.displayDays)),
     };
 
-    if (merged.startHour === 7 && merged.endHour === 21) {
-      merged.startHour = 5;
-      merged.endHour = 24;
+    if (
+      (merged.startHour === 7 && merged.endHour === 21)
+      || (merged.startHour === 5 && merged.endHour === 24)
+    ) {
+      merged.startHour = 8;
+      merged.endHour = 23;
       saveCalendarSettings(merged);
     }
 
@@ -63,7 +66,7 @@ export function hourToCalendarDate(hour) {
   const normalized = Number(hour);
 
   if (!Number.isFinite(normalized)) {
-    return new Date(1970, 0, 1, 5, 0, 0);
+    return new Date(1970, 0, 1, 8, 0, 0);
   }
 
   // react-big-calendar merges only the clock time onto the visible day.

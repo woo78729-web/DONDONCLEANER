@@ -261,30 +261,63 @@ a {
 
 .topbar-announcement-btn {
   position: relative;
-  min-width: 56px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
 }
 
-.topbar-announcement-btn__badge {
-  position: absolute;
-  top: -6px;
-  right: -6px;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 5px;
+.topbar-announcement-btn__dot {
+  width: 8px;
+  height: 8px;
   border-radius: 999px;
-  background: #ef5350;
-  color: #fff;
-  font-size: 11px;
-  font-weight: 700;
-  line-height: 18px;
-  text-align: center;
+  background: #e53935;
+  box-shadow: 0 0 0 2px rgba(229, 57, 53, 0.18);
+  flex: 0 0 auto;
 }
 
 .daily-announcement-modal {
-  width: min(720px, calc(100vw - 24px));
-  max-height: min(86vh, 900px);
+  width: min(760px, calc(100vw - 24px));
+  max-height: min(90vh, 960px);
   display: flex;
   flex-direction: column;
+  border-color: var(--glass-border);
+  box-shadow: var(--shadow-card);
+}
+
+.daily-announcement__activity-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.daily-announcement__activity-pane {
+  min-width: 0;
+  border: 1px solid var(--glass-border-soft);
+  border-radius: var(--radius-md);
+  padding: 12px;
+  background: rgba(255, 140, 0, 0.04);
+  box-shadow: inset 0 0 0 1px rgba(255, 140, 0, 0.06);
+}
+
+.daily-announcement__month-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.daily-announcement__month-head .daily-announcement__section-title {
+  margin-bottom: 0;
+}
+
+.daily-announcement__month-field {
+  margin: 0;
+  min-width: 140px;
+}
+
+.daily-announcement__activity-pane .daily-announcement__timeline {
+  max-height: min(34vh, 320px);
 }
 
 .daily-announcement__body {
@@ -299,6 +332,7 @@ a {
   margin: 0 0 10px;
   font-size: 15px;
   font-weight: 700;
+  color: var(--brand-300);
 }
 
 .daily-announcement__todo-grid {
@@ -308,10 +342,11 @@ a {
 }
 
 .daily-announcement__todo-block {
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  border-radius: 12px;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-md);
   padding: 12px;
-  background: rgba(248, 250, 252, 0.9);
+  background: rgba(8, 8, 10, 0.88);
+  box-shadow: var(--shadow-field);
 }
 
 .daily-announcement__todo-head {
@@ -324,6 +359,7 @@ a {
 .daily-announcement__todo-head h3 {
   margin: 0;
   font-size: 14px;
+  color: var(--text);
 }
 
 .daily-announcement__count {
@@ -334,18 +370,23 @@ a {
   height: 22px;
   padding: 0 6px;
   border-radius: 999px;
-  background: #1565c0;
-  color: #fff;
+  background: var(--brand-500);
+  color: #111;
   font-size: 12px;
   font-weight: 700;
+  box-shadow: 0 0 0 1px rgba(255, 140, 0, 0.35);
 }
 
 .daily-announcement__link {
   margin-left: auto;
   font-size: 12px;
   font-weight: 600;
-  color: #1565c0;
+  color: var(--brand-300);
   text-decoration: none;
+}
+
+.daily-announcement__link:hover {
+  color: var(--brand-500);
 }
 
 .daily-announcement__list,
@@ -368,28 +409,33 @@ a {
   margin: 0;
   font-size: 13px;
   font-weight: 600;
+  color: var(--text);
 }
 
 .daily-announcement__timeline-item {
   display: block;
   padding: 10px 12px;
   border-radius: 10px;
-  background: rgba(248, 250, 252, 0.95);
-  border: 1px solid rgba(15, 23, 42, 0.06);
+  background: rgba(12, 12, 14, 0.92);
+  border: 1px solid var(--glass-border-soft);
 }
 
 .daily-announcement__timeline-item.is-dispatch {
-  border-left: 3px solid #1e88e5;
+  border-left: 3px solid var(--brand-500);
 }
 
 .daily-announcement__timeline-item.is-report {
-  border-left: 3px solid #43a047;
+  border-left: 3px solid var(--success);
+}
+
+.daily-announcement__timeline-item.is-cancel {
+  border-left: 3px solid var(--danger);
 }
 
 .daily-announcement__time {
   font-size: 12px;
   font-weight: 700;
-  color: #1565c0;
+  color: var(--brand-300);
   line-height: 1.4;
   white-space: nowrap;
 }
@@ -407,13 +453,18 @@ a {
 }
 
 .daily-announcement__badge.is-dispatch {
-  background: rgba(30, 136, 229, 0.14);
-  color: #1565c0;
+  background: rgba(255, 140, 0, 0.16);
+  color: var(--brand-300);
 }
 
 .daily-announcement__badge.is-report {
-  background: rgba(67, 160, 71, 0.14);
-  color: #2e7d32;
+  background: rgba(52, 211, 153, 0.14);
+  color: var(--success);
+}
+
+.daily-announcement__badge.is-cancel {
+  background: rgba(248, 113, 113, 0.14);
+  color: var(--danger);
 }
 
 .user-chip,

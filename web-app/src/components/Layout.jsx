@@ -7,6 +7,11 @@ import { canAccess, getRoleLabel } from '../utils/permissions';
 import { UnitChangeAlertModal } from './UnitChangeAlertModal';
 import { DailyAnnouncementModal } from './DailyAnnouncementModal';
 import { api } from '../api/client';
+import {
+  getTodoBoardLastSeenFingerprint,
+  hasTodoBoardAlert,
+  markTodoBoardSeen,
+} from '../utils/todoBoard';
 
 function NavItemLink({ item, onNavigate, className = 'nav-link' }) {
   return (
@@ -131,11 +136,20 @@ export function Layout({ title, children }) {
   const [announcementLoading, setAnnouncementLoading] = useState(false);
   const [announcementError, setAnnouncementError] = useState('');
   const [announcementData, setAnnouncementData] = useState(null);
+  const [announcementMonth, setAnnouncementMonth] = useState(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  });
+  const [todoBoardLastSeenFingerprint, setTodoBoardLastSeenFingerprint] = useState(
+    () => getTodoBoardLastSeenFingerprint(),
+  );
 
   const navStructure = user ? getNavStructure(user) : [];
   const mobileTabItems = user ? getMobileTabItems(user) : [];
   const isAdmin = user?.role === 'admin';
   const canViewAnnouncement = user?.role === 'admin' || user?.role === 'customer_service';
+  const showTodoBoardAlert = canViewAnnouncement
+    && hasTodoBoardAlert(announcementData, todoBoardLastSeenFingerprint);
 
   useEffect(() => {
     if (!user || !isAdmin) {
@@ -205,23 +219,31 @@ export function Layout({ title, children }) {
     }
   }
 
-  const loadAnnouncement = useCallback(async () => {
+  const loadAnnouncement = useCallback(async (month = announcementMonth) => {
     if (!canViewAnnouncement) {
-      return;
+      return null;
     }
 
     setAnnouncementLoading(true);
     setAnnouncementError('');
 
     try {
-      const result = await api.getDailyAnnouncement();
-      setAnnouncementData(result.data || null);
+      const result = await api.getDailyAnnouncement({
+        year_month: month,
+      });
+      const nextData = result.data || null;
+      setAnnouncementData(nextData);
+      if (nextData?.monthly?.year_month) {
+        setAnnouncementMonth(nextData.monthly.year_month);
+      }
+      return nextData;
     } catch (err) {
-      setAnnouncementError(err?.message || '公告載入失敗');
+      setAnnouncementError(err?.message || '代辦事項載入失敗');
+      return null;
     } finally {
       setAnnouncementLoading(false);
     }
-  }, [canViewAnnouncement]);
+  }, [canViewAnnouncement, announcementMonth]);
 
   useEffect(() => {
     if (!canViewAnnouncement) {
@@ -231,7 +253,7 @@ export function Layout({ title, children }) {
 
     let cancelled = false;
 
-    api.getDailyAnnouncement()
+    api.getDailyAnnouncement({ year_month: announcementMonth })
       .then((result) => {
         if (!cancelled) {
           setAnnouncementData(result.data || null);
@@ -246,11 +268,18 @@ export function Layout({ title, children }) {
     return () => {
       cancelled = true;
     };
-  }, [canViewAnnouncement, location.pathname]);
+  }, [canViewAnnouncement, location.pathname, announcementMonth]);
 
   async function openAnnouncement() {
     setAnnouncementOpen(true);
-    await loadAnnouncement();
+    const nextData = await loadAnnouncement(announcementMonth);
+    if (nextData) {
+      setTodoBoardLastSeenFingerprint(markTodoBoardSeen(nextData));
+    }
+  }
+
+  function handleAnnouncementMonthChange(nextMonth) {
+    setAnnouncementMonth(nextMonth);
   }
 
   useEffect(() => {
@@ -301,15 +330,14 @@ export function Layout({ title, children }) {
               {canViewAnnouncement && (
                 <button
                   type="button"
-                  className="btn btn-glass btn-sm topbar-announcement-btn"
+                  className={`btn btn-glass btn-sm topbar-announcement-btn${showTodoBoardAlert ? ' has-alert' : ''}`}
                   onClick={openAnnouncement}
+                  aria-label={showTodoBoardAlert ? '代辦事項（有新紀錄）' : '代辦事項'}
                 >
-                  公告
-                  {(announcementData?.todos?.total_count || 0) > 0 && (
-                    <span className="topbar-announcement-btn__badge">
-                      {announcementData.todos.total_count}
-                    </span>
+                  {showTodoBoardAlert && (
+                    <span className="topbar-announcement-btn__dot" aria-hidden="true" />
                   )}
+                  代辦事項
                 </button>
               )}
               <span className="user-chip hide-mobile">{user.name}</span>
@@ -351,8 +379,10 @@ export function Layout({ title, children }) {
           loading={announcementLoading}
           error={announcementError}
           data={announcementData}
+          yearMonth={announcementMonth}
+          onYearMonthChange={handleAnnouncementMonthChange}
           onClose={() => setAnnouncementOpen(false)}
-          onRefresh={loadAnnouncement}
+          onRefresh={() => loadAnnouncement(announcementMonth)}
         />
 
         {user && (

@@ -13,10 +13,14 @@ class DailyAnnouncementController extends Controller
     {
         $validated = $request->validate([
             'date' => ['nullable', 'date'],
+            'year_month' => ['nullable', 'date_format:Y-m'],
         ]);
 
         return $this->success(
-            DailyAnnouncementSupport::build($validated['date'] ?? null),
+            DailyAnnouncementSupport::build(
+                $validated['date'] ?? null,
+                $validated['year_month'] ?? null,
+            ),
             '當日公告查詢成功'
         );
     }

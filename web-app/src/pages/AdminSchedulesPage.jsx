@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, startTransition, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { Link, useNavigate } from 'react-router-dom';
 import { PageErrorBoundary } from '../components/PageErrorBoundary';
@@ -8,7 +8,7 @@ import { CalendarSettingsPanel } from '../components/CalendarSettingsPanel';
 import { ScheduleEmployeeAvailabilityPanel } from '../components/ScheduleEmployeeAvailabilityPanel';
 import { ScheduleAreaFilter } from '../components/ScheduleAreaFilter';
 import { PageAlert } from '../components/PageAlert';
-import { ScheduleCalendar } from '../components/ScheduleCalendar';
+import { readLastRole, readStoredToken } from '../utils/authSession';
 import { ScheduleFormModal } from '../components/ScheduleFormModal';
 import { ScheduleSnapshotModal } from '../components/ScheduleSnapshotModal';
 import { ScheduleSuccessModal } from '../components/ScheduleSuccessModal';
@@ -37,6 +37,7 @@ import {
   formatDateOnly,
   formatTimeValue,
   getCalendarScheduleFetchRange,
+  getVisibleScheduleRange,
   hasScheduleReport,
   isSlotInPast,
   scheduleToForm,
@@ -44,12 +45,105 @@ import {
   applyPriceCalculation,
 } from '../utils/scheduleCalendar';
 
+const ScheduleCalendar = lazy(() => import('../components/ScheduleCalendar').then((module) => ({
+  default: module.ScheduleCalendar,
+})));
+
+const PREVIEW_WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六'];
+const ADMIN_HOME_ROLES = new Set(['admin', 'customer_service']);
+
+function ScheduleBoardPreview({ schedules, anchor, displayDays, settled }) {
+  const start = anchor instanceof Date && !Number.isNaN(anchor.getTime()) ? new Date(anchor) : new Date();
+  start.setHours(12, 0, 0, 0);
+  const dayCount = Math.min(7, Math.max(1, Number(displayDays) || 1));
+  const days = Array.from({ length: dayCount }, (_, index) => {
+    const day = new Date(start);
+    day.setDate(start.getDate() + index);
+    return day;
+  });
+
+  return (
+    <div className="schedule-preview" aria-label="班表">
+      {days.map((day) => {
+        const key = formatDateOnly(day);
+        const jobs = (schedules || [])
+          .filter((schedule) => formatDateOnly(schedule.work_date) === key)
+          .sort((left, right) => String(left.start_time || '').localeCompare(String(right.start_time || '')));
+
+        return (
+          <section className="schedule-preview__day" key={key}>
+            <h3 className="schedule-preview__date">{day.getMonth() + 1}/{day.getDate()} 週{PREVIEW_WEEKDAYS[day.getDay()]}</h3>
+            {jobs.map((job) => (
+              <article className="schedule-preview__job" key={job.id}>
+                <strong>{formatTimeValue(job.start_time)}–{formatTimeValue(job.end_time)}</strong>
+                <span>{job.user?.name || job.user?.account || ''}</span>
+                <span>{job.customer_name || ''}</span>
+                <span>{job.customer_address || ''}</span>
+              </article>
+            ))}
+            {settled && jobs.length === 0 && <p className="hint">這天沒有派工</p>}
+          </section>
+        );
+      })}
+    </div>
+  );
+}
+
 function getInitialDisplayDays(settings) {
   if (typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches) {
     return 1;
   }
 
   return Math.min(7, Math.max(1, settings.displayDays || 7));
+}
+
+let visibleBoardPrime = null;
+
+function rangesMatch(left, right) {
+  return left?.date_from === right?.date_from && left?.date_to === right?.date_to;
+}
+
+async function fetchBoardRange(range, employeeId) {
+  const [scheduleResult, leaveResult] = await loadWithRetry(() => Promise.all([
+    api.getCalendarSchedules({
+      date_from: range.date_from,
+      date_to: range.date_to,
+      user_id: employeeId || undefined,
+    }),
+    api.getPlanningLeaves(range),
+  ]));
+
+  return {
+    schedules: scheduleResult.data?.schedules || [],
+    leaves: leaveResult.data?.leaves || [],
+  };
+}
+
+function primeVisibleBoard(anchor = new Date(), displayDays = 7) {
+  const range = getVisibleScheduleRange(anchor, displayDays);
+  const key = `${range.date_from}|${range.date_to}`;
+
+  if (visibleBoardPrime?.key === key && Date.now() - visibleBoardPrime.at < 15000) {
+    return visibleBoardPrime;
+  }
+
+  const at = Date.now();
+  const promise = fetchBoardRange(range).catch((error) => {
+    if (visibleBoardPrime?.key === key && visibleBoardPrime.at === at) {
+      visibleBoardPrime = null;
+    }
+
+    throw error;
+  });
+  visibleBoardPrime = { key, at, range, promise };
+
+  return visibleBoardPrime;
+}
+
+if (typeof window !== 'undefined' && readStoredToken() && (
+  ADMIN_HOME_ROLES.has(readLastRole()) || window.location.pathname.includes('/admin/schedules')
+)) {
+  primeVisibleBoard(new Date(), getInitialDisplayDays(loadCalendarSettings()));
 }
 
 export default function AdminSchedulesPage() {
@@ -81,7 +175,7 @@ export default function AdminSchedulesPage() {
   const [successSummary, setSuccessSummary] = useState(null);
   const [pendingMailRedirect, setPendingMailRedirect] = useState(false);
   const [mobileFilterOpen, setMobileFilterOpen] = useState(false);
-  const [schedulesLoading, setSchedulesLoading] = useState(() => !scheduleCacheHasBoard());
+  const [boardSettled, setBoardSettled] = useState(() => readScheduleCache().schedules.length > 0);
   const [calendarView, setCalendarView] = useState(() => (
     typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches
       ? 'month'
@@ -113,48 +207,69 @@ export default function AdminSchedulesPage() {
     const requestId = loadRequestRef.current + 1;
     const startedAt = Date.now();
     loadRequestRef.current = requestId;
-    if (!scheduleCacheHasBoard()) {
-      setSchedulesLoading(true);
-    }
+    const visibleRange = getVisibleScheduleRange(anchor, visibleDayCount);
+    const wideRange = getCalendarScheduleFetchRange(view, anchor, visibleDayCount);
     setError('');
 
-    try {
-      const loadRange = getCalendarScheduleFetchRange(view, anchor, visibleDayCount);
-
-      const [scheduleResult, leaveResult] = await loadWithRetry(() => Promise.all([
-        api.getCalendarSchedules({
-          date_from: loadRange.date_from,
-          date_to: loadRange.date_to,
-          user_id: employeeId || undefined,
-        }),
-        api.getPlanningLeaves(loadRange),
-      ]));
-
+    const applyRange = (range, payload, { narrow, defer }) => {
       if (requestId !== loadRequestRef.current) {
         return;
       }
 
-      const nextSchedules = scheduleResult.data.schedules || [];
-      const nextLeaves = leaveResult.data.leaves || [];
-      setAllSchedules(nextSchedules);
-      setLeaves(nextLeaves);
-      mergeSchedulesForRange(
-        startedAt,
-        loadRange.date_from,
-        loadRange.date_to,
-        nextSchedules,
-        employeeId || null,
-        { leaves: nextLeaves },
-      );
+      const write = () => {
+        const replaceLeaves = !narrow || readScheduleCache().leaves.length === 0;
+        const merged = mergeSchedulesForRange(
+          startedAt,
+          range.date_from,
+          range.date_to,
+          payload.schedules,
+          employeeId || null,
+          replaceLeaves ? { leaves: payload.leaves } : {},
+        );
+        setAllSchedules(employeeId ? payload.schedules : merged.schedules);
+        if (replaceLeaves) {
+          setLeaves(payload.leaves);
+        }
+        setBoardSettled(true);
+      };
+
+      if (defer) {
+        startTransition(write);
+      } else {
+        write();
+      }
+    };
+
+    try {
+      const primed = !employeeId && rangesMatch(visibleBoardPrime?.range, visibleRange)
+        ? visibleBoardPrime
+        : null;
+      const visiblePayload = primed
+        ? await primed.promise
+        : await fetchBoardRange(visibleRange, employeeId);
+
+      applyRange(visibleRange, visiblePayload, { narrow: true, defer: false });
     } catch (err) {
       if (requestId !== loadRequestRef.current) {
         return;
       }
 
-      setError(err.message);
-    } finally {
-      if (requestId === loadRequestRef.current) {
-        setSchedulesLoading(false);
+      if (!scheduleCacheHasBoard()) {
+        setError(err.message);
+      }
+      return;
+    }
+
+    if (requestId !== loadRequestRef.current || rangesMatch(visibleRange, wideRange)) {
+      return;
+    }
+
+    try {
+      const widePayload = await fetchBoardRange(wideRange, employeeId);
+      applyRange(wideRange, widePayload, { narrow: false, defer: true });
+    } catch (err) {
+      if (requestId === loadRequestRef.current && !scheduleCacheHasBoard()) {
+        setError(err.message);
       }
     }
   }, [calendarView, currentDate, selectedEmployeeId, displayDays]);
@@ -706,12 +821,15 @@ export default function AdminSchedulesPage() {
             <div className="schedule-main">
               {!isMobile && renderEmployeeStrip()}
 
-              <div className={`schedule-calendar-host${schedulesLoading ? ' is-loading' : ''}`}>
-                {schedulesLoading && (
-                  <div className="schedule-calendar-loading" role="status" aria-live="polite">
-                    載入班表中…
-                  </div>
-                )}
+              <div className="schedule-calendar-host">
+                <Suspense fallback={(
+                  <ScheduleBoardPreview
+                    schedules={schedules}
+                    anchor={currentDate}
+                    displayDays={displayDays}
+                    settled={boardSettled}
+                  />
+                )}>
                 <ScheduleCalendar
                   schedules={schedules}
                   leaves={calendarLeaves}
@@ -732,6 +850,7 @@ export default function AdminSchedulesPage() {
                   initialView={isMobile ? 'month' : null}
                   hidePrice={!canManageSchedulePricing(userRole)}
                 />
+                </Suspense>
               </div>
             </div>
           </div>

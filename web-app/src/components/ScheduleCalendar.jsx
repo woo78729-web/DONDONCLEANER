@@ -175,7 +175,74 @@ function useDragAndDropCalendar(enabled) {
 
 }
 
+function eventPersonKey(event) {
+  const resource = event?.resource || {};
+  const id = resource.user_id ?? resource.user?.id;
 
+  if (id == null || id === '') {
+    return `event-${event?.id ?? 'unknown'}`;
+  }
+
+  return String(id);
+}
+
+function eventPersonName(event) {
+  const resource = event?.resource || {};
+
+  return String(resource.user?.name || resource.user?.account || '');
+}
+
+function layoutEventsByPerson({ events, slotMetrics, accessors }) {
+  const people = [];
+  const seen = new Set();
+
+  events.forEach((event) => {
+    const key = eventPersonKey(event);
+
+    if (seen.has(key)) {
+      return;
+    }
+
+    seen.add(key);
+    people.push({ key, name: eventPersonName(event) });
+  });
+
+  people.sort((left, right) => (
+    left.name.localeCompare(right.name, 'zh-Hant') || left.key.localeCompare(right.key)
+  ));
+
+  const columnWidth = 100 / Math.max(people.length, 1);
+
+  return events.map((event) => {
+    let top = 0;
+    let height = 0;
+
+    try {
+      const range = slotMetrics.getRange(accessors.start(event), accessors.end(event));
+      if (Number.isFinite(range?.top)) {
+        top = range.top;
+      }
+      if (Number.isFinite(range?.height)) {
+        height = range.height;
+      }
+    } catch {
+      top = 0;
+      height = 0;
+    }
+
+    const index = Math.max(0, people.findIndex((person) => person.key === eventPersonKey(event)));
+
+    return {
+      event,
+      style: {
+        top,
+        height,
+        width: columnWidth,
+        xOffset: index * columnWidth,
+      },
+    };
+  });
+}
 
 export function ScheduleCalendar({
 
@@ -508,7 +575,13 @@ export function ScheduleCalendar({
 
   return (
 
-    <div className={`schedule-workspace schedule-calendar schedule-calendar--view-${view}${colorMode === 'employee' ? ' schedule-calendar--avatars' : ''}${onDrillDown ? ' schedule-calendar--drilldown' : ''}${dragEnabled ? ' schedule-calendar--draggable' : ''}`}>
+    <div
+      className={`schedule-workspace schedule-calendar schedule-calendar--view-${view}${colorMode === 'employee' ? ' schedule-calendar--avatars' : ''}${onDrillDown ? ' schedule-calendar--drilldown' : ''}${dragEnabled ? ' schedule-calendar--draggable' : ''}`}
+      style={{
+        '--calendar-hour-height': '32px',
+        '--calendar-hour-count': String(Math.max(1, Number(settings.endHour) - Number(settings.startHour) || 15)),
+      }}
+    >
 
       <div
         className={`schedule-calendar-scroll${view === 'week' && safeDisplayDays > 1 ? ' schedule-calendar-scroll--wide' : ''}${view === 'month' ? ' schedule-calendar-scroll--month' : ''}`}
@@ -573,7 +646,7 @@ export function ScheduleCalendar({
 
         components={components}
 
-        dayLayoutAlgorithm="no-overlap"
+        dayLayoutAlgorithm={layoutEventsByPerson}
 
         dayPropGetter={(date) => {
           const classNames = [];
