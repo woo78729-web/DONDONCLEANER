@@ -59,6 +59,27 @@ class CustomerServiceApiTest extends TestCase
             ->assertOk()
             ->assertJsonPath('data.schedules.0.id', $schedule->id);
 
+        $created = $this->postJson('/api/admin/schedules', $this->scheduleAttributes([
+            'user_id' => $this->employee->id,
+            'work_date' => now()->addDays(2)->toDateString(),
+            'customer_phone' => '0911222333',
+            'customer_name' => '客服派單客戶',
+            'ac_units' => 2,
+            'unit_price' => 1500,
+            'pricing_lines' => [
+                ['ac_units' => 2, 'unit_price' => 1500],
+            ],
+            'task_details' => '2台3000',
+            'cleaning_price' => 3000,
+        ]))->assertCreated();
+
+        $this->assertSame(3000, (int) $created->json('data.cleaning_price'));
+        $this->assertDatabaseHas('daily_schedules', [
+            'id' => $created->json('data.id'),
+            'cleaning_price' => 3000,
+            'created_by' => $this->customerService->id,
+        ]);
+
         $this->postJson('/api/admin/maintenance-records', [
             'customer_phone' => '0911222333',
             'issue_description' => '室外機異音',

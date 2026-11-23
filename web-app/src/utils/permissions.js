@@ -96,5 +96,5 @@ export function canEditMaintenanceCompensation(user) {
 
 export function canManageSchedulePricing(userOrRole) {
   const role = typeof userOrRole === 'string' ? userOrRole : userOrRole?.role;
-  return role === 'admin';
+  return role === 'admin' || role === 'customer_service';
 }

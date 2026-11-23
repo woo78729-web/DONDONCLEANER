@@ -200,7 +200,7 @@ export function ScheduleFormModal({
 
   const showDaySchedule = Boolean(form.user_id && form.work_date);
   const canManagePricing = canManageSchedulePricing(userRole);
-  const showInvoiceOption = canManagePricing || userRole === 'customer_service';
+  const showInvoiceOption = canManagePricing;
 
   function toggleNeedsInvoice(checked) {
     const patch = checked
