@@ -1,5 +1,39 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+
+const ACTIVITY_FILTERS = [
+  { type: 'dispatch', label: '派單' },
+  { type: 'report', label: '回報' },
+  { type: 'cancel', label: '取消' },
+  { type: 'date_change', label: '調日' },
+];
+
+const FILTER_STORAGE_KEY = 'todoBoardActivityFilters';
+
+function defaultFilterState() {
+  return Object.fromEntries(ACTIVITY_FILTERS.map((item) => [item.type, true]));
+}
+
+function loadFilterState() {
+  const defaults = defaultFilterState();
+
+  try {
+    const raw = window.localStorage.getItem(FILTER_STORAGE_KEY);
+    if (!raw) {
+      return defaults;
+    }
+
+    const parsed = JSON.parse(raw);
+    return {
+      ...defaults,
+      ...Object.fromEntries(
+        ACTIVITY_FILTERS.map((item) => [item.type, parsed?.[item.type] !== false]),
+      ),
+    };
+  } catch {
+    return defaults;
+  }
+}
 
 function currentYearMonth() {
   const now = new Date();
@@ -53,6 +87,14 @@ function ActivityList({ items, emptyText }) {
   );
 }
 
+function filterActivityItems(items, filters) {
+  const enabled = new Set(
+    ACTIVITY_FILTERS.filter((item) => filters[item.type]).map((item) => item.type),
+  );
+
+  return items.filter((item) => enabled.has(item.type));
+}
+
 export function DailyAnnouncementModal({
   open,
   loading,
@@ -64,6 +106,7 @@ export function DailyAnnouncementModal({
   onRefresh,
 }) {
   const [localMonth, setLocalMonth] = useState(yearMonth || currentYearMonth());
+  const [activityFilters, setActivityFilters] = useState(() => loadFilterState());
 
   useEffect(() => {
     if (yearMonth) {
@@ -71,9 +114,13 @@ export function DailyAnnouncementModal({
     }
   }, [yearMonth]);
 
-  if (!open) {
-    return null;
-  }
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify(activityFilters));
+    } catch {
+      // ignore storage failures
+    }
+  }, [activityFilters]);
 
   const todos = data?.todos || {
     pending_mail: [],
@@ -82,11 +129,33 @@ export function DailyAnnouncementModal({
   const activity = data?.activity || [];
   const monthlyActivity = data?.monthly?.activity || [];
 
+  const filteredActivity = useMemo(
+    () => filterActivityItems(activity, activityFilters),
+    [activity, activityFilters],
+  );
+  const filteredMonthlyActivity = useMemo(
+    () => filterActivityItems(monthlyActivity, activityFilters),
+    [monthlyActivity, activityFilters],
+  );
+
+  if (!open) {
+    return null;
+  }
+
   function handleMonthChange(event) {
     const next = event.target.value;
     setLocalMonth(next);
     onYearMonthChange?.(next);
   }
+
+  function toggleFilter(type) {
+    setActivityFilters((current) => ({
+      ...current,
+      [type]: !current[type],
+    }));
+  }
+
+  const hasAnyFilter = ACTIVITY_FILTERS.some((item) => activityFilters[item.type]);
 
   return (
     <div className="modal-overlay" role="presentation" onClick={onClose}>
@@ -114,7 +183,7 @@ export function DailyAnnouncementModal({
           </div>
         </div>
 
-        {error && <p className="hint" style={{ color: 'var(--danger)', padding: '0 16px' }}>{error}</p>}
+        {error && <p className="hint" style={{ color: '#c62828', padding: '0 16px' }}>{error}</p>}
         {loading && !data ? (
           <p className="hint" style={{ padding: 16 }}>載入中…</p>
         ) : (
@@ -140,12 +209,26 @@ export function DailyAnnouncementModal({
             </section>
 
             <section className="daily-announcement__section daily-announcement__section--activity">
+              <div className="daily-announcement__filter-bar" role="group" aria-label="歷程類型篩選">
+                <span className="daily-announcement__filter-label">顯示紀錄</span>
+                {ACTIVITY_FILTERS.map((item) => (
+                  <label key={item.type} className="field field-checkbox daily-announcement__filter-option">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(activityFilters[item.type])}
+                      onChange={() => toggleFilter(item.type)}
+                    />
+                    <span>{item.label}</span>
+                  </label>
+                ))}
+              </div>
+
               <div className="daily-announcement__activity-stack">
                 <div className="daily-announcement__activity-pane">
                   <h3 className="daily-announcement__section-title">當日歷程記錄</h3>
                   <ActivityList
-                    items={activity}
-                    emptyText="今天尚無排單、回報或取消紀錄"
+                    items={hasAnyFilter ? filteredActivity : []}
+                    emptyText={hasAnyFilter ? '今天尚無符合條件的紀錄' : '請至少勾選一種紀錄類型'}
                   />
                 </div>
                 <div className="daily-announcement__activity-pane">
@@ -164,8 +247,8 @@ export function DailyAnnouncementModal({
                     <p className="hint">載入中…</p>
                   ) : (
                     <ActivityList
-                      items={monthlyActivity}
-                      emptyText="這個月尚無排單、回報或取消紀錄"
+                      items={hasAnyFilter ? filteredMonthlyActivity : []}
+                      emptyText={hasAnyFilter ? '這個月尚無符合條件的紀錄' : '請至少勾選一種紀錄類型'}
                     />
                   )}
                 </div>

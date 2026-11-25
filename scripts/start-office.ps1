@@ -78,8 +78,25 @@ try {
     Write-Host "  [warn] dev accounts skipped" -ForegroundColor Yellow
 }
 
-if (-not (Test-Path (Join-Path $projectRoot "public\spa\index.html"))) {
-    Write-Host "3/3 Build frontend..." -ForegroundColor Yellow
+$spaIndex = Join-Path $projectRoot "public\spa\index.html"
+$webAppSrc = Join-Path $projectRoot "web-app\src"
+$needFrontendBuild = -not (Test-Path $spaIndex)
+
+if (-not $needFrontendBuild -and (Test-Path $webAppSrc)) {
+    $spaTime = (Get-Item -LiteralPath $spaIndex).LastWriteTimeUtc
+    $newerSource = Get-ChildItem -LiteralPath $webAppSrc -Recurse -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.LastWriteTimeUtc -gt $spaTime } |
+        Select-Object -First 1
+    if ($newerSource) {
+        $needFrontendBuild = $true
+        Write-Host "3/3 Frontend source newer than spa, rebuilding..." -ForegroundColor Yellow
+    }
+}
+
+if ($needFrontendBuild) {
+    if (-not (Test-Path $spaIndex)) {
+        Write-Host "3/3 Build frontend..." -ForegroundColor Yellow
+    }
     Set-Location (Join-Path $projectRoot "web-app")
     if (-not (Test-Path "node_modules")) {
         npm install
