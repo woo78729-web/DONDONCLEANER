@@ -81,7 +81,7 @@ class ScheduleController extends Controller
     {
         return $this->success(
             $schedule->load([
-                'user:id,name,account,role,is_active,avatar_path',
+                'user:id,name,phone,account,role,is_active,avatar_path',
                 'dailyReport:id,schedule_id,completed_units,collected_amount,paid_to_company',
             ]),
             '班表查詢成功'
@@ -126,7 +126,7 @@ class ScheduleController extends Controller
 
         return $this->success(
             $schedule->fresh()->load([
-                'user:id,name,account,role,is_active,avatar_path',
+                'user:id,name,phone,account,role,is_active,avatar_path',
                 'dailyReport:id,schedule_id,completed_units,collected_amount,paid_to_company',
             ]),
             '班表建立成功',
@@ -231,7 +231,7 @@ class ScheduleController extends Controller
 
         return $this->success(
             $schedule->fresh()->load([
-                'user:id,name,account,role,is_active,avatar_path',
+                'user:id,name,phone,account,role,is_active,avatar_path',
                 'dailyReport:id,schedule_id,completed_units,collected_amount,paid_to_company',
             ]),
             '班表更新成功'
@@ -264,7 +264,7 @@ class ScheduleController extends Controller
     {
         return DailySchedule::query()
             ->with([
-                'user:id,name,account,role,is_active,avatar_path',
+                'user:id,name,phone,account,role,is_active,avatar_path',
                 'dailyReport:id,schedule_id,completed_units,collected_amount,paid_to_company',
                 'cleaningProject:id,project_code,title,status,planned_start_date,planned_end_date,total_ac_units',
             ])

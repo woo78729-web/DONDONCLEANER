@@ -1,6 +1,7 @@
-// 傳 LINE 時需夠大：畫布約 1440px 寬，字級一併放大
+// 傳 LINE 時需夠大：桌機約 1440px 寬；手機降解析度避免卡住
 const CARD_WIDTH = 720;
-const SCALE = 2;
+const DESKTOP_SCALE = 2;
+const MOBILE_SCALE = 1.25;
 const PADDING_X = 40;
 const PADDING_TOP = 40;
 const PADDING_BOTTOM = 40;
@@ -23,6 +24,20 @@ const COLORS = {
   iconBg: 'rgba(67, 160, 71, 0.22)',
   icon: '#81c784',
 };
+
+function isMobileCaptureEnvironment() {
+  if (typeof window === 'undefined') {
+    return false;
+  }
+
+  return window.matchMedia('(max-width: 900px), (pointer: coarse)').matches;
+}
+
+function yieldToMain() {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, 0);
+  });
+}
 
 function wrapText(ctx, text, maxWidth) {
   const value = String(text || '-');
@@ -59,10 +74,10 @@ function roundRect(ctx, x, y, width, height, radius) {
   ctx.closePath();
 }
 
-function measureRows(ctx, rows, valueWidth) {
+function measureRows(ctx, rows, valueWidth, scale) {
   return rows.map((row) => {
     const size = row.emphasis ? 28 : 24;
-    ctx.font = `${row.emphasis ? 800 : 600} ${size * SCALE}px ${FONT_FAMILY}`;
+    ctx.font = `${row.emphasis ? 800 : 600} ${size * scale}px ${FONT_FAMILY}`;
     const lines = wrapText(ctx, row.value, valueWidth);
     const lineHeight = row.emphasis ? 36 : VALUE_LINE_HEIGHT;
     const height = Math.max(lineHeight, lines.length * lineHeight) + ROW_PADDING_Y * 2;
@@ -71,61 +86,61 @@ function measureRows(ctx, rows, valueWidth) {
   });
 }
 
-function drawSuccessCard(rows, title) {
-  const valueWidth = (CARD_WIDTH - PADDING_X * 2 - LABEL_WIDTH - COLUMN_GAP) * SCALE;
+function drawSuccessCard(rows, title, scale = DESKTOP_SCALE) {
+  const valueWidth = (CARD_WIDTH - PADDING_X * 2 - LABEL_WIDTH - COLUMN_GAP) * scale;
   const canvas = document.createElement('canvas');
-  const ctx = canvas.getContext('2d');
+  const ctx = canvas.getContext('2d', { alpha: false });
 
   if (!ctx) {
     return null;
   }
 
-  const measured = measureRows(ctx, rows, valueWidth);
+  const measured = measureRows(ctx, rows, valueWidth, scale);
   const headerHeight = 150;
   const bodyHeight = measured.reduce((total, row) => total + row.height, 0);
   const height = PADDING_TOP + headerHeight + bodyHeight + PADDING_BOTTOM;
 
-  canvas.width = CARD_WIDTH * SCALE;
-  canvas.height = height * SCALE;
+  canvas.width = Math.round(CARD_WIDTH * scale);
+  canvas.height = Math.round(height * scale);
 
   ctx.fillStyle = COLORS.background;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
   ctx.strokeStyle = COLORS.border;
-  ctx.lineWidth = SCALE;
-  roundRect(ctx, SCALE, SCALE, canvas.width - SCALE * 2, canvas.height - SCALE * 2, 24 * SCALE);
+  ctx.lineWidth = scale;
+  roundRect(ctx, scale, scale, canvas.width - scale * 2, canvas.height - scale * 2, 24 * scale);
   ctx.stroke();
 
   const centerX = canvas.width / 2;
-  const iconY = (PADDING_TOP + 36) * SCALE;
+  const iconY = (PADDING_TOP + 36) * scale;
   ctx.beginPath();
-  ctx.arc(centerX, iconY, 36 * SCALE, 0, Math.PI * 2);
+  ctx.arc(centerX, iconY, 36 * scale, 0, Math.PI * 2);
   ctx.fillStyle = COLORS.iconBg;
   ctx.fill();
   ctx.fillStyle = COLORS.icon;
-  ctx.font = `800 ${40 * SCALE}px ${FONT_FAMILY}`;
+  ctx.font = `800 ${40 * scale}px ${FONT_FAMILY}`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText('✓', centerX, iconY + SCALE);
+  ctx.fillText('✓', centerX, iconY + scale);
 
   ctx.fillStyle = COLORS.title;
-  ctx.font = `800 ${32 * SCALE}px ${FONT_FAMILY}`;
-  ctx.fillText(title || '預約完成', centerX, (PADDING_TOP + 108) * SCALE);
+  ctx.font = `800 ${32 * scale}px ${FONT_FAMILY}`;
+  ctx.fillText(title || '預約完成', centerX, (PADDING_TOP + 108) * scale);
 
-  let cursorY = (PADDING_TOP + headerHeight) * SCALE;
-  const contentLeft = PADDING_X * SCALE;
-  const valueLeft = (PADDING_X + LABEL_WIDTH + COLUMN_GAP) * SCALE;
+  let cursorY = (PADDING_TOP + headerHeight) * scale;
+  const contentLeft = PADDING_X * scale;
+  const valueLeft = (PADDING_X + LABEL_WIDTH + COLUMN_GAP) * scale;
 
   measured.forEach((row, index) => {
-    const rowHeight = row.height * SCALE;
+    const rowHeight = row.height * scale;
 
     if (row.emphasis) {
       ctx.fillStyle = COLORS.emphasisBg;
-      roundRect(ctx, 24 * SCALE, cursorY, (CARD_WIDTH - 48) * SCALE, rowHeight, 14 * SCALE);
+      roundRect(ctx, 24 * scale, cursorY, (CARD_WIDTH - 48) * scale, rowHeight, 14 * scale);
       ctx.fill();
     } else if (index < measured.length - 1) {
       ctx.strokeStyle = COLORS.divider;
-      ctx.lineWidth = SCALE;
+      ctx.lineWidth = scale;
       ctx.beginPath();
       ctx.moveTo(contentLeft, cursorY + rowHeight);
       ctx.lineTo(canvas.width - contentLeft, cursorY + rowHeight);
@@ -135,19 +150,25 @@ function drawSuccessCard(rows, title) {
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
     ctx.fillStyle = COLORS.label;
-    ctx.font = `700 ${20 * SCALE}px ${FONT_FAMILY}`;
-    ctx.fillText(row.label, contentLeft, cursorY + ROW_PADDING_Y * SCALE);
+    ctx.font = `700 ${20 * scale}px ${FONT_FAMILY}`;
+    ctx.fillText(row.label, contentLeft, cursorY + ROW_PADDING_Y * scale);
 
     ctx.fillStyle = row.emphasis ? COLORS.emphasisText : COLORS.value;
-    ctx.font = `${row.emphasis ? 800 : 600} ${(row.emphasis ? 28 : 24) * SCALE}px ${FONT_FAMILY}`;
+    ctx.font = `${row.emphasis ? 800 : 600} ${(row.emphasis ? 28 : 24) * scale}px ${FONT_FAMILY}`;
     row.lines.forEach((line, lineIndex) => {
-      ctx.fillText(line, valueLeft, cursorY + ROW_PADDING_Y * SCALE + lineIndex * row.lineHeight * SCALE);
+      ctx.fillText(line, valueLeft, cursorY + ROW_PADDING_Y * scale + lineIndex * row.lineHeight * scale);
     });
 
     cursorY += rowHeight;
   });
 
   return canvas;
+}
+
+function canvasToBlob(canvas, type = 'image/jpeg', quality = 0.88) {
+  return new Promise((resolve) => {
+    canvas.toBlob((blob) => resolve(blob), type, quality);
+  });
 }
 
 function triggerDownload(url, filename) {
@@ -161,23 +182,82 @@ function triggerDownload(url, filename) {
   link.remove();
 }
 
+async function shareOrDownloadBlob(blob, filename) {
+  if (!blob) {
+    return false;
+  }
+
+  const file = new File([blob], filename, { type: blob.type || 'image/jpeg' });
+
+  if (
+    isMobileCaptureEnvironment()
+    && typeof navigator !== 'undefined'
+    && typeof navigator.share === 'function'
+    && typeof navigator.canShare === 'function'
+    && navigator.canShare({ files: [file] })
+  ) {
+    try {
+      await navigator.share({
+        files: [file],
+        title: '預約完成',
+      });
+      return true;
+    } catch (error) {
+      if (error?.name === 'AbortError') {
+        return true;
+      }
+      // fall through to download
+    }
+  }
+
+  const url = URL.createObjectURL(blob);
+
+  try {
+    triggerDownload(url, filename);
+    return true;
+  } finally {
+    window.setTimeout(() => URL.revokeObjectURL(url), 1500);
+  }
+}
+
+export function shouldAutoDownloadSuccessCard() {
+  return !isMobileCaptureEnvironment();
+}
+
 export async function downloadSuccessCardJpg({
   filename = 'screenshot.jpg',
   rows = [],
   title = '預約完成',
 } = {}) {
-  const canvas = drawSuccessCard(rows, title);
+  await yieldToMain();
+
+  const scale = isMobileCaptureEnvironment() ? MOBILE_SCALE : DESKTOP_SCALE;
+  const canvas = drawSuccessCard(rows, title, scale);
 
   if (!canvas) {
     return false;
   }
 
-  const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
+  await yieldToMain();
 
-  if (!dataUrl || dataUrl.length < 32) {
-    return false;
+  const safeName = filename.endsWith('.jpg') ? filename : `${filename}.jpg`;
+  let blob = null;
+
+  try {
+    blob = await canvasToBlob(canvas, 'image/jpeg', isMobileCaptureEnvironment() ? 0.84 : 0.92);
+  } catch {
+    blob = null;
   }
 
-  triggerDownload(dataUrl, filename.endsWith('.jpg') ? filename : `${filename}.jpg`);
-  return true;
+  // 部分舊瀏覽器 toBlob 失敗時退回 data URL
+  if (!blob) {
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.88);
+    if (!dataUrl || dataUrl.length < 32) {
+      return false;
+    }
+    triggerDownload(dataUrl, safeName);
+    return true;
+  }
+
+  return shareOrDownloadBlob(blob, safeName);
 }
