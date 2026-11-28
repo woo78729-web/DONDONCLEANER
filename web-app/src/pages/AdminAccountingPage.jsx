@@ -459,8 +459,7 @@ export default function AdminAccountingPage() {
             <div className="card-header" style={{ padding: '16px 16px 0' }}>
               <h2 className="card-title">員工績效細項</h2>
               <p className="hint">
-                依單價統計台數（1500／1300／1000）。師傅實拿 = 客戶總額 − 公司抽成（1500→600、1300→500、1000→400）− 發票稅8% − 賠償 + 車馬費加給。
-                「應向師傅收」= 現場應繳 + 賠償入公司，方便東東對帳。
+                公司抽成只列單價抽成（1500→600、1300→500、1000→400），不含 5%。稅金 5% 是向客戶收、已經含在客戶總額裡的金額。師傅實拿 = 客戶總額 − 公司抽成 − 稅金 5% − 賠償 + 車馬費。沒跟客戶加 5% 的發票案，這欄是 0，不會再從師傅實拿扣。發票稅 8% 只從總毛利扣。
               </p>
             </div>
             <div className="table-wrap">
@@ -482,7 +481,7 @@ export default function AdminAccountingPage() {
                     <th className="num">總台數</th>
                     <th className="num">客戶總額</th>
                     <th className="num">公司抽成</th>
-                    <th className="num">發票稅8%</th>
+                    <th className="num">稅金5%</th>
                     <th className="num">賠償</th>
                     <th className="num">車馬費</th>
                     <th className="num">師傅實拿</th>
@@ -499,7 +498,7 @@ export default function AdminAccountingPage() {
                       <td className="num">{employee.completed_units}</td>
                       <td className="num">{formatMoney(employee.total_job_amount)}</td>
                       <td className="num">{formatMoney(employee.company_commission)}</td>
-                      <td className="num">{formatMoney(employee.invoice_tax_cost)}</td>
+                      <td className="num">{formatMoney(employee.technician_tax)}</td>
                       <td className="num">{formatMoney(employee.compensation_due_to_company ?? employee.compensation_due_to_atai)}</td>
                       <td className="num">{formatMoney(employee.travel_allowance)}</td>
                       <td className="num">{formatMoney(employee.employee_actual_pay)}</td>
@@ -522,7 +521,7 @@ export default function AdminAccountingPage() {
                       <td className="num"><strong>{data.totals.performance_totals.completed_units}</strong></td>
                       <td className="num"><strong>{formatMoney(data.totals.performance_totals.total_job_amount)}</strong></td>
                       <td className="num"><strong>{formatMoney(data.totals.performance_totals.company_commission)}</strong></td>
-                      <td className="num"><strong>{formatMoney(data.totals.performance_totals.invoice_tax_cost)}</strong></td>
+                      <td className="num"><strong>{formatMoney(data.totals.performance_totals.technician_tax)}</strong></td>
                       <td className="num"><strong>{formatMoney(data.totals.performance_totals.compensation_due_to_company)}</strong></td>
                       <td className="num"><strong>{formatMoney(data.totals.performance_totals.travel_allowance)}</strong></td>
                       <td className="num"><strong>{formatMoney(data.totals.performance_totals.employee_actual_pay)}</strong></td>
@@ -537,7 +536,7 @@ export default function AdminAccountingPage() {
           <section className="card table-card">
             <div className="card-header" style={{ padding: '16px 16px 0' }}>
               <h2 className="card-title">各員工應收帳（明細）</h2>
-              <p className="hint">金額為案件總額；匯款件實收 0、入公司帳為客戶匯入宏逸金額；應退為師傅所得，月底應繳 = 應收現場 − 應退師傅；有發票者應收現場另含向客戶收的 5% 加價；賠償入公司為師傅應繳公司的賠款分擔（你代收）。</p>
+              <p className="hint">金額為案件總額；匯款件實收 0、入公司帳為客戶匯入宏逸金額；應退為師傅所得，月底應繳 = 應收現場 − 應退師傅；有發票者應收現場另含向客戶收的 5% 加價。發票稅 8% 不跟師傅收，只從總毛利扣。賠償入公司為師傅應繳公司的賠款分擔（你代收）。</p>
             </div>
             <div className="table-wrap">
               <table className="data-table">
@@ -554,7 +553,6 @@ export default function AdminAccountingPage() {
                     <th>賠償入公司</th>
                     <th>入公司帳（宏逸）</th>
                     <th>已確認入帳</th>
-                    <th>發票稅金 8%</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -577,12 +575,11 @@ export default function AdminAccountingPage() {
                       <td className="num">{formatMoney(employee.compensation_due_to_company ?? employee.compensation_due_to_atai)}</td>
                       <td className="num">{formatMoney(employee.company_inbound_expected)}</td>
                       <td className="num">{formatMoney(employee.company_transfer)}</td>
-                      <td className="num">{formatMoney(employee.invoice_tax_cost)}</td>
                     </tr>
                   ))}
                   {!data.employees?.length && (
                     <tr>
-                      <td colSpan={12} className="hint">本月尚無回報資料</td>
+                      <td colSpan={11} className="hint">本月尚無回報資料</td>
                     </tr>
                   )}
                 </tbody>

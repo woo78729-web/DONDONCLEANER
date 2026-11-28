@@ -47,7 +47,10 @@ class EmployeeReportSupport
 
         FundRoutingService::onReportPosted($report->fresh());
 
-        return $report->fresh();
+        $fresh = $report->fresh();
+        self::syncScheduleAmountFromReport($fresh, $payload['pricing_lines'] ?? null);
+
+        return $fresh;
     }
 
     /**
@@ -62,7 +65,10 @@ class EmployeeReportSupport
 
         FundRoutingService::onReportPosted($report->fresh());
 
-        return $report->fresh();
+        $fresh = $report->fresh();
+        self::syncScheduleAmountFromReport($fresh, $payload['pricing_lines'] ?? null);
+
+        return $fresh;
     }
 
     public static function resyncFromSchedule(
@@ -230,6 +236,7 @@ class EmployeeReportSupport
             'needs_invoice' => $needsInvoice,
             'needs_mail' => $needsMail,
             'base_amount' => $baseAmount,
+            'pricing_lines' => $lines,
         ];
     }
 
@@ -301,6 +308,64 @@ class EmployeeReportSupport
         $schedule->save();
 
         return $schedule->fresh();
+    }
+
+    /**
+     * Reported units, unit price, and amount become the calendar price.
+     * Cash uses the amount actually collected. Remittance keeps the customer total from the lines.
+     *
+     * @param  list<array<string, mixed>>|null  $pricingLines
+     */
+    public static function syncScheduleAmountFromReport(DailyReport $report, ?array $pricingLines = null): void
+    {
+        $report->loadMissing('dailySchedule.cleaningProject');
+        $schedule = $report->dailySchedule;
+
+        if (! $schedule) {
+            return;
+        }
+
+        $completedUnits = max(0, (int) $report->completed_units);
+        $plannedUnits = max(0, (int) $schedule->ac_units);
+
+        if (is_array($pricingLines) && $pricingLines !== []) {
+            $lines = SchedulePricing::normalizeLines($pricingLines);
+        } else {
+            $lines = SchedulePricing::normalizeLines(
+                $schedule->pricing_lines,
+                $schedule->ac_units,
+                $schedule->unit_price
+            );
+
+            if ($completedUnits !== $plannedUnits) {
+                $lines = EmployeeRemittance::scaleLines($lines, $completedUnits, max($plannedUnits, 1));
+            }
+        }
+
+        $needsInvoice = (bool) $report->has_tax
+            || (bool) $report->needs_invoice_and_mail
+            || (bool) $schedule->needs_invoice;
+        $summary = SchedulePricing::summarizeLines($lines, $needsInvoice);
+        $price = (int) $summary['cleaning_price'];
+
+        if (! $report->paid_to_company) {
+            $price = max(0, (int) $report->collected_amount);
+        }
+
+        if ($lines !== []) {
+            $schedule->pricing_lines = $lines;
+            $schedule->unit_price = (int) ($summary['unit_price'] ?? $schedule->unit_price);
+            $schedule->task_details = (string) ($summary['task_details'] ?? $schedule->task_details);
+            $schedule->hongyi_fee = (int) ($summary['hongyi_fee'] ?? 0);
+        }
+
+        $schedule->ac_units = $completedUnits;
+        $schedule->cleaning_price = $price;
+        $schedule->save();
+
+        if ($schedule->cleaning_project_id && $schedule->cleaningProject) {
+            CleaningProjectSupport::recalculateProjectTotals($schedule->cleaningProject);
+        }
     }
 
     /**

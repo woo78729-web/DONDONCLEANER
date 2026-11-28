@@ -28,6 +28,12 @@ export function ReportConfirmModal({
             <dt>完成台數</dt>
             <dd>{summary.completedUnits}</dd>
           </div>
+          {(summary.pricingLines || []).map((line, index) => (
+            <div key={`${line.unit_price}-${index}`}>
+              <dt>{summary.pricingLines.length > 1 ? `單價 ${index + 1}` : '單台金額'}</dt>
+              <dd>{line.ac_units} 台 × {line.unit_price}</dd>
+            </div>
+          ))}
           {summary.unitMismatch && (
             <>
               {summary.skippedUnits > 0 && (
@@ -65,12 +71,6 @@ export function ReportConfirmModal({
             <div>
               <dt>臨時郵資</dt>
               <dd>{summary.temporaryPostage} 元</dd>
-            </div>
-          )}
-          {summary.reportInvoiceTaxCost > 0 && (
-            <div>
-              <dt>稅金 8%</dt>
-              <dd>{summary.reportInvoiceTaxCost} 元</dd>
             </div>
           )}
         </dl>

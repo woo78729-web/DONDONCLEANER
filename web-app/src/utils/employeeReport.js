@@ -78,11 +78,14 @@ export function scalePricingLinesForCompleted(lines, completedUnits, plannedUnit
     }))
     : [{ id: 'line-0', ac_units: String(completedUnits || 1), unit_price: '1500', invoice_type: 'none', charge_customer_tax: false }];
 
-  if (plannedUnits < 1 || completedUnits === plannedUnits) {
+  const currentTotal = normalized.reduce((total, line) => total + Number(line.ac_units || 0), 0);
+
+  if (completedUnits === currentTotal) {
     return normalized;
   }
 
-  const ratio = completedUnits / plannedUnits;
+  const baseUnits = currentTotal > 0 ? currentTotal : Math.max(Number(plannedUnits) || 0, 1);
+  const ratio = completedUnits / baseUnits;
   let assigned = 0;
 
   return normalized.map((line, index) => {
@@ -190,8 +193,12 @@ export function buildReportPayload(schedule, draft) {
     travel_allowance: Number(draft.travel_allowance ?? 0),
   };
 
-  if (calculated.unitMismatch && Array.isArray(draft.pricing_lines) && draft.pricing_lines.length > 0) {
-    payload.pricing_lines = draft.pricing_lines.map((line) => {
+  const pricingLines = Array.isArray(draft.pricing_lines) && draft.pricing_lines.length > 0
+    ? draft.pricing_lines
+    : calculated.pricingLines;
+
+  if (Array.isArray(pricingLines) && pricingLines.length > 0) {
+    payload.pricing_lines = pricingLines.map((line) => {
       const migrated = migratePricingLineFields(line, schedule);
 
       return {
@@ -238,26 +245,20 @@ export function buildDefaultReportDraft(schedule) {
     temporary_request: '',
     collected_amount: String(calculated.collectedAmount),
     paid_to_company: false,
+    pricing_lines: clonedLines,
   };
 }
 
 export function ensureMismatchPricingLines(schedule, draft) {
   const plannedUnits = Number(schedule?.ac_units || 0);
   const completedUnits = Math.max(0, Number(draft.completed_units || 0));
-
-  if (completedUnits === plannedUnits) {
-    const next = { ...draft };
-    delete next.pricing_lines;
-    return next;
-  }
+  const source = draft.pricing_lines?.length
+    ? draft.pricing_lines
+    : cloneSchedulePricingLines(schedule);
 
   return {
     ...draft,
-    pricing_lines: scalePricingLinesForCompleted(
-      draft.pricing_lines?.length ? draft.pricing_lines : cloneSchedulePricingLines(schedule),
-      completedUnits,
-      plannedUnits,
-    ),
+    pricing_lines: scalePricingLinesForCompleted(source, completedUnits, plannedUnits),
   };
 }
 
@@ -267,9 +268,9 @@ export function syncDraftFromPricingLines(schedule, draft, pricingLines) {
     0,
   );
 
-  return ensureMismatchPricingLines(schedule, {
+  return {
     ...draft,
     pricing_lines: pricingLines,
     completed_units: String(completedUnits),
-  });
+  };
 }

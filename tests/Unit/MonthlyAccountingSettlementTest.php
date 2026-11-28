@@ -99,6 +99,24 @@ class MonthlyAccountingSettlementTest extends TestCase
         $this->assertSame(-45641, $totals['hongyi_payment']);
     }
 
+    public function test_technician_take_home_subtracts_company_share_and_invoice_five_percent_only(): void
+    {
+        // 現場 10 台 1000，實收 10000，公司 4000，無發票。
+        $this->assertSame(6000, MonthlyAccounting::technicianTakeHome(10000, 4000, 0));
+
+        // 現場含客戶 5%：1050 − 400 − 50 = 600，5% 是交回公司，不是再從師傅份裡扣一次。
+        $this->assertSame(600, MonthlyAccounting::technicianTakeHome(1050, 400, 50));
+
+        // 匯款 10 台含 5%：10500 − 4000 − 500 = 6000，這 6000 就是退給師傅的錢。
+        $this->assertSame(6000, MonthlyAccounting::technicianTakeHome(10500, 4000, 500));
+
+        // 有發票但客戶沒被加 5%：客戶總額不含這 5%，稅金欄是 0，實拿不另扣。
+        $this->assertSame(6000, MonthlyAccounting::technicianTakeHome(10000, 4000, 0));
+
+        // 賠償與車馬費。
+        $this->assertSame(5800, MonthlyAccounting::technicianTakeHome(10000, 4000, 0, 500, 300));
+    }
+
     public function test_travel_allowance_counts_toward_atai_advance_and_monthly_expense(): void
     {
         $totals = $this->invokeCalculateTotals([], [[

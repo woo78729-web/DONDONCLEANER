@@ -327,6 +327,7 @@ class MonthlyAccounting
                     'company_inbound_expected' => 0,
                     'company_transfer' => 0,
                     'invoice_surcharge_due' => 0,
+                    'technician_tax' => 0,
                     'company_share_due' => 0,
                     'remittance_company_share' => 0,
                     'invoice_tax_cost' => 0,
@@ -352,6 +353,7 @@ class MonthlyAccounting
             $byEmployee[$employeeId]['company_inbound_expected'] += $companyInboundExpected;
             $byEmployee[$employeeId]['company_transfer'] += $companyTransferConfirmed;
             $byEmployee[$employeeId]['invoice_surcharge_due'] += (int) $summary['invoice_surcharge_due'];
+            $byEmployee[$employeeId]['technician_tax'] += (int) $summary['invoice_surcharge_due'];
             $byEmployee[$employeeId]['company_share_due'] += (int) $summary['company_share_due'];
             $byEmployee[$employeeId]['remittance_company_share'] += (int) $summary['remittance_company_share'];
             $byEmployee[$employeeId]['invoice_tax_cost'] += (int) $report->report_invoice_tax_cost;
@@ -418,6 +420,7 @@ class MonthlyAccounting
                     'company_inbound_expected' => 0,
                     'company_transfer' => 0,
                     'invoice_surcharge_due' => 0,
+                    'technician_tax' => 0,
                     'company_share_due' => 0,
                     'remittance_company_share' => 0,
                     'invoice_tax_cost' => 0,
@@ -442,19 +445,14 @@ class MonthlyAccounting
         foreach ($byEmployee as &$employee) {
             $employee['compensation_due_to_company'] = (int) ($employee['compensation_due_to_company'] ?? 0);
             $employee['compensation_due_to_atai'] = $employee['compensation_due_to_company'];
-            $employee['company_commission'] = max(
-                0,
-                $employee['total_job_amount']
-                    - $employee['advance_to_employee']
-                    - max(0, $employee['employee_cash_received'] - $employee['collect_from_employee']),
-            );
-            $employee['employee_actual_pay'] = max(
-                0,
-                $employee['total_job_amount']
-                    - $employee['company_commission']
-                    - $employee['invoice_tax_cost']
-                    - $employee['compensation_due_to_company']
-                    + ($employee['travel_allowance'] ?? 0),
+            $employee['company_commission'] = (int) $employee['company_share_due'];
+            // 公司抽成只列單價抽成。向客戶收的 5% 另外顯示，並從客戶總額扣一次。沒跟客戶加 5% 的發票案不從師傅實拿再扣。
+            $employee['employee_actual_pay'] = self::technicianTakeHome(
+                (int) $employee['total_job_amount'],
+                (int) $employee['company_share_due'],
+                (int) ($employee['invoice_surcharge_due'] ?? 0),
+                (int) $employee['compensation_due_to_company'],
+                (int) ($employee['travel_allowance'] ?? 0),
             );
             $employee['collect_due_from_employee'] = ($employee['payment_to_finance'] ?? 0) + $employee['compensation_due_to_company'];
         }
@@ -773,6 +771,20 @@ class MonthlyAccounting
     }
 
     /**
+     * 師傅實拿 = 客戶總額 − 公司抽成 − 向客戶收的 5% − 賠償 + 車馬費。
+     * 5% 只扣客戶總額裡已經含有的那一筆。8% 發票稅只進總毛利。
+     */
+    public static function technicianTakeHome(
+        int $customerTotal,
+        int $companyShare,
+        int $invoiceTaxFive,
+        int $compensationDue = 0,
+        int $travelAllowance = 0,
+    ): int {
+        return $customerTotal - $companyShare - $invoiceTaxFive - $compensationDue + $travelAllowance;
+    }
+
+    /**
      * @param  list<array<string, mixed>>  $employees
      * @return array<string, mixed>
      */
@@ -792,6 +804,8 @@ class MonthlyAccounting
             'units_by_price' => $unitsByPrice,
             'total_job_amount' => (int) array_sum(array_column($employees, 'total_job_amount')),
             'company_commission' => (int) array_sum(array_column($employees, 'company_commission')),
+            'invoice_surcharge_due' => (int) array_sum(array_column($employees, 'invoice_surcharge_due')),
+            'technician_tax' => (int) array_sum(array_column($employees, 'technician_tax')),
             'invoice_tax_cost' => (int) array_sum(array_column($employees, 'invoice_tax_cost')),
             'travel_allowance' => (int) array_sum(array_column($employees, 'travel_allowance')),
             'compensation_due_to_company' => (int) array_sum(array_column($employees, 'compensation_due_to_company')),

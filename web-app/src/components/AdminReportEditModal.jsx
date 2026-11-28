@@ -148,31 +148,27 @@ export function AdminReportEditModal({
             </p>
           )}
 
-          {calculated.unitMismatch && (
-            <>
-              <div className="field employee-report-pricing">
-                <span className="field-label">台數異動 — 請確認各項目台數與單價（含稅會依品項重新計算）</span>
-                <PricingLineEditor
-                  lines={draft.pricing_lines || calculated.pricingLines}
-                  onChange={updatePricingLines}
-                  showTax
-                  showRemove={false}
-                  maxUnits={Math.max(calculated.completedUnits, calculated.plannedUnits, 1)}
-                />
-              </div>
+          <div className="field employee-report-pricing">
+            <span className="field-label">台數與單價（改台數或單台金額都會重算金額與抽成）</span>
+            <PricingLineEditor
+              lines={draft.pricing_lines || calculated.pricingLines}
+              onChange={updatePricingLines}
+              showTax
+              showRemove={false}
+              maxUnits={99}
+            />
+          </div>
 
-              {calculated.skippedUnits > 0 && (
-                <label className="field">
-                  <span className="field-label">未洗原因（選填）</span>
-                  <textarea
-                    className="field-control"
-                    rows={2}
-                    value={draft.skip_reason}
-                    onChange={(event) => updateDraft({ skip_reason: event.target.value })}
-                  />
-                </label>
-              )}
-            </>
+          {calculated.skippedUnits > 0 && (
+            <label className="field">
+              <span className="field-label">未洗原因（選填）</span>
+              <textarea
+                className="field-control"
+                rows={2}
+                value={draft.skip_reason}
+                onChange={(event) => updateDraft({ skip_reason: event.target.value })}
+              />
+            </label>
           )}
 
           <label className="field field-checkbox">
@@ -245,7 +241,7 @@ export function AdminReportEditModal({
 
           {(calculated.reportInvoiceTaxCost > 0) && (
             <p className="hint employee-report-costs">
-              稅金 8% {calculated.reportInvoiceTaxCost} 元（併入開支）
+              發票稅 8% {calculated.reportInvoiceTaxCost} 元（只扣總毛利，不跟師傅收）
             </p>
           )}
 

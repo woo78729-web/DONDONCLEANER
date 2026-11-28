@@ -175,6 +175,7 @@ class EmployeeRemittance
         $remittanceCompanyShare = 0;
         $invoiceSurchargeDue = 0;
         $invoiceTaxCost = 0;
+        $invoiceBase = 0;
         $unitsTotal = 0;
 
         foreach ($scaledLines as $line) {
@@ -195,6 +196,7 @@ class EmployeeRemittance
             }
 
             if ($totals['has_invoice']) {
+                $invoiceBase += $base;
                 $invoiceSurchargeDue += $surcharge;
                 $invoiceTaxCost += $totals['hongyi_fee'];
 
@@ -218,6 +220,7 @@ class EmployeeRemittance
             'company_share_due' => $companyShareDue,
             'remittance_company_share' => $remittanceCompanyShare,
             'invoice_surcharge_due' => $invoiceSurchargeDue,
+            'invoice_base' => $invoiceBase,
             'invoice_tax_cost' => $invoiceTaxCost,
             'completed_units' => $unitsTotal,
         ];

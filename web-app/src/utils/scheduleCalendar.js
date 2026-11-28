@@ -1270,14 +1270,27 @@ export function getSchedulePlannedPrice(schedule) {
 export function getScheduleDisplayPrice(schedule) {
   const report = getScheduleReport(schedule);
 
-  if (report?.collected_amount != null && report.collected_amount !== '') {
+  if (report && !report.paid_to_company && report.collected_amount != null && report.collected_amount !== '') {
     const collected = Number(report.collected_amount);
     if (Number.isFinite(collected)) {
       return collected;
     }
   }
 
-  return getSchedulePlannedPrice(schedule);
+  const planned = getSchedulePlannedPrice(schedule);
+
+  if (!report) {
+    return planned;
+  }
+
+  const completed = Number(report.completed_units);
+  const scheduledUnits = Number(schedule?.ac_units) || 0;
+
+  if (scheduledUnits > 0 && Number.isFinite(completed) && completed !== scheduledUnits && planned > 0) {
+    return Math.round((planned * completed) / scheduledUnits);
+  }
+
+  return planned;
 }
 
 export function getScheduleSegmentTotal(schedule) {
@@ -1354,7 +1367,9 @@ export function buildScheduleUnitsPriceTag(schedule, { hidePrice = false, relate
       return units ? `[${units}台]` : '';
     }
 
-    const segmentPrice = getScheduleSegmentDisplayPrice(schedule, relatedSchedules);
+    const segmentPrice = getScheduleReport(schedule)
+      ? getScheduleDisplayPrice(schedule)
+      : getScheduleSegmentDisplayPrice(schedule, relatedSchedules);
     const localTag = segmentPrice > 0
       ? `[${units || '-'}離${segmentPrice}]`
       : `[${units || '-'}離]`;
@@ -1370,7 +1385,7 @@ export function buildScheduleUnitsPriceTag(schedule, { hidePrice = false, relate
     return units ? `[${units}台]` : '';
   }
 
-  const total = getSchedulePlannedPrice(schedule);
+  const total = getScheduleDisplayPrice(schedule);
 
   if (units || total) {
     return `[${units || '-'}離${total || '-'}]`;
@@ -1387,7 +1402,7 @@ export function buildScheduleUnitsPriceTag(schedule, { hidePrice = false, relate
 
 export function formatScheduleUnitsAndTotal(schedule) {
   const units = getScheduleDisplayUnits(schedule);
-  const total = getSchedulePlannedPrice(schedule);
+  const total = getScheduleDisplayPrice(schedule);
 
   if (!units && !total) {
     return '';
@@ -1402,7 +1417,7 @@ export function formatScheduleAcUnits(schedule) {
 }
 
 export function formatScheduleTotalPrice(schedule) {
-  const total = getSchedulePlannedPrice(schedule);
+  const total = getScheduleDisplayPrice(schedule);
   return total ? `${total} 元` : '-';
 }
 
